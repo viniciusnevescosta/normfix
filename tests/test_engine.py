@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from norminette_fix.engine import EngineOptions, FixEngine
-from norminette_fix.models import Identity
+from norminette_fix.models import Diagnostic, Highlight, Identity
 
 IDENTITY = Identity("vncosta", "vncosta@student.42sp.org", "test")
 
@@ -10,6 +10,42 @@ def engine() -> FixEngine:
     return FixEngine(
         identity=IDENTITY,
         options=EngineOptions(write=False, backup=False, max_passes=40),
+    )
+
+
+def diagnostic(code: str) -> Diagnostic:
+    return Diagnostic(
+        code=code,
+        message=code,
+        level="Error",
+        path=Path("fixture.c"),
+        highlights=(Highlight(1, 1),),
+    )
+
+
+def test_guarded_diagnostic_gate_rejects_any_new_error_code() -> None:
+    before = [diagnostic("MISALIGNED_VAR_DECL")]
+    after = [diagnostic("PREPROC_BAD_INDENT")]
+
+    assert not FixEngine._diagnostics_improve(
+        before,
+        after,
+        {"MISALIGNED_VAR_DECL"},
+    )
+
+
+def test_extra_tab_probe_may_make_bounded_progress_without_changing_error_count() -> None:
+    unchanged_code = [diagnostic("TOO_MANY_TAB")]
+
+    assert FixEngine._diagnostics_improve(
+        unchanged_code,
+        unchanged_code,
+        {"TOO_MANY_TAB"},
+    )
+    assert not FixEngine._diagnostics_improve(
+        unchanged_code,
+        [diagnostic("TOO_FEW_TAB")],
+        {"TOO_MANY_TAB"},
     )
 
 

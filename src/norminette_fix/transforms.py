@@ -4,6 +4,7 @@ import math
 import re
 from collections import defaultdict
 
+from .declaration_alignment import align_simple_declaration_groups
 from .models import Diagnostic
 from .source import (
     Edit,
@@ -432,6 +433,7 @@ def fix_indentation(source: str, diagnostics: list[Diagnostic]) -> tuple[str, li
     for diagnostic in diagnostics:
         by_line[diagnostic.line].add(diagnostic.code)
     edits: list[Edit] = []
+    guided_probes: list[Edit] = []
 
     for diagnostic in diagnostics:
         if not 1 <= diagnostic.line <= len(lines):
@@ -511,8 +513,27 @@ def fix_indentation(source: str, diagnostics: list[Diagnostic]) -> tuple[str, li
         elif code == "TOO_MANY_TAB":
             leading = re.match(r"[ \t]+", line)
             if leading:
+                raw = leading.group(0)
                 replacement = "\t" * expected_indents.get(diagnostic.line, 0)
-                if leading.group(0) == replacement:
+                if visual_width(replacement) >= visual_width(raw):
+                    # Norminette has context-sensitive indentation rules for
+                    # enum members and nested aggregate initializers that the
+                    # lightweight brace model cannot always reproduce.  A
+                    # reported extra tab is still safe to probe by removing
+                    # exactly one leading tab; the engine re-lints this
+                    # candidate and rejects it unless the diagnostic improves
+                    # without creating a missing-tab error.
+                    if raw and set(raw) == {"\t"}:
+                        guided_probes.append(
+                            Edit(
+                                base,
+                                base + leading.end(),
+                                raw[:-1],
+                                code,
+                                ("removed one extra leading tab using a Norminette-guided probe"),
+                                diagnostic.line,
+                            )
+                        )
                     continue
                 edits.append(
                     Edit(
@@ -520,7 +541,7 @@ def fix_indentation(source: str, diagnostics: list[Diagnostic]) -> tuple[str, li
                         base + leading.end(),
                         replacement,
                         code,
-                        "set indentation from the surrounding brace depth",
+                        "reduced indentation to the surrounding brace depth",
                         diagnostic.line,
                     )
                 )
@@ -553,7 +574,7 @@ def fix_indentation(source: str, diagnostics: list[Diagnostic]) -> tuple[str, li
                         diagnostic.line,
                     )
                 )
-    return apply_edits(source, edits)
+    return apply_edits(source, edits if edits else guided_probes)
 
 
 def _expected_indents(source: str) -> dict[int, int]:
@@ -838,82 +859,10 @@ def fix_token_spacing(source: str, diagnostics: list[Diagnostic]) -> tuple[str, 
 def align_variable_declarations(
     source: str, diagnostics: list[Diagnostic]
 ) -> tuple[str, list[Edit]]:
-    targets = [diagnostic for diagnostic in diagnostics if diagnostic.code == "MISALIGNED_VAR_DECL"]
-    if not targets:
-        return source, []
-    lines, offsets = _lines(source)
-    edits: list[Edit] = []
-    for diagnostic in targets:
-        current_index = diagnostic.line - 1
-        if not 0 <= current_index < len(lines):
-            continue
-        target_column: int | None = None
-        for previous in range(current_index - 1, max(-1, current_index - 8), -1):
-            candidate = lines[previous]
-            if not candidate.strip() or "{" in candidate or "}" in candidate:
-                break
-            declarator = _declarator_start(candidate)
-            if declarator is not None:
-                target_column = index_to_visual_column(candidate, declarator)
-                break
-        if target_column is None:
-            continue
-        line = lines[current_index]
-        declarator = visual_column_to_index(line, diagnostic.column)
-        if (
-            declarator < len(line)
-            and line[declarator] not in "*&ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_"
-        ):
-            found = _declarator_start(line)
-            if found is None:
-                continue
-            declarator = found
-        start, end = whitespace_before(line, declarator)
-        if start == end:
-            continue
-        prefix_column = index_to_visual_column(line, start)
-        replacement = _whitespace_to_column(prefix_column, target_column)
-        if not replacement:
-            replacement = "\t"
-        edits.append(
-            Edit(
-                offsets[current_index] + start,
-                offsets[current_index] + end,
-                replacement,
-                diagnostic.code,
-                "aligned variable declarations in the current scope",
-                diagnostic.line,
-            )
-        )
-    return apply_edits(source, edits)
-
-
-def _declarator_start(line: str) -> int | None:
-    stripped = line.lstrip(" \t")
-    if not re.match(
-        r"(?:const[ ]+|static[ ]+|unsigned[ ]+|signed[ ]+|long[ ]+|short[ ]+)*"
-        r"(?:void|char|int|float|double|struct[ ]+\w+|enum[ ]+\w+|union[ ]+\w+|t_\w+)\b",
-        stripped,
-    ):
-        return None
-    candidates = list(re.finditer(r"(?P<name>[*&]*[A-Za-z_][A-Za-z0-9_]*)[ \t]*(?:\[|=|;)", line))
-    return candidates[-1].start("name") if candidates else None
-
-
-def _whitespace_to_column(start_column: int, target_column: int) -> str:
-    if target_column <= start_column:
-        return ""
-    result = ""
-    column = start_column
-    while column < target_column:
-        next_tab = column + (4 - ((column - 1) % 4))
-        if next_tab <= target_column:
-            result += "\t"
-            column = next_tab
-        else:
-            result += " "
-            column += 1
-    return result
+    target_lines = {
+        diagnostic.line for diagnostic in diagnostics if diagnostic.code == "MISALIGNED_VAR_DECL"
+    }
+    return align_simple_declaration_groups(source, target_lines)
 
 
 def fix_long_lines(source: str, diagnostics: list[Diagnostic]) -> tuple[str, list[Edit]]:
@@ -1139,6 +1088,7 @@ PHASES = (
         fix_token_spacing,
         True,
     ),
+    ({"MISALIGNED_VAR_DECL"}, align_variable_declarations, True),
     ({"LINE_TOO_LONG"}, fix_long_lines, True),
 )
 

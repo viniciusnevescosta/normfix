@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import configparser
+import hashlib
 import os
 import re
 import subprocess
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from .models import Identity
-from .source import masked_source
+from .source import masked_source, normalize_hygiene
 
 HEADER_EDGE = "/* " + ("*" * 74) + " */"
 HEADER_SUFFIXES = {
@@ -17,6 +19,13 @@ HEADER_SUFFIXES = {
     "created": "#+#    #+#             ",
     "updated": "###   ########.fr       ",
 }
+
+
+@dataclass(frozen=True)
+class HeaderGuardRename:
+    current: str
+    expected: str
+    body_sha256: str
 
 
 def _git_config(key: str, cwd: Path) -> str | None:
@@ -476,32 +485,63 @@ def expected_guard(filename: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "_", filename).upper()
 
 
+def header_guard_rename_candidate(
+    source: str,
+    filename: str,
+) -> HeaderGuardRename | None:
+    source, _ = normalize_hygiene(source)
+    guard = expected_guard(filename)
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", guard):
+        return None
+    _, body = _header_guard_body(source)
+    canonical = _canonical_guard(body)
+    if canonical is None:
+        return None
+    ifndef, define = canonical
+    if ifndef[2] != define[2] or ifndef[2] == guard:
+        return None
+    return HeaderGuardRename(ifndef[2], guard, _guard_body_digest(body))
+
+
 def header_guard_matches(source: str, filename: str) -> bool:
     guard = expected_guard(filename)
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", guard):
         return False
-    span = header_span(source)
-    body_start = span[1] if span else 0
-    canonical = _canonical_guard(source[body_start:].lstrip("\n"))
+    _, body = _header_guard_body(source)
+    canonical = _canonical_guard(body)
     if canonical is None:
         return False
     ifndef, define = canonical
     return ifndef[2] == guard and define[2] == guard
 
 
-def ensure_header_guard(source: str, filename: str) -> tuple[str, bool, str]:
+def ensure_header_guard(
+    source: str,
+    filename: str,
+    *,
+    approved_rename: HeaderGuardRename | None = None,
+) -> tuple[str, bool, str]:
     guard = expected_guard(filename)
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", guard):
         return source, False, guard
-    span = header_span(source)
-    body_start = span[1] if span else 0
-    body = source[body_start:].lstrip("\n")
+    body_start, body = _header_guard_body(source)
 
     canonical = _canonical_guard(body)
     if canonical is not None:
         ifndef, define = canonical
         if ifndef[2] == guard and define[2] == guard:
             return source, False, guard
+        candidate = HeaderGuardRename(ifndef[2], guard, _guard_body_digest(body))
+        if approved_rename == candidate:
+            for start, end, current in sorted(
+                (ifndef, define),
+                key=lambda item: item[0],
+                reverse=True,
+            ):
+                if current != candidate.current:
+                    return source, False, guard
+                body = body[:start] + guard + body[end:]
+            return source[:body_start] + body, True, guard
         # Renaming an existing guard can break consumers that test the old
         # macro, or nested conditions that reference it. Report the official
         # diagnostic and leave this project-wide symbol unchanged.
@@ -511,6 +551,19 @@ def ensure_header_guard(source: str, filename: str) -> tuple[str, bool, str]:
     # intentional repeat-inclusion protocols (including X-macros). There is no
     # file-local proof that wrapping is safe, so missing guards stay manual.
     return source, False, guard
+
+
+def _header_guard_body(source: str) -> tuple[int, str]:
+    span = header_span(source)
+    body_start = span[1] if span else 0
+    while body_start < len(source) and source[body_start] == "\n":
+        body_start += 1
+    return body_start, source[body_start:]
+
+
+def _guard_body_digest(body: str) -> str:
+    normalized, _ = normalize_hygiene(body)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _canonical_guard(

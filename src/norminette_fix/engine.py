@@ -6,12 +6,20 @@ import os
 import shutil
 import stat
 import tempfile
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .analysis import enrich_diagnostics, supplemental_diagnostics
+from .guard_scope import (
+    GuardApproval,
+    advance_guard_approvals_after_write,
+    guard_approval_is_current,
+    plan_header_guard_renames,
+)
 from .header import (
+    HeaderGuardRename,
     ensure_header,
     ensure_header_guard,
     header_filename_matches,
@@ -89,12 +97,17 @@ class FixEngine:
         self.backups = (
             BackupManager(options.backup_root) if options.write and options.backup else None
         )
+        self._guard_renames: dict[Path, GuardApproval] = {}
 
     def process(self, paths: list[Path]) -> list[FileResult]:
-        results = [self.process_file(path) for path in paths]
-        if self.backups:
-            self.backups.finish()
-        return results
+        try:
+            self._guard_renames = plan_header_guard_renames(paths)
+            results = [self.process_file(path) for path in paths]
+            if self.backups:
+                self.backups.finish()
+            return results
+        finally:
+            self._guard_renames = {}
 
     def process_file(self, path: Path) -> FileResult:
         result = FileResult(path=path)
@@ -178,12 +191,24 @@ class FixEngine:
             )
 
         if path.suffix == ".h":
-            current, guard_changed, guard = ensure_header_guard(current, path.name)
+            approval = self._guard_renames.get(path.resolve())
+            approved_rename: HeaderGuardRename | None = None
+            if approval is not None and guard_approval_is_current(approval):
+                approved_rename = approval.rename
+            current, guard_changed, guard = ensure_header_guard(
+                current,
+                path.name,
+                approved_rename=approved_rename,
+            )
             if guard_changed:
+                assert approved_rename is not None
                 result.fixes.append(
                     Fix(
                         "HEADER_PROTECTION",
-                        f"inserted or repaired the {guard} header guard",
+                        (
+                            f"renamed the {approved_rename.current} header guard "
+                            f"to {guard} after a project-wide reference check"
+                        ),
                         13,
                     )
                 )
@@ -206,6 +231,20 @@ class FixEngine:
                 break
             if preserves_tokens and not self._same_tokens(path, current, candidate):
                 break
+            guarded_codes = {edit.code for edit in edits if edit.code == "MISALIGNED_VAR_DECL"}
+            if any(
+                edit.code == "TOO_MANY_TAB" and "Norminette-guided probe" in edit.description
+                for edit in edits
+            ):
+                guarded_codes.add("TOO_MANY_TAB")
+            if guarded_codes:
+                candidate_diagnostics, candidate_failure = self.adapter.lint(path, candidate)
+                if candidate_failure or not self._diagnostics_improve(
+                    diagnostics,
+                    candidate_diagnostics,
+                    guarded_codes,
+                ):
+                    break
             if not preserves_tokens:
                 _, candidate_failure = self.adapter.lint(path, candidate)
                 if candidate_failure:
@@ -268,6 +307,8 @@ class FixEngine:
             current = original
         after.extend(supplemental_diagnostics(path, current))
         result.diagnostics_after = enrich_diagnostics(after, current, path)
+        if current == original:
+            result.fixes.clear()
 
         self._write_if_changed(result, path, original_bytes, current)
         return result
@@ -290,8 +331,20 @@ class FixEngine:
                 return
             if self.backups:
                 result.backup = self.backups.save(path, original_bytes)
+            if any(fix.code == "HEADER_PROTECTION" for fix in result.fixes):
+                approval = self._guard_renames.get(path.resolve())
+                if approval is None or not guard_approval_is_current(approval):
+                    result.failure = (
+                        "The project changed during the header-guard safety check; "
+                        "no write was performed."
+                    )
+                    return
             self._atomic_write(path, source)
             result.wrote = True
+            self._guard_renames = advance_guard_approvals_after_write(
+                self._guard_renames,
+                path,
+            )
         except OSError as exc:
             result.failure = f"Could not safely write the file: {exc}"
 
@@ -302,6 +355,27 @@ class FixEngine:
             )
         except Exception:
             return False
+
+    @staticmethod
+    def _diagnostics_improve(
+        before: list[Diagnostic],
+        after: list[Diagnostic],
+        guarded_codes: set[str],
+    ) -> bool:
+        before_counts = Counter(item.code for item in before)
+        after_counts = Counter(item.code for item in after)
+        if len(after) > len(before):
+            return False
+        for code in guarded_codes:
+            if code == "TOO_MANY_TAB":
+                if after_counts[code] > before_counts[code]:
+                    return False
+            elif after_counts[code] >= before_counts[code]:
+                return False
+        return not any(
+            code not in guarded_codes and count > before_counts[code]
+            for code, count in after_counts.items()
+        )
 
     @staticmethod
     def _failure_diagnostic(path: Path, message: str) -> Diagnostic:

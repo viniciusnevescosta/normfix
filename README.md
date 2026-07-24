@@ -108,10 +108,17 @@ Valid existing headers keep their author and creation date. The filename and
 `Updated` line are refreshed only when another accepted edit changes the file,
 so a second run is idempotent.
 
-Header inclusion guards are always reported for manual review when missing or
-incorrectly named. Creating or renaming one can change repeat-inclusion,
-X-macro, `#undef`, or project-wide conditional behavior, so a file-local tool
-cannot prove that edit safe.
+An incorrectly named but otherwise canonical inclusion guard is renamed
+atomically only when a Git project root can be established and a scan of that
+worktree—including Git-ignored files—shows that the old macro occurs only in
+its `#ifndef`/`#define` pair, the expected name is unused, no other header has
+the same filename-derived guard, and no detected in-project build definition can
+synthesize guard names with token pasting. Non-Git, missing, structurally
+complex, externally referenced, or ambiguous guards stay unchanged and are
+reported for manual review because they may participate in repeat-inclusion,
+X-macro, `#undef`, compiler-flag, or project-wide conditional behavior.
+Definitions injected entirely outside the worktree are outside this bounded
+safety check.
 
 ## What is fixed automatically
 
@@ -120,7 +127,9 @@ sequence whenever possible:
 
 - trailing whitespace, blank-line rules, final newline, and CRLF normalization;
 - required blank lines between declarations/body, preprocessors, and functions;
-- real-tab indentation and common declaration alignment;
+- real-tab indentation, including enum and nested aggregate edge cases;
+- whole-group alignment for simple one-line declarations, including pointer
+  declarators and mixed-width types;
 - braces that need their own line;
 - spacing around operators, parentheses, keywords, pointers, and function names;
 - empty argument lists in definitions changed to `(void)`; old-style prototypes
@@ -166,7 +175,10 @@ was left alone, and a concrete next step for cases such as:
   renames;
 - moving types/includes between files or changing build structure;
 - comments inside functions and semantic preprocessor errors;
-- complex, conditional, repeat-inclusion, or incorrectly named header guards;
+- missing, complex, conditional, repeat-inclusion, referenced, or ambiguous
+  header guards;
+- complex declaration groups such as function pointers, attributes,
+  bit-fields, multiple declarators, and multiline declarations;
 - malformed C that the official parser cannot understand.
 
 This boundary is intentional: splitting a function or rewriting control flow
