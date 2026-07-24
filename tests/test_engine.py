@@ -86,6 +86,103 @@ def test_fixing_twice_is_idempotent(tmp_path: Path) -> None:
     assert second.diagnostics_after == []
 
 
+def test_opt_in_comment_removal_is_safe_and_idempotent(tmp_path: Path) -> None:
+    path = tmp_path / "comments.c"
+    path.write_text(
+        "/* Allowed global comment. */\n"
+        "int\tanswer(void)\n"
+        "{\n"
+        "\t/* forbidden block\n"
+        "\t * comment */\n"
+        "\treturn (42); /* forbidden trailing comment */\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    comment_engine = FixEngine(
+        identity=IDENTITY,
+        options=EngineOptions(
+            write=False,
+            backup=False,
+            max_passes=40,
+            remove_invalid_comments=True,
+        ),
+    )
+
+    first = comment_engine.process_file(path)
+
+    assert first.failure is None
+    assert first.fixed is not None
+    assert "/* Allowed global comment. */" in first.fixed
+    assert "forbidden block" not in first.fixed
+    assert "forbidden trailing comment" not in first.fixed
+    assert first.fixed.startswith("/* " + ("*" * 74) + " */")
+    assert not any(item.code == "WRONG_SCOPE_COMMENT" for item in first.diagnostics_after)
+    assert sum(fix.code == "REMOVE_INVALID_COMMENT" for fix in first.fixes) == 2
+
+    path.write_text(first.fixed, encoding="utf-8")
+    second = comment_engine.process_file(path)
+
+    assert not second.changed
+    assert second.fixes == []
+
+
+def test_opt_in_removes_the_full_spliced_line_comment(tmp_path: Path) -> None:
+    path = tmp_path / "line_comment.c"
+    path.write_text(
+        "int\tanswer(void)\n"
+        "{\n"
+        "\t// the next physical line is part of this comment \\\n"
+        "\tthis text must not become live code\n"
+        "\treturn (42);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    comment_engine = FixEngine(
+        identity=IDENTITY,
+        options=EngineOptions(
+            write=False,
+            backup=False,
+            max_passes=40,
+            remove_invalid_comments=True,
+        ),
+    )
+
+    result = comment_engine.process_file(path)
+
+    assert result.failure is None
+    assert result.fixed is not None
+    assert "the next physical line" not in result.fixed
+    assert "this text must not become live code" not in result.fixed
+    assert "\treturn (42);" in result.fixed
+
+
+def test_opt_in_removes_a_global_comment_rejected_between_tokens(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "prototype.c"
+    path.write_text(
+        "int /* misplaced */\tanswer(void);\n",
+        encoding="utf-8",
+    )
+    comment_engine = FixEngine(
+        identity=IDENTITY,
+        options=EngineOptions(
+            write=False,
+            backup=False,
+            max_passes=40,
+            remove_invalid_comments=True,
+        ),
+    )
+
+    result = comment_engine.process_file(path)
+
+    assert result.failure is None
+    assert result.fixed is not None
+    assert "misplaced" not in result.fixed
+    assert "int\tanswer(void);" in result.fixed
+    assert not any(item.code == "COMMENT_ON_INSTR" for item in result.diagnostics_after)
+
+
 def test_structural_issue_gets_actionable_english_warning(tmp_path: Path) -> None:
     path = tmp_path / "long_function.c"
     body = "\n".join(f"\tvalue += {index};" for index in range(27))
@@ -288,6 +385,26 @@ def test_long_condition_is_wrapped_at_logical_operators(tmp_path: Path) -> None:
     assert result.fixed is not None
     assert "\n\t\t&& value ==" in result.fixed
     assert all(len(line.expandtabs(4)) <= 80 for line in result.fixed.splitlines())
+
+
+def test_safe_continuation_lines_are_compacted_by_the_engine(tmp_path: Path) -> None:
+    path = tmp_path / "sum.c"
+    path.write_text(
+        "int\tsum(int left, int right)\n"
+        "{\n"
+        "\treturn (left\n"
+        "\t\t+ right);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = engine().process_file(path)
+
+    assert result.failure is None
+    assert result.fixed is not None
+    assert "\treturn (left + right);\n" in result.fixed
+    assert any(fix.code == "COMPACT_CONTINUATION" for fix in result.fixes)
+    assert result.diagnostics_after == []
     assert result.diagnostics_after == []
 
 

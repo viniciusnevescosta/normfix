@@ -41,7 +41,9 @@ class Reporter:
         *,
         identity: Identity,
         discovery_failures: list[str],
+        unexpected_files: list[Path],
         check_mode: bool,
+        duration_seconds: float,
     ) -> None:
         if self.output_format == "json":
             payload = {
@@ -54,8 +56,10 @@ class Reporter:
                     "available": identity.available,
                 },
                 "discovery_errors": discovery_failures,
+                "unexpected_files": [str(path) for path in unexpected_files],
                 "files": [result.to_dict() for result in results],
-                "summary": self._summary(results),
+                "summary": self._summary(results, unexpected_files=unexpected_files),
+                "duration_seconds": round(duration_seconds, 6),
             }
             self.console.print_json(json.dumps(payload))
             return
@@ -97,6 +101,7 @@ class Reporter:
         if discovery_failures:
             for failure in discovery_failures:
                 self.console.print(f"[bold red]Input error:[/bold red] {escape(failure)}")
+        self._render_unexpected_files(unexpected_files)
 
         table = Table(title="Files", show_lines=False)
         table.add_column("Status", no_wrap=True)
@@ -128,7 +133,26 @@ class Reporter:
         self._render_failures(results)
         if self.show_diff:
             self._render_diffs(results)
-        self._render_summary(results, check_mode=check_mode)
+        self._render_summary(
+            results,
+            check_mode=check_mode,
+            unexpected_files=unexpected_files,
+            duration_seconds=duration_seconds,
+        )
+
+    def _render_unexpected_files(self, paths: list[Path]) -> None:
+        if not paths:
+            return
+        self.console.print("\n[bold yellow]Unexpected project files (not modified)[/bold yellow]")
+        table = Table(show_header=False)
+        table.add_column("File", overflow="fold")
+        for path in paths:
+            table.add_row(escape(self._display_path(path)))
+        self.console.print(table)
+        self.console.print(
+            "[dim]Only .c, .h, Makefile, and README files are expected "
+            "in the scanned project.[/dim]"
+        )
 
     def _render_fixes(self, results: list[FileResult]) -> None:
         for result in results:
@@ -205,15 +229,23 @@ class Reporter:
                 self.console.file.write(diff)
                 self.console.file.flush()
 
-    def _render_summary(self, results: list[FileResult], *, check_mode: bool) -> None:
-        summary = self._summary(results)
+    def _render_summary(
+        self,
+        results: list[FileResult],
+        *,
+        check_mode: bool,
+        unexpected_files: list[Path],
+        duration_seconds: float,
+    ) -> None:
+        summary = self._summary(results, unexpected_files=unexpected_files)
         action = "would be fixed" if check_mode else "changed"
         message = (
             f"[bold]{summary['files']}[/bold] file(s) scanned  |  "
             f"[green]{summary['changed']}[/green] {action}  |  "
             f"[cyan]{summary['fixes']}[/cyan] fix(es)  |  "
             f"[yellow]{summary['remaining']}[/yellow] remaining issue(s)  |  "
-            f"[red]{summary['failed']}[/red] failed"
+            f"[red]{summary['failed']}[/red] failed  |  "
+            f"[yellow]{summary['unexpected_files']}[/yellow] unexpected file(s)"
         )
         if summary["failed"]:
             border = "red"
@@ -230,9 +262,14 @@ class Reporter:
                 else str(Path(backups[0]).parents[1])
             )
             self.console.print(f"[dim]Backups: {escape(str(common))}[/dim]")
+        self.console.print(f"[dim]Completed in {self._format_duration(duration_seconds)}.[/dim]")
 
     @staticmethod
-    def _summary(results: list[FileResult]) -> dict[str, int]:
+    def _summary(
+        results: list[FileResult],
+        *,
+        unexpected_files: list[Path],
+    ) -> dict[str, int]:
         return {
             "files": len(results),
             "changed": sum(result.changed for result in results),
@@ -240,7 +277,19 @@ class Reporter:
             "fixes": sum(len(result.fixes) for result in results),
             "remaining": sum(len(result.diagnostics_after) for result in results),
             "failed": sum(result.failure is not None for result in results),
+            "unexpected_files": len(unexpected_files),
         }
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        if seconds < 0.001:
+            return f"{seconds * 1_000_000:.0f} µs"
+        if seconds < 1:
+            return f"{seconds * 1000:.0f} ms"
+        if seconds < 60:
+            return f"{seconds:.2f} s"
+        minutes, remainder = divmod(seconds, 60)
+        return f"{int(minutes)} min {remainder:.1f} s"
 
     def _display_path(self, path: Path) -> str:
         try:

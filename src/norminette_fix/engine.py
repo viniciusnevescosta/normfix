@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .analysis import enrich_diagnostics, supplemental_diagnostics
+from .comments import remove_invalid_function_comments
 from .guard_scope import (
     GuardApproval,
     advance_guard_approvals_after_write,
@@ -25,6 +26,8 @@ from .header import (
     header_filename_matches,
     update_header,
 )
+from .line_compaction import compact_continuation_lines
+from .makefile import analyze_makefile, format_makefile, is_makefile
 from .models import Diagnostic, FileResult, Fix, Highlight, Identity
 from .norminette_adapter import NorminetteAdapter
 from .source import normalize_hygiene
@@ -38,6 +41,7 @@ class EngineOptions:
     backup_root: Path | None = None
     max_passes: int = 100
     norminette_timeout: float = 5.0
+    remove_invalid_comments: bool = False
 
 
 class BackupManager:
@@ -128,6 +132,8 @@ class FixEngine:
             result.failure = f"The file is not valid UTF-8: {exc}"
             return result
         result.original = original
+        if is_makefile(path):
+            return self._process_makefile(result, path, original_bytes, original)
 
         before, lint_failure = self.adapter.lint(path, original)
         result.diagnostics_before = before
@@ -226,6 +232,56 @@ class FixEngine:
             diagnostics, failure = self.adapter.lint(path, current)
             if failure:
                 break
+            if self.options.remove_invalid_comments:
+                candidate, edits = remove_invalid_function_comments(current, diagnostics)
+                invalid_comment_codes = {
+                    diagnostic.code
+                    for diagnostic in diagnostics
+                    if diagnostic.code in {"WRONG_SCOPE_COMMENT", "COMMENT_ON_INSTR"}
+                }
+                if (
+                    edits
+                    and candidate != current
+                    and self._same_code_tokens(path, current, candidate)
+                ):
+                    candidate_diagnostics, candidate_failure = self.adapter.lint(path, candidate)
+                    if not candidate_failure and self._diagnostics_improve(
+                        diagnostics,
+                        candidate_diagnostics,
+                        invalid_comment_codes,
+                    ):
+                        digest = hashlib.sha256(candidate.encode()).hexdigest()
+                        if digest in seen:
+                            unstable = True
+                            break
+                        seen.add(digest)
+                        current = candidate
+                        result.fixes.extend(
+                            Fix(edit.code, edit.description, edit.line) for edit in edits
+                        )
+                        continue
+            candidate, edits = compact_continuation_lines(current)
+            if (
+                edits
+                and candidate != current
+                and self._same_tokens(path, current, candidate)
+            ):
+                candidate_diagnostics, candidate_failure = self.adapter.lint(path, candidate)
+                if not candidate_failure and self._diagnostics_improve(
+                    diagnostics,
+                    candidate_diagnostics,
+                    set(),
+                ):
+                    digest = hashlib.sha256(candidate.encode()).hexdigest()
+                    if digest in seen:
+                        unstable = True
+                        break
+                    seen.add(digest)
+                    current = candidate
+                    result.fixes.extend(
+                        Fix(edit.code, edit.description, edit.line) for edit in edits
+                    )
+                    continue
             candidate, edits, preserves_tokens = choose_phase(current, diagnostics)
             if not edits or candidate == current:
                 break
@@ -313,6 +369,23 @@ class FixEngine:
         self._write_if_changed(result, path, original_bytes, current)
         return result
 
+    def _process_makefile(
+        self,
+        result: FileResult,
+        path: Path,
+        original_bytes: bytes,
+        original: str,
+    ) -> FileResult:
+        result.diagnostics_before = analyze_makefile(path, original)
+        current, fixes = format_makefile(original, path, self.identity)
+        result.fixed = current
+        result.fixes.extend(fixes)
+        result.diagnostics_after = analyze_makefile(path, current)
+        if current == original:
+            result.fixes.clear()
+        self._write_if_changed(result, path, original_bytes, current)
+        return result
+
     def _write_if_changed(
         self,
         result: FileResult,
@@ -353,6 +426,15 @@ class FixEngine:
             return self.adapter.token_fingerprint(path, before) == self.adapter.token_fingerprint(
                 path, after
             )
+        except Exception:
+            return False
+
+    def _same_code_tokens(self, path: Path, before: str, after: str) -> bool:
+        try:
+            return self.adapter.code_token_fingerprint(
+                path,
+                before,
+            ) == self.adapter.code_token_fingerprint(path, after)
         except Exception:
             return False
 

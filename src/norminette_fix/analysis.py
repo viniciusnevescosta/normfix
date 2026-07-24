@@ -217,10 +217,12 @@ GUIDANCE = {
     ),
     "INCLUDE_HEADER_ONLY": "Include a .h interface instead of a .c implementation file.",
     "WRONG_SCOPE_COMMENT": (
-        "Move or remove the comment; comments are not allowed inside function bodies."
+        "Move the comment outside the function, or rerun with "
+        "--remove-invalid-comments to delete it explicitly."
     ),
     "COMMENT_ON_INSTR": (
-        "Place the comment on its own allowed line or at the end of an allowed global line."
+        "Move the comment to an allowed location, or rerun with "
+        "--remove-invalid-comments to delete it explicitly."
     ),
     "PREPROC_MULTLINE": "Replace the multiline macro; multiline macros are forbidden.",
     "PREPOC_ONLY_GLOBAL": "Move the preprocessor directive to global scope.",

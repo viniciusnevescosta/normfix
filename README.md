@@ -13,21 +13,22 @@ Python 3.10 or newer is required. `pipx` is recommended because it exposes the
 command globally without mixing dependencies with your projects:
 
 ```sh
-pipx install /Users/viniciuscosta/projects/norminette-fix
+cd /path/to/norminette-fix
+pipx install .
 ```
 
 For development:
 
 ```sh
-cd /Users/viniciuscosta/projects/norminette-fix
+cd /path/to/norminette-fix
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 ```
 
 ## Use it like Norminette
 
-With no path, every `.c` and `.h` below the current directory is processed
-recursively:
+With no path, every `.c`, `.h`, and `Makefile` below the current directory is
+processed recursively:
 
 ```sh
 cd ~/projects/42-school/my_project
@@ -49,6 +50,7 @@ norminette-fix --check
 norminette-fix --diff src
 norminette-fix --format json --check
 norminette-fix --use-gitignore
+norminette-fix --remove-invalid-comments
 norminette-fix --verbose
 norminette-fix --timeout 10
 ```
@@ -57,10 +59,18 @@ norminette-fix --timeout 10
 - `--check` reports what would change without writing.
 - `--diff` previews a unified diff without writing.
 - `--use-gitignore` skips ignored files found while scanning directories.
+- `--remove-invalid-comments` explicitly deletes only comments at exact
+  locations rejected by Norminette. Without it, those comments are left intact
+  and reported for review.
 - `--timeout` isolates a file when the official parser gets stuck (5 seconds
   per file by default), so the rest of the directory is still processed.
 - Exit `0` means clean, `1` means fixes or review items remain, and `2` means an
   input, I/O, or tool failure occurred.
+
+Every run ends with its total duration. JSON output includes the numeric
+`duration_seconds` field. Directory scans also warn about files other than
+`.c`, `.h`, `Makefile`, and `README` variants without editing them or changing
+the exit status solely because of that warning.
 
 ## Official 42 header
 
@@ -138,11 +148,30 @@ sequence whenever possible:
 - independent same-line instructions split at proven statement boundaries;
 - lines over 80 columns wrapped at token-safe logical operators, binary
   operators, comparisons, or commas, with Norm-compliant continuation tabs;
+- safe continuation lines packed greedily back toward the 80-column limit,
+  without moving code across comments, preprocessors, macros, or separate
+  instructions;
 - nested preprocessor indentation and directive spacing;
 - official 42 headers.
 
 Every layout-only batch is checked against Norminette's lexer. If significant
 tokens would change unexpectedly, that batch is rejected.
+
+For `Makefile`, the tool uses a separate conservative formatter because the
+official Norminette does not parse Makefiles. It:
+
+- inserts and updates the official `#`-style 42 header;
+- greedily packs plain, explicit `.c` assignments up to 80 display columns,
+  preserving source order and assignment semantics;
+- never rewrites recipes, variable/function expansions, shell assignments,
+  comments, `define` blocks, or ambiguous Make syntax;
+- reports missing mandatory `$(NAME)`, `all`, `clean`, `fclean`, and `re`
+  rules, a non-default `all` rule, wildcard source lists, and long lines that
+  cannot be reflowed safely.
+
+The formatter does not automatically add every `.c` file found on disk:
+whether a source belongs to a target is a build-design decision. It formats
+large explicit lists already present and reports constructs that need review.
 
 If the official parser cannot read a malformed file, C transformations stop
 for that file. The comment-only official header can still be inserted safely
@@ -174,7 +203,8 @@ was left alone, and a concrete next step for cases such as:
 - project-wide identifier, macro, global, typedef, struct, enum, or union
   renames;
 - moving types/includes between files or changing build structure;
-- comments inside functions and semantic preprocessor errors;
+- comments at Norminette-rejected locations (unless explicitly removed with
+  `--remove-invalid-comments`) and semantic preprocessor errors;
 - missing, complex, conditional, repeat-inclusion, referenced, or ambiguous
   header guards;
 - complex declaration groups such as function pointers, attributes,
@@ -192,13 +222,15 @@ breaking it.
 ```
 
 The test suite covers official header shape, header guards, recursive and
-multi-target discovery, safe formatting, structured warnings, preview modes,
-JSON output, and second-run idempotency.
+multi-target discovery, safe C and Makefile formatting, structured warnings,
+preview modes, JSON output, and second-run idempotency.
 
 ## Scope
 
-The formatter handles `.c` and `.h`, matching the official Norminette command.
+The formatter handles `.c`, `.h`, and files named `Makefile` (case-insensitive).
+It leaves `README` files untouched and reports other file types found during a
+directory scan so generated artifacts can be reviewed.
 Symbolic links and paths passing through symbolic-link components are skipped,
 so recursive scans cannot escape unexpectedly into another project.
-Makefile rules and subjective rules marked `(*)` in the Norm v4.1 still require
-evaluation by a person.
+Makefile relinking, library orchestration, multibinary design, and subjective
+rules marked `(*)` in the Norm v4.1 still require evaluation by a person.

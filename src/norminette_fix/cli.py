@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from rich.markup import escape
 from rich.panel import Panel
 
 from . import __version__
-from .discovery import discover
+from .discovery import discover_with_warnings
 from .engine import EngineOptions, FixEngine
 from .header import identity_fits_header, identity_from_email, resolve_identity
 from .models import Identity
@@ -22,8 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="norminette-fix",
         description=(
-            "Recursively fix safe 42 Norm issues in .c/.h files and report "
-            "structural problems that require manual refactoring."
+            "Recursively fix safe 42 Norm issues in .c/.h files and Makefiles, "
+            "then report problems that require manual refactoring."
         ),
     )
     parser.add_argument(
@@ -31,8 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="PATH",
         help=(
-            "One or more C/header files or directories. Without arguments, "
-            "the current directory is scanned recursively."
+            "One or more C/header/Makefile paths or directories. Without "
+            "arguments, the current directory is scanned recursively."
         ),
     )
     mode = parser.add_mutually_exclusive_group()
@@ -98,6 +99,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=5.0,
         metavar="SECONDS",
         help="Per-file Norminette timeout (default: 5 seconds).",
+    )
+    parser.add_argument(
+        "--remove-invalid-comments",
+        action="store_true",
+        help=(
+            "Remove comments at exact locations rejected by Norminette; "
+            "without this flag they are only reported."
+        ),
     )
     parser.add_argument(
         "--version",
@@ -185,10 +194,11 @@ def _prompt_for_identity(
 
 
 def main(argv: list[str] | None = None) -> int:
+    started_at = time.perf_counter()
     parser = build_parser()
     args = parser.parse_args(argv)
     cwd = Path.cwd().absolute()
-    paths, discovery_failures = discover(
+    discovery = discover_with_warnings(
         args.paths,
         cwd=cwd,
         use_gitignore=args.use_gitignore,
@@ -211,9 +221,10 @@ def main(argv: list[str] | None = None) -> int:
             backup_root=args.backup_dir,
             max_passes=args.max_passes,
             norminette_timeout=args.timeout,
+            remove_invalid_comments=args.remove_invalid_comments,
         ),
     )
-    results = engine.process(paths)
+    results = engine.process(discovery.paths)
     reporter = Reporter(
         output_format=args.format,
         no_color=args.no_color or bool(os.environ.get("NO_COLOR")),
@@ -224,11 +235,13 @@ def main(argv: list[str] | None = None) -> int:
     reporter.render(
         results,
         identity=identity,
-        discovery_failures=discovery_failures,
+        discovery_failures=discovery.failures,
+        unexpected_files=discovery.unexpected_files,
         check_mode=not write,
+        duration_seconds=time.perf_counter() - started_at,
     )
 
-    if discovery_failures or any(result.failure for result in results):
+    if discovery.failures or any(result.failure for result in results):
         return 2
     if any(result.diagnostics_after for result in results):
         return 1

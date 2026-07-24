@@ -302,9 +302,13 @@ def _identifier_references(
     paths: set[Path],
     names: set[str],
 ) -> tuple[Counter[str], dict[Path, Counter[str]]] | None:
-    alternatives = b"|".join(
-        re.escape(name.encode("ascii"))
+    encoded_names = tuple(
+        name.encode("ascii")
         for name in sorted(names, key=lambda item: (-len(item), item))
+    )
+    alternatives = b"|".join(
+        re.escape(name)
+        for name in encoded_names
     )
     pattern = re.compile(rb"(?<![A-Za-z0-9_])(?:[-/][DU])?(" + alternatives + rb")(?![A-Za-z0-9_])")
     totals: Counter[str] = Counter()
@@ -334,6 +338,8 @@ def _identifier_references(
             code = _without_comments_and_literals(logical)
             if _has_token_paste_definition(code):
                 return None
+        if encoded_names and not any(name in logical for name in encoded_names):
+            continue
         counts = Counter(match.group(1).decode("ascii") for match in pattern.finditer(logical))
         if counts:
             by_file[path] = counts

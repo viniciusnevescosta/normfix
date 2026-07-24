@@ -99,6 +99,7 @@ def test_json_output_is_machine_readable(tmp_path: Path, monkeypatch, capsys) ->
     assert payload["identity"]["available"] is True
     assert payload["files"][0]["changed"] is True
     assert payload["summary"]["files"] == 1
+    assert payload["duration_seconds"] >= 0
 
 
 def test_missing_42_email_warns_and_does_not_invent_header(
@@ -215,3 +216,132 @@ def test_main_prompts_once_when_terminal_has_no_saved_email(
 
     assert exit_code == 0
     assert "By: student-a <student-a@student.42.fr>" in fixed
+
+
+def test_unexpected_project_files_are_warnings_only(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    source = tmp_path / "main.c"
+    source.write_text("int main(){return 0;}\n", encoding="utf-8")
+    (tmp_path / "Makefile").write_text(
+        "NAME = demo\n"
+        "SRC = main.c\n"
+        "OBJ = $(SRC:.c=.o)\n"
+        "all: $(NAME)\n"
+        "$(NAME): $(OBJ)\n"
+        "\t$(CC) $(OBJ) -o $(NAME)\n"
+        "clean:\n"
+        "\trm -f $(OBJ)\n"
+        "fclean: clean\n"
+        "\trm -f $(NAME)\n"
+        "re: fclean all\n"
+        ".PHONY: all clean fclean re\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text("# Demo\n", encoding="utf-8")
+    executable = tmp_path / "demo"
+    executable.write_bytes(b"binary")
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main([*IDENTITY_ARGS, "--no-backup", "--no-color"])
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Unexpected project files (not modified)" in output
+    assert "demo" in output
+    assert executable.read_bytes() == b"binary"
+    assert "Completed in " in output
+
+
+def test_invalid_comments_are_reported_by_default_and_removed_only_with_flag(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    source = tmp_path / "main.c"
+    source.write_text(
+        "int\tmain(void)\n{\n\t/* remove me */\n\treturn (0);\n}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    first_exit = main([*IDENTITY_ARGS, "--no-backup", "--no-color", str(source)])
+    first_output = capsys.readouterr().out
+    first_source = source.read_text(encoding="utf-8")
+
+    assert first_exit == 1
+    assert "WRONG_SCOPE_COMMENT" in first_output
+    assert "--remove-invalid-comments" in first_output
+    assert "/* remove me */" in first_source
+
+    second_exit = main(
+        [
+            *IDENTITY_ARGS,
+            "--no-backup",
+            "--no-color",
+            "--remove-invalid-comments",
+            str(source),
+        ]
+    )
+    second_output = capsys.readouterr().out
+    second_source = source.read_text(encoding="utf-8")
+
+    assert second_exit == 0
+    assert "/* remove me */" not in second_source
+    assert second_source.startswith("/* " + ("*" * 74) + " */")
+    assert "REMOVE_INVALID_COMMENT" not in second_output
+
+
+def test_comment_removal_flag_keeps_allowed_global_comments(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "main.c"
+    source.write_text(
+        "/* This global comment is allowed. */\nint\tmain(void)\n{\n\treturn (0);\n}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        [
+            *IDENTITY_ARGS,
+            "--no-backup",
+            "--no-color",
+            "--remove-invalid-comments",
+            str(source),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "/* This global comment is allowed. */" in source.read_text(encoding="utf-8")
+
+
+def test_json_reports_unexpected_files_and_total_duration(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    source = tmp_path / "main.c"
+    source.write_text("int\tmain(void)\n{\n\treturn (0);\n}\n", encoding="utf-8")
+    unexpected = tmp_path / "program.out"
+    unexpected.write_bytes(b"binary")
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        [
+            *IDENTITY_ARGS,
+            "--check",
+            "--format",
+            "json",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["unexpected_files"] == [str(unexpected)]
+    assert payload["summary"]["unexpected_files"] == 1
+    assert isinstance(payload["duration_seconds"], float)
+    assert payload["duration_seconds"] >= 0
