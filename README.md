@@ -69,28 +69,49 @@ order:
 
 1. `--login` and `--email`
 2. `NORMINETTE_FIX_LOGIN` and `NORMINETTE_FIX_EMAIL`
-3. Git `user.name` and a Git email only when it is a 42 student address
-4. the operating-system username and a derived student address
+3. `~/.config/norminette-fix/config.ini`
+4. the effective Git `user.email`, only when it is a 42 student address
+5. the `MAIL` environment variable used by the
+   [42 header plugin](https://github.com/42Paris/42header)
+6. known Vim/Neovim and VS Code/Cursor/VSCodium 42 Header settings
+
+The email is the source of truth: the login is taken from the part before `@`.
+The tool never constructs, guesses, truncates, or chooses between ambiguous
+student emails. If it cannot find one valid 42 address and the command is
+running in an interactive terminal, it asks once for the address. The entry
+must follow a 42 student-email pattern; Enter, `cancel`, `q`, Ctrl-C, or end of
+input skips the header while every other fix continues. JSON and non-interactive
+runs never prompt and report the missing header normally.
+
+Persistent configuration uses this format:
+
+```ini
+[header]
+login = your_login
+email = your_login@student.42.fr
+```
 
 For predictable metadata, configure it once in your shell:
 
 ```sh
 export NORMINETTE_FIX_LOGIN='your_login'
-export NORMINETTE_FIX_EMAIL='your_login@student.42sp.org'
+export NORMINETTE_FIX_EMAIL='your_login@student.42.fr'
 ```
 
 Or pass it for one run:
 
 ```sh
-norminette-fix --login your_login --email your_login@student.42sp.org
+norminette-fix --login your_login --email your_login@student.42.fr
 ```
 
 Valid existing headers keep their author and creation date. The filename and
 `Updated` line are refreshed only when another accepted edit changes the file,
 so a second run is idempotent.
 
-Header files also receive a filename-derived inclusion guard, for example
-`ft_string.h` becomes `FT_STRING_H`.
+Header inclusion guards are always reported for manual review when missing or
+incorrectly named. Creating or renaming one can change repeat-inclusion,
+X-macro, `#undef`, or project-wide conditional behavior, so a file-local tool
+cannot prove that edit safe.
 
 ## What is fixed automatically
 
@@ -109,10 +130,15 @@ sequence whenever possible:
 - lines over 80 columns wrapped at token-safe logical operators, binary
   operators, comparisons, or commas, with Norm-compliant continuation tabs;
 - nested preprocessor indentation and directive spacing;
-- official 42 headers and header inclusion guards.
+- official 42 headers.
 
 Every layout-only batch is checked against Norminette's lexer. If significant
 tokens would change unexpectedly, that batch is rejected.
+
+If the official parser cannot read a malformed file, C transformations stop
+for that file. The comment-only official header can still be inserted safely
+when a verified identity is available, and the parser problem is reported for
+manual repair.
 
 Original files are backed up outside the scanned project before writing:
 
@@ -140,6 +166,7 @@ was left alone, and a concrete next step for cases such as:
   renames;
 - moving types/includes between files or changing build structure;
 - comments inside functions and semantic preprocessor errors;
+- complex, conditional, repeat-inclusion, or incorrectly named header guards;
 - malformed C that the official parser cannot understand.
 
 This boundary is intentional: splitting a function or rewriting control flow
@@ -159,5 +186,7 @@ JSON output, and second-run idempotency.
 ## Scope
 
 The formatter handles `.c` and `.h`, matching the official Norminette command.
+Symbolic links and paths passing through symbolic-link components are skipped,
+so recursive scans cannot escape unexpectedly into another project.
 Makefile rules and subjective rules marked `(*)` in the Norm v4.1 still require
 evaluation by a person.

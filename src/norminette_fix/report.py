@@ -6,10 +6,12 @@ from collections import Counter
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from .header import identity_fits_header
 from .models import FileResult, Identity
 
 
@@ -49,6 +51,7 @@ class Reporter:
                     "email": identity.email,
                     "source": identity.source,
                     "inferred": identity.inferred,
+                    "available": identity.available,
                 },
                 "discovery_errors": discovery_failures,
                 "files": [result.to_dict() for result in results],
@@ -64,18 +67,36 @@ class Reporter:
                 border_style="cyan",
             )
         )
-        if identity.inferred:
+        if not identity.available:
+            self.console.print(
+                "[bold red]Official header not added:[/bold red] "
+                "no verified 42 student email is available."
+            )
+            self.console.print(
+                f"[dim]{escape(identity.source)}. Save it in "
+                "~/.config/norminette-fix/config.ini or pass --email.[/dim]"
+            )
+        elif identity.inferred:
             self.console.print(
                 "[yellow]Header identity was inferred[/yellow]: "
-                f"{identity.login} <{identity.email}> [dim]from {identity.source}[/dim]"
+                f"{escape(identity.login)} <{escape(identity.email)}> "
+                f"[dim]from {escape(identity.source)}[/dim]"
             )
             self.console.print(
                 "[dim]Use --login and --email (or NORMINETTE_FIX_LOGIN / "
                 "NORMINETTE_FIX_EMAIL) to override it.[/dim]"
             )
+        if not identity_fits_header(identity):
+            self.console.print(
+                "[bold red]Official header not added:[/bold red] the verified 42 email "
+                "does not fit the fixed 80-column template without truncation."
+            )
+            self.console.print(
+                "[dim]The tool will never shorten or falsify the author email.[/dim]"
+            )
         if discovery_failures:
             for failure in discovery_failures:
-                self.console.print(f"[bold red]Input error:[/bold red] {failure}")
+                self.console.print(f"[bold red]Input error:[/bold red] {escape(failure)}")
 
         table = Table(title="Files", show_lines=False)
         table.add_column("Status", no_wrap=True)
@@ -95,7 +116,7 @@ class Reporter:
                 status = "[green]CLEAN[/green]"
             table.add_row(
                 status,
-                self._display_path(result.path),
+                escape(self._display_path(result.path)),
                 str(sum(fix.count for fix in result.fixes)),
                 str(len(result.diagnostics_after)),
             )
@@ -115,7 +136,7 @@ class Reporter:
                 continue
             counts = Counter((fix.code, fix.description) for fix in result.fixes)
             table = Table(
-                title=f"Applied fixes - {self._display_path(result.path)}",
+                title=f"Applied fixes - {escape(self._display_path(result.path))}",
                 show_header=True,
             )
             table.add_column("Rule")
@@ -135,7 +156,7 @@ class Reporter:
         for result in results:
             if not result.diagnostics_after:
                 continue
-            self.console.print(f"\n[bold]{self._display_path(result.path)}[/bold]")
+            self.console.print(f"\n[bold]{escape(self._display_path(result.path))}[/bold]")
             for diagnostic in result.diagnostics_after:
                 location = f"L{diagnostic.line}:C{diagnostic.column}"
                 level_style = "yellow" if diagnostic.level == "Notice" else "bold yellow"
@@ -147,18 +168,21 @@ class Reporter:
                     )
                 )
                 if diagnostic.detail:
-                    self.console.print(f"  {'':<11}[white]{diagnostic.detail}[/white]")
+                    self.console.print(f"  {'':<11}[white]{escape(diagnostic.detail)}[/white]")
                 if diagnostic.suggestion:
-                    self.console.print(f"  {'':<11}[dim]Next:[/dim] {diagnostic.suggestion}")
+                    self.console.print(
+                        f"  {'':<11}[dim]Next:[/dim] {escape(diagnostic.suggestion)}"
+                    )
                 if diagnostic.source != "norminette":
-                    self.console.print(f"  {'':<11}[dim]Source: {diagnostic.source}[/dim]")
+                    self.console.print(f"  {'':<11}[dim]Source: {escape(diagnostic.source)}[/dim]")
 
     def _render_failures(self, results: list[FileResult]) -> None:
         for result in results:
             if result.failure:
                 self.console.print(
                     f"\n[bold red]FAILED[/bold red] "
-                    f"{self._display_path(result.path)}: {result.failure}"
+                    f"{escape(self._display_path(result.path))}: "
+                    f"{escape(result.failure)}"
                 )
 
     def _render_diffs(self, results: list[FileResult]) -> None:
@@ -205,7 +229,7 @@ class Reporter:
                 if len(backups) == 1
                 else str(Path(backups[0]).parents[1])
             )
-            self.console.print(f"[dim]Backups: {common}[/dim]")
+            self.console.print(f"[dim]Backups: {escape(str(common))}[/dim]")
 
     @staticmethod
     def _summary(results: list[FileResult]) -> dict[str, int]:

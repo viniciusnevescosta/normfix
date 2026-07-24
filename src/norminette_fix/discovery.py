@@ -19,6 +19,12 @@ def discover(
         if not path.is_absolute():
             path = cwd / path
         path = path.absolute()
+        symlink_component = _first_symlink_component(path)
+        if symlink_component is not None:
+            failures.append(
+                f"'{raw}' passes through symbolic link '{symlink_component}' and was skipped."
+            )
+            continue
         if not path.exists():
             failures.append(f"'{raw}' does not exist.")
             continue
@@ -56,6 +62,24 @@ def discover(
         paths, ignore_failures = _remove_gitignored(paths)
         failures.extend(ignore_failures)
     return paths, failures
+
+
+def _first_symlink_component(path: Path) -> Path | None:
+    absolute = path.absolute()
+    parts = absolute.parts
+    if not parts:
+        return None
+    current = Path(parts[0])
+    for part in parts[1:]:
+        current /= part
+        if current.is_symlink():
+            # macOS and some Unix layouts expose system roots such as /var,
+            # /tmp or /home through a root-level compatibility symlink. Trust
+            # that filesystem prefix, but refuse any symlink below it.
+            if current.parent == Path(current.anchor):
+                continue
+            return current
+    return None
 
 
 def _remove_gitignored(paths: list[Path]) -> tuple[list[Path], list[str]]:

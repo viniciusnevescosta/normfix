@@ -3,12 +3,18 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
+
+from rich.console import Console
+from rich.markup import escape
+from rich.panel import Panel
 
 from . import __version__
 from .discovery import discover
 from .engine import EngineOptions, FixEngine
-from .header import resolve_identity
+from .header import identity_fits_header, identity_from_email, resolve_identity
+from .models import Identity
 from .report import Reporter
 
 
@@ -47,11 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--login",
-        help="42 login used when inserting/updating official headers.",
+        help="42 login; when provided, it must match the student email.",
     )
     parser.add_argument(
         "--email",
-        help="Email used in the official 42 header.",
+        help="42 student email used in the official header.",
     )
     parser.add_argument(
         "--no-backup",
@@ -83,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-passes",
         type=_positive_int,
-        default=30,
+        default=100,
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
@@ -115,6 +121,69 @@ def _positive_float(value: str) -> float:
     return number
 
 
+def _prompt_for_identity(
+    *,
+    requested_login: str | None,
+    reader: Callable[[], str] | None = None,
+    console: Console | None = None,
+) -> Identity:
+    reader = reader or input
+    console = console or Console(stderr=True, highlight=False)
+    console.print(
+        Panel.fit(
+            "[bold yellow]No verified 42 student email was found.[/bold yellow]\n"
+            "Enter it to create the official header, or press Enter to skip.\n"
+            "[dim]You can also type cancel/q or press Ctrl-C at any time.[/dim]",
+            title="42 header identity",
+            border_style="yellow",
+        )
+    )
+    while True:
+        console.print("[bold]42 student email:[/bold] ", end="")
+        try:
+            value = reader().strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[yellow]Header email entry cancelled.[/yellow]")
+            return Identity(
+                login="",
+                email="",
+                source="header email entry was cancelled",
+                inferred_login=True,
+                inferred_email=True,
+            )
+        if not value or value.casefold() in {"cancel", "q", "quit", ":q"}:
+            console.print("[yellow]Header email entry cancelled.[/yellow]")
+            return Identity(
+                login="",
+                email="",
+                source="header email entry was cancelled",
+                inferred_login=True,
+                inferred_email=True,
+            )
+        identity = identity_from_email(
+            value,
+            login=requested_login,
+            source="interactive terminal",
+        )
+        if not identity.available:
+            console.print(
+                "[red]Invalid identity.[/red] "
+                "Use your 42 student address, for example "
+                "login@student.42.fr."
+            )
+            if "does not match" in identity.source:
+                console.print(f"[dim]{escape(identity.source)}.[/dim]")
+            continue
+        if not identity_fits_header(identity):
+            console.print(
+                "[red]That address cannot fit the official 80-column header "
+                "without truncation.[/red]"
+            )
+            continue
+        console.print(f"[green]Using {identity.login} <{identity.email}> for this run.[/green]")
+        return identity
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -124,7 +193,15 @@ def main(argv: list[str] | None = None) -> int:
         cwd=cwd,
         use_gitignore=args.use_gitignore,
     )
-    identity = resolve_identity(login=args.login, email=args.email, cwd=cwd)
+    identity = resolve_identity(
+        login=args.login,
+        email=args.email,
+        cwd=cwd,
+    )
+    if not identity.available and args.format == "human" and sys.stdin.isatty():
+        identity = _prompt_for_identity(
+            requested_login=args.login or os.environ.get("NORMINETTE_FIX_LOGIN"),
+        )
     write = not (args.check or args.diff)
     engine = FixEngine(
         identity=identity,

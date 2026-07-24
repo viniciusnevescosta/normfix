@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from .header import expected_guard, header_guard_matches, header_span
 from .models import Diagnostic, Highlight
 from .source import masked_source, visual_width
 
@@ -236,6 +237,22 @@ GUIDANCE = {
     "HEADER_GUARD_FILENAME": (
         "Rename this header so its uppercase filename can form a valid C identifier guard."
     ),
+    "HEADER_PROT_ALL": (
+        "Add a filename-derived inclusion guard only after confirming this is not a "
+        "repeat-inclusion or X-macro header."
+    ),
+    "HEADER_PROT_ALL_AF": (
+        "Place the entire interface inside one filename-derived guard after checking "
+        "that repeated inclusion is not intentional."
+    ),
+    "HEADER_PROT_NAME": (
+        "Rename the guard and every project-wide reference together; changing only "
+        "this file can alter conditional compilation."
+    ),
+    "HEADER_PROTECTION_REVIEW": (
+        "Add or rename the filename-derived guard only after checking all repeat "
+        "includes, X-macros, #undef uses and project-wide macro references."
+    ),
     "FILE_NAME_NORM": "Rename the file to lowercase snake_case and update build references.",
     "TRAILING_SPACE_AFTER_BACKSLASH": (
         "Remove or redesign the line splice manually; blindly stripping this whitespace "
@@ -289,17 +306,30 @@ def supplemental_diagnostics(path: Path, source: str) -> list[Diagnostic]:
                 source="Norm v4.1 manual",
             )
         )
-    if path.suffix == ".h" and path.name[0].isdigit():
-        diagnostics.append(
-            Diagnostic(
-                code="HEADER_GUARD_FILENAME",
-                message="A header beginning with a digit cannot form the required guard",
-                level="Error",
-                path=path,
-                highlights=(Highlight(1, 1, len(path.name)),),
-                source="norminette-fix safety check",
+    if path.suffix == ".h":
+        guard = expected_guard(path.name)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", guard):
+            diagnostics.append(
+                Diagnostic(
+                    code="HEADER_GUARD_FILENAME",
+                    message="This filename cannot form a valid C inclusion guard",
+                    level="Error",
+                    path=path,
+                    highlights=(Highlight(1, 1, len(path.name)),),
+                    source="norminette-fix safety check",
+                )
             )
-        )
+        elif not header_guard_matches(source, path.name):
+            diagnostics.append(
+                Diagnostic(
+                    code="HEADER_PROTECTION_REVIEW",
+                    message=(f"The header is not fully protected by the expected {guard} guard"),
+                    level="Error",
+                    path=path,
+                    highlights=(Highlight(13 if header_span(source) else 1, 1),),
+                    source="norminette-fix safety check",
+                )
+            )
     for line_number, line in enumerate(source.splitlines(), start=1):
         stripped = line.rstrip(" \t")
         if stripped.endswith("\\") and stripped != line:

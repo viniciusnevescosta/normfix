@@ -73,17 +73,16 @@ def test_structural_issue_gets_actionable_english_warning(tmp_path: Path) -> Non
     assert "static helper" in warning.suggestion
 
 
-def test_header_file_receives_guard_and_header(tmp_path: Path) -> None:
+def test_header_file_receives_header_and_manual_guard_warning(tmp_path: Path) -> None:
     path = tmp_path / "ft_demo.h"
     path.write_text("int ft_demo(void);\n", encoding="utf-8")
 
     result = engine().process_file(path)
 
     assert result.fixed is not None
-    assert "#ifndef FT_DEMO_H" in result.fixed
-    assert "# define FT_DEMO_H" in result.fixed
-    assert result.fixed.rstrip().endswith("#endif")
-    assert result.diagnostics_after == []
+    assert result.fixed.startswith("/* " + ("*" * 74))
+    assert "#ifndef FT_DEMO_H" not in result.fixed
+    assert any(diagnostic.code.startswith("HEADER_PROT") for diagnostic in result.diagnostics_after)
 
 
 def test_pointer_spacing_and_literal_contents_are_preserved(tmp_path: Path) -> None:
@@ -118,12 +117,12 @@ def test_nested_preprocessor_spacing_is_fixed(tmp_path: Path) -> None:
     result = engine().process_file(path)
 
     assert result.fixed is not None
-    assert "#ifndef CONFIG_H" in result.fixed
-    assert "# define CONFIG_H" in result.fixed
+    assert "#ifndef wrong" in result.fixed
+    assert "# define wrong" in result.fixed
     assert "# if FEATURE" in result.fixed
     assert "#  define VALUE 1" in result.fixed
     assert "# endif" in result.fixed
-    assert result.diagnostics_after == []
+    assert any(diagnostic.code.startswith("HEADER_PROT") for diagnostic in result.diagnostics_after)
 
 
 def test_return_parser_ignores_semicolons_and_urls_inside_strings(
@@ -170,12 +169,27 @@ def test_internal_feature_condition_is_wrapped_not_renamed(tmp_path: Path) -> No
     result = engine().process_file(path)
 
     assert result.fixed is not None
-    assert "#ifndef CONDITIONAL_H" in result.fixed
-    assert "# define CONDITIONAL_H" in result.fixed
-    assert "# ifndef FEATURE_ENABLED" in result.fixed
-    assert "#  define OPTIONAL_API 1" in result.fixed
+    assert "#ifndef CONDITIONAL_H" not in result.fixed
+    assert "#ifndef FEATURE_ENABLED" in result.fixed
+    assert "# define OPTIONAL_API 1" in result.fixed
     assert "FEATURE_ENABLED" in result.fixed
-    assert result.diagnostics_after == []
+    assert any(diagnostic.code.startswith("HEADER_PROT") for diagnostic in result.diagnostics_after)
+
+
+def test_repeat_inclusion_header_is_never_auto_guarded(tmp_path: Path) -> None:
+    path = tmp_path / "items.h"
+    body = "#ifdef WANT_INT\nint\titem;\n#endif\n#ifdef WANT_CHAR\nchar\titem_name;\n#endif\n"
+    path.write_text(body, encoding="utf-8")
+
+    result = engine().process_file(path)
+
+    assert result.fixed is not None
+    assert "#ifndef ITEMS_H" not in result.fixed
+    assert "#ifdef WANT_INT" in result.fixed
+    assert "int\titem;" in result.fixed
+    assert "#ifdef WANT_CHAR" in result.fixed
+    assert "char\titem_name;" in result.fixed
+    assert any(diagnostic.code.startswith("HEADER_PROT") for diagnostic in result.diagnostics_after)
 
 
 def test_numeric_header_name_is_not_given_an_invalid_guard(tmp_path: Path) -> None:
@@ -239,6 +253,167 @@ def test_long_condition_is_wrapped_at_logical_operators(tmp_path: Path) -> None:
     assert "\n\t\t&& value ==" in result.fixed
     assert all(len(line.expandtabs(4)) <= 80 for line in result.fixed.splitlines())
     assert result.diagnostics_after == []
+
+
+def test_very_long_condition_uses_stable_continuation_tabs(tmp_path: Path) -> None:
+    path = tmp_path / "condition.c"
+    terms = " && ".join(f"value != {number}" for number in range(30))
+    path.write_text(
+        f"int\tmatches(int value)\n{{\n\tif ({terms})\n\t\treturn (1);\n\treturn (0);\n}}\n",
+        encoding="utf-8",
+    )
+
+    result = engine().process_file(path)
+
+    assert result.fixed is not None
+    assert all(len(line.expandtabs(4)) <= 80 for line in result.fixed.splitlines())
+    continuation_lines = [
+        line for line in result.fixed.splitlines() if line.lstrip().startswith("&&")
+    ]
+    assert len(continuation_lines) > 1
+    assert all(line.startswith("\t\t&&") for line in continuation_lines)
+    assert result.diagnostics_after == []
+
+
+def test_very_long_call_keeps_comma_continuation_tabs_stable(tmp_path: Path) -> None:
+    path = tmp_path / "call.c"
+    arguments = ", ".join(f"value + {number * 100000}" for number in range(16))
+    path.write_text(
+        f"int\tcall_many(int value)\n{{\n\treturn (combine({arguments}));\n}}\n",
+        encoding="utf-8",
+    )
+
+    result = engine().process_file(path)
+
+    assert result.fixed is not None
+    assert all(len(line.expandtabs(4)) <= 80 for line in result.fixed.splitlines())
+    continued_arguments = [
+        line for line in result.fixed.splitlines() if line.lstrip().startswith("value +")
+    ]
+    assert len(continued_arguments) > 1
+    assert all(line.startswith("\t\t\tvalue +") for line in continued_arguments)
+    assert result.diagnostics_after == []
+
+
+def test_parenthesized_arithmetic_prefers_top_level_breaks(tmp_path: Path) -> None:
+    path = tmp_path / "arithmetic.c"
+    expression = " ^ ".join(f"(value + {number})" for number in range(18))
+    path.write_text(
+        "int\tcalculate(int value)\n"
+        "{\n"
+        "\tint\tresult;\n"
+        "\n"
+        f"\tresult = {expression};\n"
+        "\treturn (result);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = engine().process_file(path)
+
+    assert result.fixed is not None
+    assert all(len(line.expandtabs(4)) <= 80 for line in result.fixed.splitlines())
+    assert result.diagnostics_after == []
+
+
+def test_multiplication_and_float_exponents_wrap_at_real_operators(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "numbers.c"
+    multiplication = " * ".join(f"(value + {number})" for number in range(16))
+    exponents = " + ".join(f"1.0e+{number}" for number in range(3, 18))
+    path.write_text(
+        "float\tnumbers(int value)\n"
+        "{\n"
+        "\tfloat\tresult;\n"
+        "\n"
+        f"\tresult = {multiplication};\n"
+        f"\tresult += {exponents};\n"
+        "\treturn (result);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = engine().process_file(path)
+
+    assert result.fixed is not None
+    assert "1.0e+3" in result.fixed
+    assert all(len(line.expandtabs(4)) <= 80 for line in result.fixed.splitlines())
+    assert result.diagnostics_after == []
+
+
+def test_hex_float_exponent_sign_is_never_spaced_as_an_operator(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "hex_float.c"
+    path.write_text(
+        "double\thex_float(void)\n{\n\treturn (0x.8p-2 + 0x10.p+1);\n}\n",
+        encoding="utf-8",
+    )
+
+    result = engine().process_file(path)
+
+    assert result.fixed is not None
+    assert "0x.8p-2" in result.fixed
+    assert "0x10.p+1" in result.fixed
+    assert "0x.8p -2" not in result.fixed
+    assert "0x10.p +1" not in result.fixed
+
+
+def test_multiline_macro_continuation_is_never_line_wrapped(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "macro.c"
+    continuation = "\t" + " + ".join("value" for _ in range(24))
+    macro = "#define SUM(value) value + \\   \n" + continuation + "\n"
+    path.write_text(
+        macro + "\nint\tmain(void)\n{\n\treturn (SUM(1));\n}\n",
+        encoding="utf-8",
+    )
+
+    result = engine().process_file(path)
+
+    assert result.fixed is not None
+    assert macro in result.fixed
+    assert any(diagnostic.code == "LINE_TOO_LONG" for diagnostic in result.diagnostics_after)
+
+
+def test_unary_statement_is_not_mistaken_for_continuation(tmp_path: Path) -> None:
+    path = tmp_path / "unary.c"
+    path.write_text(
+        "void\tset_value(int *value)\n{\n*value = 1;\n}\n",
+        encoding="utf-8",
+    )
+
+    result = engine().process_file(path)
+
+    assert result.fixed is not None
+    assert "\n\t*value = 1;\n" in result.fixed
+    assert result.diagnostics_after == []
+
+
+def test_parser_failure_still_receives_safe_official_header(tmp_path: Path) -> None:
+    class FailingAdapter:
+        def lint(self, path: Path, source: str):
+            return [], "synthetic parser failure"
+
+    path = tmp_path / "broken.c"
+    broken_body = "\n\nint broken(  \n\n\n"
+    path.write_text(broken_body, encoding="utf-8")
+    fixer = FixEngine(
+        identity=IDENTITY,
+        options=EngineOptions(write=True, backup=False),
+        adapter=FailingAdapter(),
+    )
+
+    result = fixer.process_file(path)
+
+    assert result.wrote
+    assert result.fixed is not None
+    assert result.fixed.startswith("/* " + ("*" * 74))
+    assert result.fixed.endswith(broken_body)
+    assert path.read_text(encoding="utf-8") == result.fixed
+    assert any(item.code == "PARSER_FAILURE" for item in result.diagnostics_after)
 
 
 def test_void_return_spacing_is_idempotent(tmp_path: Path) -> None:

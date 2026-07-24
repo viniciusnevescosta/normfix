@@ -33,6 +33,23 @@ def _line_context(source: str, diagnostic: Diagnostic) -> tuple[str, int, int, i
     return line, offsets[diagnostic.line - 1], index, diagnostic.line
 
 
+def _multiline_preprocessor_lines(source: str) -> set[int]:
+    blocked: set[int] = set()
+    active = False
+    for line_number, line in enumerate(source.splitlines(), start=1):
+        starts_directive = line.lstrip(" \t").startswith("#")
+        # GCC/Clang accept spaces after a splice backslash as an extension,
+        # and normalize_hygiene deliberately preserves that sensitive form.
+        continues = line.rstrip(" \t").endswith("\\")
+        if active:
+            blocked.add(line_number)
+            active = continues
+        elif starts_directive and continues:
+            blocked.add(line_number)
+            active = True
+    return blocked
+
+
 def format_preprocessors(source: str) -> tuple[str, list[Edit]]:
     lines = source.splitlines(keepends=True)
     mask = protected_mask(source)
@@ -540,24 +557,64 @@ def fix_indentation(source: str, diagnostics: list[Diagnostic]) -> tuple[str, li
 
 
 def _expected_indents(source: str) -> dict[int, int]:
+    return _indentation_model(source)[0]
+
+
+def _indentation_model(
+    source: str,
+) -> tuple[
+    dict[int, int],
+    set[int],
+    dict[int, int],
+    dict[int, int],
+    dict[int, int],
+]:
     lines, offsets = _lines(source)
     mask = protected_mask(source)
     expected: dict[int, int] = {}
+    continuation_lines: set[int] = set()
+    brace_indents: dict[int, int] = {}
+    delimiter_indents: dict[int, int] = {}
+    continuation_extras: dict[int, int] = {}
     depth = 0
+    delimiter_depth = 0
+    continued = False
     for line_number, line in enumerate(lines, start=1):
         base = offsets[line_number - 1]
         visible = "".join(" " if mask[base + index] else char for index, char in enumerate(line))
         stripped = visible.lstrip(" \t")
         line_depth = max(0, depth - (1 if stripped.startswith("}") else 0))
-        expected[line_number] = line_depth
+        brace_indents[line_number] = line_depth
+        delimiter_indents[line_number] = delimiter_depth
+        continuation_extra = 1 if delimiter_depth == 0 and continued else 0
+        if stripped.startswith("{"):
+            continuation_extra = 0
+        continuation_extras[line_number] = continuation_extra
+        is_continuation = delimiter_depth > 0 or continuation_extra > 0
+        expected[line_number] = line_depth + delimiter_depth + continuation_extra
+        if is_continuation:
+            continuation_lines.add(line_number)
         if stripped.startswith("#"):
+            continued = False
             continue
         for char in visible:
             if char == "{":
                 depth += 1
             elif char == "}":
                 depth = max(0, depth - 1)
-    return expected
+            elif char in "([":
+                delimiter_depth += 1
+            elif char in ")]":
+                delimiter_depth = max(0, delimiter_depth - 1)
+        code = stripped.rstrip()
+        continued = bool(code and not re.search(r"(?:;|\{|\}|:)\s*$", code))
+    return (
+        expected,
+        continuation_lines,
+        brace_indents,
+        delimiter_indents,
+        continuation_extras,
+    )
 
 
 def fix_token_spacing(source: str, diagnostics: list[Diagnostic]) -> tuple[str, list[Edit]]:
@@ -588,6 +645,11 @@ def fix_token_spacing(source: str, diagnostics: list[Diagnostic]) -> tuple[str, 
             if span is None:
                 continue
             start, end = span
+            if line[start:end] in {"+", "-"} and _inside_numeric_exponent(
+                line,
+                start,
+            ):
+                continue
             if code in {"SPC_BFR_OPERATOR", "SPC_BFR_POINTER"}:
                 ws_start, _ = whitespace_before(line, start)
                 if ws_start == start:
@@ -860,6 +922,13 @@ def fix_long_lines(source: str, diagnostics: list[Diagnostic]) -> tuple[str, lis
     }
     lines, offsets = _lines(source)
     mask = protected_mask(source)
+    (
+        expected_indents,
+        continuation_lines,
+        brace_indents,
+        delimiter_indents,
+        continuation_extras,
+    ) = _indentation_model(source)
     edits: list[Edit] = []
     for line_number in sorted(target_lines):
         if not 1 <= line_number <= len(lines):
@@ -870,22 +939,36 @@ def fix_long_lines(source: str, diagnostics: list[Diagnostic]) -> tuple[str, lis
         base = offsets[line_number - 1]
         indent_match = re.match(r"[ \t]*", line)
         assert indent_match is not None
-        continuation = indent_match.group(0) + "\t"
-        candidates: list[tuple[int, int, int, int]] = []
+        candidates: list[tuple[int, int, int, int, int]] = []
 
-        for match in re.finditer(r"&&|\|\||==|!=|<=|>=|<<|>>|[+\-/%<>|^&=]", line):
+        operator_pattern = (
+            r"&&|\|\||==|!=|<=|>=|<<=|>>=|<<|>>|->|\+=|-=|\*=|/=|%=|&=|"
+            r"\|=|\^=|\+\+|--|[+\-*/%<>|^&=]"
+        )
+        for match in re.finditer(operator_pattern, line):
             start, end = match.span()
             if mask[base + start]:
                 continue
             operator = match.group(0)
-            if operator in {"+", "-", "&"} and _looks_unary(line, start):
+            if operator in {"++", "--"}:
+                continue
+            if operator in {"+", "-", "*", "&"} and _looks_unary(line, start):
+                continue
+            if operator in {"+", "-"} and _inside_numeric_exponent(line, start):
                 continue
             whitespace_start, _ = whitespace_before(line, start)
             prefix_width = visual_width(line[:whitespace_start].rstrip())
             if not 12 <= prefix_width <= 80:
                 continue
             priority = 0 if operator in {"&&", "||"} else 2
-            candidates.append((priority, prefix_width, whitespace_start, start))
+            nesting = _delimiter_depth_on_line(
+                line,
+                whitespace_start,
+                initial=delimiter_indents.get(line_number, 0),
+                mask=mask,
+                base=base,
+            )
+            candidates.append((priority, nesting, prefix_width, whitespace_start, start))
 
         for index, char in enumerate(line):
             if char != "," or mask[base + index]:
@@ -893,15 +976,46 @@ def fix_long_lines(source: str, diagnostics: list[Diagnostic]) -> tuple[str, lis
             after_start, after_end = whitespace_after(line, index + 1)
             prefix_width = visual_width(line[: index + 1])
             if 12 <= prefix_width <= 80:
-                candidates.append((1, prefix_width, after_start, after_end))
+                nesting = _delimiter_depth_on_line(
+                    line,
+                    index,
+                    initial=delimiter_indents.get(line_number, 0),
+                    mask=mask,
+                    base=base,
+                )
+                candidates.append((1, nesting, prefix_width, after_start, after_end))
 
         if not candidates:
             continue
         best_priority = min(candidate[0] for candidate in candidates)
-        _, _, start, end = max(
-            (candidate for candidate in candidates if candidate[0] == best_priority),
-            key=lambda candidate: candidate[1],
+        best_nesting = min(
+            candidate[1] for candidate in candidates if candidate[0] == best_priority
         )
+        _, _, _, start, end = max(
+            (candidate for candidate in candidates if candidate[0] == best_priority),
+            key=lambda candidate: (
+                candidate[1] == best_nesting,
+                candidate[2] if candidate[1] == best_nesting else -1,
+            ),
+        )
+        delimiter_depth = _delimiter_depth_on_line(
+            line,
+            start,
+            initial=delimiter_indents.get(line_number, 0),
+            mask=mask,
+            base=base,
+        )
+        continuation_depth = delimiter_depth + continuation_extras.get(line_number, 0)
+        continuation_level = brace_indents.get(line_number, 0) + max(
+            1,
+            continuation_depth,
+        )
+        if line_number in continuation_lines:
+            continuation_level = max(
+                continuation_level,
+                expected_indents.get(line_number, 0),
+            )
+        continuation = "\t" * continuation_level
         edits.append(
             Edit(
                 base + start,
@@ -913,6 +1027,49 @@ def fix_long_lines(source: str, diagnostics: list[Diagnostic]) -> tuple[str, lis
             )
         )
     return apply_edits(source, edits)
+
+
+def _delimiter_depth_on_line(
+    line: str,
+    end: int,
+    *,
+    initial: int,
+    mask: list[bool],
+    base: int,
+) -> int:
+    depth = initial
+    for index, char in enumerate(line[:end]):
+        if mask[base + index]:
+            continue
+        if char in "([":
+            depth += 1
+        elif char in ")]":
+            depth = max(0, depth - 1)
+    return depth
+
+
+def _inside_numeric_exponent(line: str, operator_start: int) -> bool:
+    if operator_start < 2 or operator_start + 1 >= len(line):
+        return False
+    marker = line[operator_start - 1]
+    if marker not in "eEpP" or not line[operator_start + 1].isdigit():
+        return False
+    allowed = "0123456789." if marker in "eE" else "0123456789abcdefABCDEFxX."
+    start = operator_start - 2
+    while start >= 0 and line[start] in allowed:
+        start -= 1
+    literal = line[start + 1 : operator_start - 1]
+    if start >= 0 and (line[start].isalnum() or line[start] == "_"):
+        return False
+    if marker in "eE":
+        return re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)", literal) is not None
+    return (
+        re.fullmatch(
+            r"0[xX](?:[0-9A-Fa-f]+(?:\.[0-9A-Fa-f]*)?|\.[0-9A-Fa-f]+)",
+            literal,
+        )
+        is not None
+    )
 
 
 def _looks_unary(line: str, operator_start: int) -> bool:
@@ -990,11 +1147,13 @@ def choose_phase(
     source: str,
     diagnostics: list[Diagnostic],
 ) -> tuple[str, list[Edit], bool]:
-    codes = {diagnostic.code for diagnostic in diagnostics}
+    blocked_lines = _multiline_preprocessor_lines(source)
+    eligible = [diagnostic for diagnostic in diagnostics if diagnostic.line not in blocked_lines]
+    codes = {diagnostic.code for diagnostic in eligible}
     for phase_codes, handler, preserves_tokens in PHASES:
         if not codes.intersection(phase_codes):
             continue
-        updated, edits = handler(source, diagnostics)
+        updated, edits = handler(source, eligible)
         if edits and updated != source:
             return updated, edits, preserves_tokens
     return source, [], True

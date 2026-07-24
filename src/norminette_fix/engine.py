@@ -28,7 +28,7 @@ class EngineOptions:
     write: bool = True
     backup: bool = True
     backup_root: Path | None = None
-    max_passes: int = 30
+    max_passes: int = 100
     norminette_timeout: float = 5.0
 
 
@@ -121,12 +121,46 @@ class FixEngine:
         if lint_failure:
             failure_diagnostic = self._failure_diagnostic(path, lint_failure)
             result.diagnostics_before = [failure_diagnostic]
-            result.fixed = original
+            current = original
+            if current.startswith("\ufeff"):
+                current = current[1:]
+                result.fixes.append(
+                    Fix(
+                        "REMOVE_BOM",
+                        "removed the UTF-8 byte-order mark before the official header",
+                        1,
+                    )
+                )
+            current, header_changed, header_inserted = ensure_header(
+                current,
+                path.name,
+                self.identity,
+            )
+            if header_changed:
+                result.fixes.append(
+                    Fix(
+                        "INVALID_HEADER",
+                        "inserted or repaired the official 42 header",
+                        1,
+                    )
+                )
+            if not header_inserted and not header_filename_matches(current, path.name):
+                current, updated = update_header(current, path.name, self.identity)
+                if updated:
+                    result.fixes.append(
+                        Fix(
+                            "UPDATE_HEADER",
+                            "updated the official header filename and modification metadata",
+                            9,
+                        )
+                    )
+            result.fixed = current
             result.diagnostics_after = enrich_diagnostics(
-                [failure_diagnostic, *supplemental_diagnostics(path, original)],
-                original,
+                [failure_diagnostic, *supplemental_diagnostics(path, current)],
+                current,
                 path,
             )
+            self._write_if_changed(result, path, original_bytes, current)
             return result
 
         current = original
@@ -235,21 +269,31 @@ class FixEngine:
         after.extend(supplemental_diagnostics(path, current))
         result.diagnostics_after = enrich_diagnostics(after, current, path)
 
-        if self.options.write and result.changed:
-            try:
-                if path.read_bytes() != original_bytes:
-                    result.failure = (
-                        "The file changed in another program while it was being fixed; "
-                        "no write was performed."
-                    )
-                    return result
-                if self.backups:
-                    result.backup = self.backups.save(path, original_bytes)
-                self._atomic_write(path, current)
-                result.wrote = True
-            except OSError as exc:
-                result.failure = f"Could not safely write the file: {exc}"
+        self._write_if_changed(result, path, original_bytes, current)
         return result
+
+    def _write_if_changed(
+        self,
+        result: FileResult,
+        path: Path,
+        original_bytes: bytes,
+        source: str,
+    ) -> None:
+        if not self.options.write or not result.changed:
+            return
+        try:
+            if path.read_bytes() != original_bytes:
+                result.failure = (
+                    "The file changed in another program while it was being fixed; "
+                    "no write was performed."
+                )
+                return
+            if self.backups:
+                result.backup = self.backups.save(path, original_bytes)
+            self._atomic_write(path, source)
+            result.wrote = True
+        except OSError as exc:
+            result.failure = f"Could not safely write the file: {exc}"
 
     def _same_tokens(self, path: Path, before: str, after: str) -> bool:
         try:

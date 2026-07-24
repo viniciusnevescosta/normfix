@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import getpass
+import configparser
 import os
 import re
 import subprocess
@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .models import Identity
+from .source import masked_source
 
 HEADER_EDGE = "/* " + ("*" * 74) + " */"
 HEADER_SUFFIXES = {
@@ -27,8 +28,9 @@ def _git_config(key: str, cwd: Path) -> str | None:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             check=False,
+            timeout=2,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
     value = result.stdout.strip()
     return value or None
@@ -42,44 +44,283 @@ def resolve_identity(
 ) -> Identity:
     env_login = os.environ.get("NORMINETTE_FIX_LOGIN")
     env_email = os.environ.get("NORMINETTE_FIX_EMAIL")
-    git_name = _git_config("user.name", cwd)
+    config_login, config_email = _configured_identity()
     git_email = _git_config("user.email", cwd)
 
-    inferred_login = login is None and env_login is None
-    inferred_email = email is None and env_email is None
-    chosen_login = login or env_login
-    source_parts: list[str] = []
-    if login or email:
-        source_parts.append("command line")
-    if env_login or env_email:
-        source_parts.append("environment")
-    if chosen_login is None and git_name:
-        compact = re.sub(r"[^A-Za-z0-9_-]", "", git_name)
-        chosen_login = compact or None
-        source_parts.append("Git config")
-    if chosen_login is None:
-        chosen_login = getpass.getuser()
-        source_parts.append("system user")
-
-    chosen_email = email or env_email
-    if (
-        chosen_email is None
-        and git_email
-        and ("@student." in git_email or git_email.endswith("@42.fr"))
-    ):
-        chosen_email = git_email
-        source_parts.append("Git config")
-    if chosen_email is None:
-        chosen_email = f"{chosen_login}@student.42sp.org"
-        source_parts.append("derived student address")
-
-    return Identity(
-        login=chosen_login,
-        email=chosen_email,
-        source=", ".join(dict.fromkeys(source_parts)) or "defaults",
-        inferred_login=inferred_login,
-        inferred_email=inferred_email,
+    explicit_emails = (
+        (email, login, "command line"),
+        (env_email, login or env_login, "environment"),
+        (config_email, login or env_login or config_login, "user config"),
     )
+    for configured_email, matching_login, source in explicit_emails:
+        if configured_email is None:
+            continue
+        return _identity_from_email(
+            configured_email,
+            requested_login=matching_login,
+            source=source,
+            inferred=False,
+        )
+
+    requested_login = login or env_login or config_login
+    rejected_sources: list[str] = []
+    if git_email and _canonical_42_email(git_email):
+        git_identity = _identity_from_email(
+            git_email,
+            requested_login=requested_login,
+            source="Git config",
+            inferred=True,
+        )
+        if git_identity.available:
+            return git_identity
+        rejected_sources.append(git_identity.source)
+
+    mail_environment = os.environ.get("MAIL")
+    if mail_environment and _canonical_42_email(mail_environment):
+        mail_identity = _identity_from_email(
+            mail_environment,
+            requested_login=requested_login,
+            source="MAIL environment variable",
+            inferred=True,
+        )
+        if mail_identity.available:
+            return mail_identity
+        rejected_sources.append(mail_identity.source)
+
+    candidates = _saved_editor_emails()
+    selected = _select_saved_email(candidates, requested_login=requested_login)
+    if selected is None:
+        if candidates:
+            reason = (
+                "saved editor settings contain multiple 42 student emails, but "
+                "none could be matched safely to the configured login"
+            )
+        elif rejected_sources:
+            reason = "; ".join(rejected_sources)
+        else:
+            reason = (
+                "no 42 student email was found in the command settings, "
+                "environment, Git, Vim/Neovim, or VS Code/Cursor settings"
+            )
+        return Identity(
+            login="",
+            email="",
+            source=reason,
+            inferred_login=True,
+            inferred_email=True,
+        )
+
+    sources = ", ".join(sorted(candidates[selected]))
+    return _identity_from_email(
+        selected,
+        requested_login=requested_login,
+        source=sources,
+        inferred=True,
+    )
+
+
+def _identity_from_email(
+    email: str,
+    *,
+    requested_login: str | None,
+    source: str,
+    inferred: bool,
+) -> Identity:
+    canonical = _canonical_42_email(email)
+    if canonical is None:
+        return Identity(
+            login="",
+            email="",
+            source=f"{source} does not contain a valid 42 student email",
+            inferred_login=True,
+            inferred_email=True,
+        )
+    email_login = canonical.split("@", 1)[0]
+    if requested_login and requested_login.casefold() != email_login.casefold():
+        return Identity(
+            login="",
+            email="",
+            source=(
+                f"{source} contains {canonical}, which does not match the "
+                f"configured login {requested_login}"
+            ),
+            inferred_login=True,
+            inferred_email=True,
+        )
+    return Identity(
+        login=email_login,
+        email=canonical,
+        source=source,
+        inferred_login=inferred and requested_login is None,
+        inferred_email=inferred,
+    )
+
+
+def identity_from_email(
+    email: str,
+    *,
+    login: str | None = None,
+    source: str = "interactive terminal",
+) -> Identity:
+    """Validate a stored/entered 42 email and derive its matching login."""
+    return _identity_from_email(
+        email,
+        requested_login=login,
+        source=source,
+        inferred=False,
+    )
+
+
+def _canonical_42_email(value: str) -> str | None:
+    match = re.fullmatch(
+        r"([A-Za-z0-9][A-Za-z0-9._-]*)@"
+        r"(42\.fr|student\.42[A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+)",
+        value.strip(),
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    return f"{match.group(1)}@{match.group(2)}".lower()
+
+
+def _saved_editor_emails() -> dict[str, set[str]]:
+    home = Path.home()
+    candidates: dict[str, set[str]] = {}
+    locations = (
+        (
+            home / ".vimrc",
+            r"\bg:mail42\s*=\s*['\"]([^'\"]+)['\"]",
+            "Vim settings",
+        ),
+        (
+            home / ".config" / "nvim" / "init.vim",
+            r"\bg:mail42\s*=\s*['\"]([^'\"]+)['\"]",
+            "Neovim settings",
+        ),
+        (
+            home / ".config" / "nvim" / "init.lua",
+            r"\bvim\.g\.mail42\s*=\s*['\"]([^'\"]+)['\"]",
+            "Neovim settings",
+        ),
+        (
+            home / ".zshrc",
+            r"(?m)^[ \t]*(?:export[ \t]+)?MAIL\s*=\s*['\"]?([^'\"\s#]+)",
+            "shell settings",
+        ),
+        (
+            home / ".zprofile",
+            r"(?m)^[ \t]*(?:export[ \t]+)?MAIL\s*=\s*['\"]?([^'\"\s#]+)",
+            "shell settings",
+        ),
+        (
+            home / ".bashrc",
+            r"(?m)^[ \t]*(?:export[ \t]+)?MAIL\s*=\s*['\"]?([^'\"\s#]+)",
+            "shell settings",
+        ),
+        (
+            home / ".bash_profile",
+            r"(?m)^[ \t]*(?:export[ \t]+)?MAIL\s*=\s*['\"]?([^'\"\s#]+)",
+            "shell settings",
+        ),
+        (
+            home / "Library" / "Application Support" / "Code" / "User" / "settings.json",
+            r"\"42header\.email\"\s*:\s*\"([^\"]+)\"",
+            "VS Code settings",
+        ),
+        (
+            home / "Library" / "Application Support" / "Cursor" / "User" / "settings.json",
+            r"\"42header\.email\"\s*:\s*\"([^\"]+)\"",
+            "Cursor settings",
+        ),
+        (
+            home / ".config" / "Code" / "User" / "settings.json",
+            r"\"42header\.email\"\s*:\s*\"([^\"]+)\"",
+            "VS Code settings",
+        ),
+        (
+            home / ".config" / "VSCodium" / "User" / "settings.json",
+            r"\"42header\.email\"\s*:\s*\"([^\"]+)\"",
+            "VSCodium settings",
+        ),
+        (
+            home / ".config" / "Cursor" / "User" / "settings.json",
+            r"\"42header\.email\"\s*:\s*\"([^\"]+)\"",
+            "Cursor settings",
+        ),
+    )
+    for path, pattern, source in locations:
+        try:
+            if not path.is_file() or path.stat().st_size > 1_000_000:
+                continue
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for match in re.finditer(pattern, content):
+            canonical = _canonical_42_email(match.group(1))
+            if canonical is None:
+                continue
+            candidates.setdefault(canonical, set()).add(source)
+    return candidates
+
+
+def _select_saved_email(
+    candidates: dict[str, set[str]],
+    *,
+    requested_login: str | None,
+) -> str | None:
+    if not candidates:
+        return None
+    if requested_login:
+        matches = [
+            email
+            for email in candidates
+            if email.split("@", 1)[0].casefold() == requested_login.casefold()
+        ]
+        return matches[0] if len(matches) == 1 else None
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    return None
+
+
+def _configured_identity() -> tuple[str | None, str | None]:
+    configured_path = os.environ.get("NORMINETTE_FIX_CONFIG")
+    if configured_path:
+        path = Path(configured_path).expanduser()
+    else:
+        config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        path = config_home / "norminette-fix" / "config.ini"
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        with path.open(encoding="utf-8") as handle:
+            parser.read_file(handle)
+        if not parser.has_section("header"):
+            return None, None
+        login = parser.get("header", "login", fallback="").strip() or None
+        email = parser.get("header", "email", fallback="").strip() or None
+    except (OSError, UnicodeError, configparser.Error):
+        return None, None
+    return login, email
+
+
+def identity_fits_header(identity: Identity) -> bool:
+    if not identity.available:
+        return True
+    timestamp = "0000/00/00 00:00:00"
+    fields = (
+        (
+            f"   By: {identity.login} <{identity.email}>",
+            HEADER_SUFFIXES["by"],
+        ),
+        (
+            f"   Created: {timestamp} by {identity.login}",
+            HEADER_SUFFIXES["created"],
+        ),
+        (
+            f"   Updated: {timestamp} by {identity.login}",
+            HEADER_SUFFIXES["updated"],
+        ),
+    )
+    return all(len(left) <= 76 - len(right) for left, right in fields)
 
 
 def _framed(left: str = "", right: str = "") -> str:
@@ -90,6 +331,10 @@ def _framed(left: str = "", right: str = "") -> str:
 
 
 def build_header(filename: str, identity: Identity, now: datetime | None = None) -> str:
+    if not identity.available:
+        raise ValueError("A verified 42 student email is required for the official header.")
+    if not identity_fits_header(identity):
+        raise ValueError("The verified 42 identity does not fit the official 80-column header.")
     now = now or datetime.now()
     timestamp = now.strftime("%Y/%m/%d %H:%M:%S")
     return "\n".join(
@@ -180,10 +425,11 @@ def ensure_header(
     span = header_span(source)
     if span is not None and _valid_header_block(source[span[0] : span[1]]):
         return source, False, False
+    if not identity.available or not identity_fits_header(identity):
+        return source, False, False
     # Never delete a malformed "header-like" prefix: it may contain real code.
     header = build_header(filename, identity)
-    body = source.lstrip("\n")
-    return header + "\n\n" + body, True, True
+    return header + "\n\n" + source, True, True
 
 
 def update_header(
@@ -192,6 +438,8 @@ def update_header(
     identity: Identity,
     now: datetime | None = None,
 ) -> tuple[str, bool]:
+    if not identity.available or not identity_fits_header(identity):
+        return source, False
     span = header_span(source)
     if span is None or not _valid_header_block(source[span[0] : span[1]]):
         return source, False
@@ -228,6 +476,19 @@ def expected_guard(filename: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "_", filename).upper()
 
 
+def header_guard_matches(source: str, filename: str) -> bool:
+    guard = expected_guard(filename)
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", guard):
+        return False
+    span = header_span(source)
+    body_start = span[1] if span else 0
+    canonical = _canonical_guard(source[body_start:].lstrip("\n"))
+    if canonical is None:
+        return False
+    ifndef, define = canonical
+    return ifndef[2] == guard and define[2] == guard
+
+
 def ensure_header_guard(source: str, filename: str) -> tuple[str, bool, str]:
     guard = expected_guard(filename)
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", guard):
@@ -239,27 +500,24 @@ def ensure_header_guard(source: str, filename: str) -> tuple[str, bool, str]:
     canonical = _canonical_guard(body)
     if canonical is not None:
         ifndef, define = canonical
-        changed = False
-        for match in sorted((ifndef, define), key=lambda item: item.start(1), reverse=True):
-            if match.group(1) != guard:
-                body = body[: match.start(1)] + guard + body[match.end(1) :]
-                changed = True
-        if not changed:
+        if ifndef[2] == guard and define[2] == guard:
             return source, False, guard
-        prefix = source[:body_start].rstrip("\n") + "\n\n"
-        return prefix + body.lstrip("\n"), True, guard
+        # Renaming an existing guard can break consumers that test the old
+        # macro, or nested conditions that reference it. Report the official
+        # diagnostic and leave this project-wide symbol unchanged.
+        return source, False, guard
 
-    wrapped = f"#ifndef {guard}\n# define {guard}\n\n"
-    wrapped += body.rstrip("\n")
-    if body.strip():
-        wrapped += "\n\n"
-    wrapped += "#endif\n"
-    prefix = source[:body_start].rstrip("\n") + "\n\n"
-    return prefix + wrapped, True, guard
+    # Adding any new guard changes a macro visible to consumers and can break
+    # intentional repeat-inclusion protocols (including X-macros). There is no
+    # file-local proof that wrapping is safe, so missing guards stay manual.
+    return source, False, guard
 
 
-def _canonical_guard(body: str) -> tuple[re.Match[str], re.Match[str]] | None:
-    lines = body.splitlines()
+def _canonical_guard(
+    body: str,
+) -> tuple[tuple[int, int, str], tuple[int, int, str]] | None:
+    raw_lines = body.splitlines(keepends=True)
+    lines = masked_source(body).splitlines()
     nonempty = [index for index, line in enumerate(lines) if line.strip()]
     if len(nonempty) < 3:
         return None
@@ -276,7 +534,7 @@ def _canonical_guard(body: str) -> tuple[re.Match[str], re.Match[str]] | None:
         ifndef_line is None
         or define_line is None
         or ifndef_line.group(1) != define_line.group(1)
-        or re.fullmatch(r"#\s*endif(?:\s*/\*.*\*/\s*)?", lines[last]) is None
+        or re.fullmatch(r"#\s*endif\s*", lines[last]) is None
     ):
         return None
 
@@ -296,14 +554,35 @@ def _canonical_guard(body: str) -> tuple[re.Match[str], re.Match[str]] | None:
     if depth != 0:
         return None
 
-    ifndef = re.search(
-        r"(?m)^#\s*ifndef\s+([A-Za-z_][A-Za-z0-9_]*)\s*$",
-        body,
-    )
-    define = re.search(
-        r"(?m)^#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s*$",
-        body,
-    )
+    offsets: list[int] = []
+    offset = 0
+    for line in raw_lines:
+        offsets.append(offset)
+        offset += len(line)
+
+    ifndef = _macro_span(body, offsets[first], "ifndef")
+    define = _macro_span(body, offsets[second], "define")
     if ifndef is None or define is None:
         return None
     return ifndef, define
+
+
+def _macro_span(
+    body: str,
+    line_start: int,
+    directive: str,
+) -> tuple[int, int, str] | None:
+    line_end = body.find("\n", line_start)
+    if line_end < 0:
+        line_end = len(body)
+    match = re.match(
+        rf"[ \t]*#[ \t]*{directive}[ \t]+([A-Za-z_][A-Za-z0-9_]*)",
+        body[line_start:line_end],
+    )
+    if match is None:
+        return None
+    return (
+        line_start + match.start(1),
+        line_start + match.end(1),
+        match.group(1),
+    )

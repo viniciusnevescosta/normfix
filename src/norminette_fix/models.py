@@ -99,3 +99,7 @@ class Identity:
     @property
     def inferred(self) -> bool:
         return self.inferred_login or self.inferred_email
+
+    @property
+    def available(self) -> bool:
+        return bool(self.login and self.email)
