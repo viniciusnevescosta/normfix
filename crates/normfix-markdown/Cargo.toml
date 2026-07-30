@@ -1,0 +1,14 @@
+[package]
+name = "normfix-markdown"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+comrak.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

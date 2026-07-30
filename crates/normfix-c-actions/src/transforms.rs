@@ -1,0 +1,2123 @@
+//! Ordered native C transformation phases.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
+
+use normfix_c_syntax::CFunctionKind;
+use regex::Regex;
+
+use crate::analysis::{function_infos, is_identifier, matching_forward};
+use crate::context::{ParsedContext, Token};
+use crate::edit::Edit;
+use crate::source::{
+    LexicalMap, PhysicalLine, SourceLines, escaped_physical_newline, leading_whitespace,
+    visual_width, visual_width_from, whitespace_after, whitespace_before,
+};
+use crate::{Applicability, CActionError, CActionOptions, ReportedDiagnostic};
+
+#[derive(Clone, Debug)]
+pub(crate) struct ActionBatch {
+    pub(crate) rule_id: &'static str,
+    pub(crate) applicability: Applicability,
+    pub(crate) edits: Vec<Edit>,
+}
+
+impl ActionBatch {
+    fn layout(rule_id: &'static str, edits: Vec<Edit>) -> Option<Self> {
+        (!edits.is_empty()).then_some(Self {
+            rule_id,
+            applicability: Applicability::SafeLayout,
+            edits,
+        })
+    }
+
+    fn semantic(rule_id: &'static str, edits: Vec<Edit>) -> Option<Self> {
+        (!edits.is_empty()).then_some(Self {
+            rule_id,
+            applicability: Applicability::SafeSemantic,
+            edits,
+        })
+    }
+
+    fn destructive(rule_id: &'static str, edits: Vec<Edit>) -> Option<Self> {
+        (!edits.is_empty()).then_some(Self {
+            rule_id,
+            applicability: Applicability::UnsafeDestructive,
+            edits,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum Phase {
+    Preprocessor,
+    InvalidComments,
+    CompactContinuations,
+    BlankLines,
+    BracesAndControls,
+    FunctionLayout,
+    Indentation,
+    TokenSpacing,
+    Declarations,
+    ReturnParentheses,
+    DefinitionVoid,
+    LongLines,
+}
+
+pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
+    let mut result = vec![Phase::Preprocessor];
+    if options.remove_invalid_comments {
+        result.push(Phase::InvalidComments);
+    }
+    result.extend([
+        Phase::CompactContinuations,
+        Phase::BlankLines,
+        Phase::BracesAndControls,
+        Phase::FunctionLayout,
+        Phase::Indentation,
+        Phase::TokenSpacing,
+        Phase::Declarations,
+        Phase::ReturnParentheses,
+        Phase::DefinitionVoid,
+        Phase::LongLines,
+    ]);
+    result
+}
+
+impl Phase {
+    pub(crate) const fn one_shot(self) -> bool {
+        !matches!(self, Self::CompactContinuations | Self::LongLines)
+    }
+
+    pub(crate) fn plan(
+        self,
+        context: &ParsedContext,
+        diagnostics: &[ReportedDiagnostic],
+        options: &CActionOptions,
+    ) -> Result<Option<ActionBatch>, CActionError> {
+        match self {
+            Self::Preprocessor => Ok(ActionBatch::layout(
+                "PREPROCESSOR_SPACING",
+                format_preprocessors(context)?,
+            )),
+            Self::InvalidComments => Ok(ActionBatch::destructive(
+                "REMOVE_INVALID_COMMENT",
+                remove_invalid_comments(context, diagnostics)?,
+            )),
+            Self::CompactContinuations => Ok(ActionBatch::layout(
+                "COMPACT_CONTINUATION",
+                compact_continuations(context, options.max_columns)?,
+            )),
+            Self::BlankLines => Ok(ActionBatch::layout(
+                "BLANK_LINE_LAYOUT",
+                fix_blank_lines(context, diagnostics)?,
+            )),
+            Self::BracesAndControls => Ok(ActionBatch::layout(
+                "BRACE_CONTROL_LAYOUT",
+                fix_braces_and_controls(context, diagnostics)?,
+            )),
+            Self::FunctionLayout => Ok(ActionBatch::layout(
+                "FUNCTION_LAYOUT",
+                fix_function_layout(context, diagnostics, options)?,
+            )),
+            Self::Indentation => Ok(ActionBatch::layout(
+                "INDENTATION",
+                fix_indentation(context, diagnostics)?,
+            )),
+            Self::TokenSpacing => Ok(ActionBatch::layout(
+                "TOKEN_SPACING",
+                fix_token_spacing(context, diagnostics)?,
+            )),
+            Self::Declarations => Ok(ActionBatch::layout(
+                "DECLARATION_ALIGNMENT",
+                align_declarations(context, diagnostics, options)?,
+            )),
+            Self::ReturnParentheses => Ok(ActionBatch::semantic(
+                "RETURN_PARENTHESIS",
+                parenthesize_returns(context, diagnostics)?,
+            )),
+            Self::DefinitionVoid => Ok(ActionBatch::semantic(
+                "NO_ARGS_VOID",
+                add_void_to_definitions(context, diagnostics)?,
+            )),
+            Self::LongLines => Ok(ActionBatch::layout(
+                "LINE_TOO_LONG",
+                wrap_long_lines(context, options.max_columns)?,
+            )),
+        }
+    }
+}
+
+fn format_preprocessors(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = multiline_preprocessor_lines(source, &lines);
+    let mut depth = 0_usize;
+    let mut edits = Vec::new();
+    for (line_number, line, text) in lines.iter() {
+        let leading = leading_whitespace(text);
+        if text.as_bytes().get(leading) != Some(&b'#') {
+            continue;
+        }
+        let mut cursor = leading + 1;
+        while matches!(text.as_bytes().get(cursor), Some(b' ' | b'\t')) {
+            cursor += 1;
+        }
+        let word_start = cursor;
+        while text
+            .as_bytes()
+            .get(cursor)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            cursor += 1;
+        }
+        if word_start == cursor {
+            continue;
+        }
+        let directive = text[word_start..cursor].to_ascii_lowercase();
+        let closes = matches!(directive.as_str(), "elif" | "else" | "endif");
+        let effective_depth = depth.saturating_sub(usize::from(closes));
+        if !blocked.contains(&line_number) {
+            let argument = text[cursor..].trim_matches([' ', '\t']);
+            let mut replacement = String::from("#");
+            replacement.push_str(&" ".repeat(effective_depth));
+            replacement.push_str(&text[word_start..cursor]);
+            if !argument.is_empty() {
+                replacement.push(' ');
+                replacement.push_str(argument);
+            }
+            if replacement != text {
+                edits.push(Edit::new(
+                    line.start,
+                    line.content_end,
+                    replacement,
+                    "PREPROCESSOR_SPACING",
+                    "normalized preprocessor indentation and spacing",
+                    Some(line_number),
+                )?);
+            }
+        }
+        if matches!(directive.as_str(), "if" | "ifdef" | "ifndef") {
+            depth = depth.saturating_add(1);
+        } else if directive == "endif" {
+            depth = depth.saturating_sub(1);
+        }
+    }
+    Ok(edits)
+}
+
+fn preprocessor_line_set(source: &str, lines: &SourceLines<'_>) -> BTreeSet<u32> {
+    let mut result = BTreeSet::new();
+    let mut active = false;
+    for (line_number, _, text) in lines.iter() {
+        let starts = text.trim_start_matches([' ', '\t']).starts_with('#');
+        let continues = has_sensitive_line_end(text);
+        if active || starts {
+            result.insert(line_number);
+            active = continues;
+        } else {
+            active = false;
+        }
+    }
+    let _ = source;
+    result
+}
+
+fn has_sensitive_line_end(text: &str) -> bool {
+    let stripped = text.trim_end_matches([' ', '\t']);
+    stripped.ends_with('\\') || stripped.ends_with("??/")
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Comment {
+    start: usize,
+    end: usize,
+    line: u32,
+    visual_column: u32,
+}
+
+fn remove_invalid_comments(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+) -> Result<Vec<Edit>, CActionError> {
+    let targets: BTreeMap<(u32, u32), &str> = diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "WRONG_SCOPE_COMMENT" | "COMMENT_ON_INSTR"
+            )
+        })
+        .map(|diagnostic| {
+            (
+                (diagnostic.line, diagnostic.visual_column),
+                diagnostic.code.as_str(),
+            )
+        })
+        .collect();
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let functions = function_infos(context);
+    let official_header_end = official_header_end(context.source());
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for comment in scan_comments(context.source(), &lines) {
+        let Some(code) = targets.get(&(comment.line, comment.visual_column)) else {
+            continue;
+        };
+        if *code == "WRONG_SCOPE_COMMENT"
+            && !functions
+                .iter()
+                .any(|function| function.contains(comment.line))
+        {
+            continue;
+        }
+        if official_header_end.is_some_and(|end| comment.start < end) {
+            continue;
+        }
+        let (start, end, replacement) = comment_removal(context.source(), comment);
+        edits.push(Edit::new(
+            start,
+            end,
+            replacement,
+            "REMOVE_INVALID_COMMENT",
+            "removed a comment at the exact location rejected by Norminette",
+            Some(comment.line),
+        )?);
+    }
+    Ok(edits)
+}
+
+fn scan_comments(source: &str, lines: &SourceLines<'_>) -> Vec<Comment> {
+    let bytes = source.as_bytes();
+    let mut result = Vec::new();
+    let mut index = 0;
+    let mut state = QuoteState::Code;
+    while index < bytes.len() {
+        let following = bytes.get(index + 1).copied();
+        match state {
+            QuoteState::Code => {
+                if bytes[index] == b'"' {
+                    state = QuoteState::String;
+                } else if bytes[index] == b'\'' {
+                    state = QuoteState::Character;
+                } else if bytes[index] == b'/' && following == Some(b'/') {
+                    let start = index;
+                    index += 2;
+                    loop {
+                        while index < bytes.len() && bytes[index] != b'\n' {
+                            index += 1;
+                        }
+                        if index >= bytes.len() || !escaped_physical_newline(bytes, index) {
+                            break;
+                        }
+                        index += 1;
+                    }
+                    result.push(comment_at(start, index, lines));
+                    continue;
+                } else if bytes[index] == b'/' && following == Some(b'*') {
+                    let start = index;
+                    index += 2;
+                    while index + 1 < bytes.len()
+                        && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                    {
+                        index += 1;
+                    }
+                    if index + 1 >= bytes.len() {
+                        break;
+                    }
+                    index += 2;
+                    result.push(comment_at(start, index, lines));
+                    continue;
+                }
+            }
+            QuoteState::String | QuoteState::Character => {
+                if bytes[index] == b'\\' && following.is_some() {
+                    index += 2;
+                    continue;
+                }
+                if (state == QuoteState::String && bytes[index] == b'"')
+                    || (state == QuoteState::Character && bytes[index] == b'\'')
+                {
+                    state = QuoteState::Code;
+                }
+            }
+        }
+        index += 1;
+    }
+    result
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum QuoteState {
+    Code,
+    String,
+    Character,
+}
+
+fn comment_at(start: usize, end: usize, lines: &SourceLines<'_>) -> Comment {
+    let line_number = lines.line_number_at(start);
+    let visual_column = lines
+        .get(line_number)
+        .map_or(1, |line| lines.visual_column(line, start));
+    Comment {
+        start,
+        end,
+        line: line_number,
+        visual_column,
+    }
+}
+
+fn official_header_end(source: &str) -> Option<usize> {
+    const EDGE: &str =
+        "/* ************************************************************************** */";
+    let lines = SourceLines::new(source);
+    if lines.len() < 11 {
+        return None;
+    }
+    let first = lines.get(1)?;
+    let last = lines.get(11)?;
+    let block = &source[first.start..last.end];
+    (lines.text(first) == EDGE
+        && lines.text(last) == EDGE
+        && block.contains(":::      ::::::::")
+        && block.contains("By:")
+        && block.contains("Created:")
+        && block.contains("Updated:"))
+    .then_some(last.end)
+}
+
+fn comment_removal(source: &str, comment: Comment) -> (usize, usize, String) {
+    let line_start = source[..comment.start]
+        .rfind('\n')
+        .map_or(0, |position| position + 1);
+    let line_end = source[comment.end..]
+        .find('\n')
+        .map_or(source.len(), |position| comment.end + position);
+    let before = &source[line_start..comment.start];
+    let after = &source[comment.end..line_end];
+    if before.trim_matches([' ', '\t']).is_empty() && after.trim_matches([' ', '\t']).is_empty() {
+        return (
+            line_start,
+            line_end + usize::from(line_end < source.len()),
+            String::new(),
+        );
+    }
+    if after.trim_matches([' ', '\t']).is_empty() {
+        let mut start = comment.start;
+        while start > line_start && matches!(source.as_bytes()[start - 1], b' ' | b'\t') {
+            start -= 1;
+        }
+        return (start, comment.end, String::new());
+    }
+    let mut start = comment.start;
+    while start > line_start && matches!(source.as_bytes()[start - 1], b' ' | b'\t') {
+        start -= 1;
+    }
+    let mut end = comment.end;
+    while end < line_end && matches!(source.as_bytes()[end], b' ' | b'\t') {
+        end += 1;
+    }
+    let surrounding = [&source[start..comment.start], &source[comment.end..end]].concat();
+    let left = (start > 0).then(|| source.as_bytes()[start - 1] as char);
+    let right = source.as_bytes().get(end).copied().map(char::from);
+    let replacement = if surrounding.contains('\t') {
+        "\t"
+    } else if left.is_some_and(|character| "([{".contains(character))
+        || right.is_some_and(|character| ")]},;".contains(character))
+    {
+        ""
+    } else {
+        " "
+    };
+    (start, end, replacement.to_owned())
+}
+
+fn fix_blank_lines(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+) -> Result<Vec<Edit>, CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(source, &lines);
+    let has_local_preprocessor = diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic.code.as_str(),
+            "PREPOC_ONLY_GLOBAL" | "PREPROC_GLOBAL"
+        )
+    });
+    let mut edits = Vec::new();
+    for diagnostic in diagnostics {
+        let Some(line) = lines.get(diagnostic.line) else {
+            continue;
+        };
+        if blocked.contains(&diagnostic.line) {
+            continue;
+        }
+        match diagnostic.code.as_str() {
+            "NEWLINE_PRECEDES_FUNC" | "NL_AFTER_VAR_DECL" | "NL_AFTER_PREPROC" => {
+                if diagnostic.code == "NL_AFTER_PREPROC" && has_local_preprocessor {
+                    continue;
+                }
+                let previous = diagnostic
+                    .line
+                    .checked_sub(1)
+                    .and_then(|number| lines.get(number));
+                if previous.is_some_and(|previous| !lines.text(previous).trim().is_empty()) {
+                    edits.push(Edit::new(
+                        line.start,
+                        line.start,
+                        "\n",
+                        diagnostic.code.clone(),
+                        match diagnostic.code.as_str() {
+                            "NEWLINE_PRECEDES_FUNC" => "inserted a blank line before a function",
+                            "NL_AFTER_VAR_DECL" => "inserted a blank line after declarations",
+                            _ => "inserted a blank line after preprocessing directives",
+                        },
+                        Some(diagnostic.line),
+                    )?);
+                }
+            }
+            "EMPTY_LINE_FUNCTION" | "CONSECUTIVE_NEWLINES"
+                if lines.text(line).trim().is_empty() =>
+            {
+                edits.push(Edit::new(
+                    line.start,
+                    line.end,
+                    "",
+                    diagnostic.code.clone(),
+                    if diagnostic.code == "EMPTY_LINE_FUNCTION" {
+                        "removed a forbidden blank line inside a function"
+                    } else {
+                        "removed a consecutive blank line"
+                    },
+                    Some(diagnostic.line),
+                )?);
+            }
+            _ => {}
+        }
+    }
+    Ok(edits)
+}
+
+fn fix_braces_and_controls(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+) -> Result<Vec<Edit>, CActionError> {
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(context.source(), &lines);
+    let lexical = context.lexical();
+    let mut edits = Vec::new();
+    for diagnostic in diagnostics {
+        if !matches!(
+            diagnostic.code.as_str(),
+            "BRACE_NEWLINE" | "BRACE_SHOULD_EOL" | "EXP_NEWLINE"
+        ) || blocked.contains(&diagnostic.line)
+        {
+            continue;
+        }
+        let Some(line) = lines.get(diagnostic.line) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let diagnostic_byte = lines.byte_for_visual_column(line, diagnostic.visual_column);
+        let relative = diagnostic_byte.saturating_sub(line.start);
+        let indent = &text[..leading_whitespace(text)];
+        match diagnostic.code.as_str() {
+            "BRACE_NEWLINE" => {
+                let brace = find_brace_near(text, line.start, relative, lexical, None);
+                let Some(brace) = brace else {
+                    continue;
+                };
+                let (start, _) = whitespace_before(text, brace);
+                edits.push(Edit::new(
+                    line.start + start,
+                    line.start + brace,
+                    format!("\n{indent}"),
+                    "BRACE_NEWLINE",
+                    "placed the opening brace on its own line",
+                    Some(diagnostic.line),
+                )?);
+            }
+            "BRACE_SHOULD_EOL" => {
+                let Some(brace) = find_brace_near(text, line.start, relative, lexical, Some("{}"))
+                else {
+                    continue;
+                };
+                let (start, end) = whitespace_after(text, brace + 1);
+                if end >= text.len() {
+                    continue;
+                }
+                let extra = if text.as_bytes()[brace] == b'{' {
+                    "\t"
+                } else {
+                    ""
+                };
+                edits.push(Edit::new(
+                    line.start + start,
+                    line.start + end,
+                    format!("\n{indent}{extra}"),
+                    "BRACE_SHOULD_EOL",
+                    "placed the brace on its own line",
+                    Some(diagnostic.line),
+                )?);
+            }
+            "EXP_NEWLINE" => {
+                if let Some(close) = control_condition_close(text, line.start, lexical) {
+                    let (start, end) = whitespace_after(text, close + 1);
+                    if end < text.len() {
+                        edits.push(Edit::new(
+                            line.start + start,
+                            line.start + end,
+                            format!("\n{indent}\t"),
+                            "EXP_NEWLINE",
+                            "moved the control body to the next line",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(edits)
+}
+
+fn find_brace_near(
+    text: &str,
+    base: usize,
+    relative: usize,
+    lexical: &LexicalMap,
+    allowed: Option<&str>,
+) -> Option<usize> {
+    let accepted = |byte: u8| match allowed {
+        Some(set) => set.as_bytes().contains(&byte),
+        None => byte == b'{',
+    };
+    let lower = relative.saturating_sub(2);
+    let upper = (relative + 3).min(text.len());
+    (lower..upper)
+        .find(|index| accepted(text.as_bytes()[*index]) && !lexical.is_protected(base + *index))
+        .or_else(|| {
+            (0..text.len()).rev().find(|index| {
+                accepted(text.as_bytes()[*index]) && !lexical.is_protected(base + *index)
+            })
+        })
+}
+
+fn control_condition_close(text: &str, base: usize, lexical: &LexicalMap) -> Option<usize> {
+    for keyword in ["if", "while", "for", "switch"] {
+        let mut search = 0;
+        while let Some(found) = text[search..].find(keyword) {
+            let start = search + found;
+            let end = start + keyword.len();
+            let left_ok = start == 0
+                || !text.as_bytes()[start - 1].is_ascii_alphanumeric()
+                    && text.as_bytes()[start - 1] != b'_';
+            let right_ok = end == text.len()
+                || !text.as_bytes()[end].is_ascii_alphanumeric() && text.as_bytes()[end] != b'_';
+            if left_ok && right_ok && !lexical.is_protected(base + start) {
+                let mut opening = end;
+                while matches!(text.as_bytes().get(opening), Some(b' ' | b'\t')) {
+                    opening += 1;
+                }
+                if text.as_bytes().get(opening) == Some(&b'(') {
+                    let mut depth = 0_u32;
+                    for index in opening..text.len() {
+                        if lexical.is_protected(base + index) {
+                            continue;
+                        }
+                        match text.as_bytes()[index] {
+                            b'(' => depth = depth.saturating_add(1),
+                            b')' => {
+                                depth = depth.checked_sub(1)?;
+                                if depth == 0 {
+                                    return Some(index);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            search = end;
+        }
+    }
+    None
+}
+
+#[derive(Clone, Debug)]
+struct ContinuationLine {
+    number: u32,
+    start: usize,
+    text: String,
+    indent_end: usize,
+    has_comment: bool,
+    preprocessor: bool,
+    splice_barrier: bool,
+    delimiter_depth_after: u32,
+}
+
+fn compact_continuations(
+    context: &ParsedContext,
+    max_columns: u32,
+) -> Result<Vec<Edit>, CActionError> {
+    if max_columns == 0 || !context.source().contains('\n') {
+        return Ok(Vec::new());
+    }
+    let scanned = continuation_lines(context);
+    if scanned.len() < 2 {
+        return Ok(Vec::new());
+    }
+    let mut edits = Vec::new();
+    let mut packed = scanned[0].text.clone();
+    for pair in scanned.windows(2) {
+        let current = &pair[0];
+        let following = &pair[1];
+        let left = packed.trim_end_matches([' ', '\t']);
+        let right = following.text.trim_start_matches([' ', '\t']);
+        if !safe_continuation_boundary(current, following, left, right) {
+            packed.clone_from(&following.text);
+            continue;
+        }
+        let separator = join_separator(left, right);
+        let candidate = format!("{left}{separator}{right}");
+        if visual_width(&candidate) > max_columns {
+            packed.clone_from(&following.text);
+            continue;
+        }
+        let current_content_end = current.start + current.text.trim_end_matches([' ', '\t']).len();
+        edits.push(Edit::new(
+            current_content_end,
+            following.start + following.indent_end,
+            separator,
+            "COMPACT_CONTINUATION",
+            format!("joined a continuation line without exceeding {max_columns} display columns"),
+            Some(following.number),
+        )?);
+        packed = candidate;
+    }
+    Ok(edits)
+}
+
+fn continuation_lines(context: &ParsedContext) -> Vec<ContinuationLine> {
+    let source = context.source();
+    let lines = context.lines();
+    let preprocessors = preprocessor_line_set(source, &lines);
+    let mut splice_lines = BTreeSet::new();
+    for (number, _, text) in lines.iter() {
+        if has_sensitive_line_end(text) {
+            splice_lines.insert(number);
+            splice_lines.insert(number.saturating_add(1));
+        }
+    }
+    let mut delimiter_depth = 0_u32;
+    let mut result = Vec::new();
+    for (number, line, text) in lines.iter() {
+        if !preprocessors.contains(&number) {
+            for (relative, byte) in text.bytes().enumerate() {
+                if context.lexical().is_protected(line.start + relative) {
+                    continue;
+                }
+                match byte {
+                    b'(' | b'[' => delimiter_depth = delimiter_depth.saturating_add(1),
+                    b')' | b']' => delimiter_depth = delimiter_depth.saturating_sub(1),
+                    _ => {}
+                }
+            }
+        }
+        result.push(ContinuationLine {
+            number,
+            start: line.start,
+            text: text.to_owned(),
+            indent_end: leading_whitespace(text),
+            has_comment: context.lexical().line_has_comment(number),
+            preprocessor: preprocessors.contains(&number),
+            splice_barrier: splice_lines.contains(&number),
+            delimiter_depth_after: delimiter_depth,
+        });
+    }
+    result
+}
+
+fn safe_continuation_boundary(
+    current: &ContinuationLine,
+    following: &ContinuationLine,
+    left: &str,
+    right: &str,
+) -> bool {
+    if left.is_empty()
+        || right.is_empty()
+        || current.has_comment
+        || following.has_comment
+        || current.preprocessor
+        || following.preprocessor
+        || current.splice_barrier
+        || following.splice_barrier
+    {
+        return false;
+    }
+    if current.delimiter_depth_after > 0 || ends_with_continuing_operator(left) {
+        return true;
+    }
+    let Some(operator) = leading_operator(right) else {
+        return false;
+    };
+    ends_like_operand(left)
+        && !(matches!(operator, "*" | "&") && looks_like_declaration_prefix(left))
+}
+
+fn join_separator(left: &str, right: &str) -> &'static str {
+    if left.ends_with(['(', '[']) || right.starts_with([')', ']', ',', ';']) {
+        ""
+    } else {
+        " "
+    }
+}
+
+const OPERATORS: &[&str] = &[
+    "<<=", ">>=", "&&", "||", "==", "!=", "<=", ">=", "<<", ">>", "->", "+=", "-=", "*=", "/=",
+    "%=", "&=", "|=", "^=", "++", "--", "+", "-", "*", "/", "%", "<", ">", "=", "!", "&", "|", "^",
+    "~", "?", ":",
+];
+
+fn leading_operator(text: &str) -> Option<&'static str> {
+    OPERATORS
+        .iter()
+        .copied()
+        .find(|operator| text.starts_with(operator))
+}
+
+fn trailing_operator(text: &str) -> Option<&'static str> {
+    OPERATORS
+        .iter()
+        .copied()
+        .find(|operator| text.ends_with(operator))
+}
+
+fn ends_with_continuing_operator(text: &str) -> bool {
+    let stripped = text.trim_end();
+    !stripped.ends_with([','])
+        && !stripped.ends_with("++")
+        && !stripped.ends_with("--")
+        && trailing_operator(stripped).is_some()
+}
+
+fn ends_like_operand(text: &str) -> bool {
+    let stripped = text.trim_end();
+    stripped.ends_with([')', ']'])
+        || stripped.ends_with("++")
+        || stripped.ends_with("--")
+        || stripped.chars().next_back().is_some_and(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '"' | '\'')
+        })
+}
+
+fn looks_like_declaration_prefix(text: &str) -> bool {
+    let words: Vec<_> = text
+        .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+        .filter(|word| !word.is_empty())
+        .collect();
+    !words.is_empty()
+        && words.iter().all(|word| {
+            is_declaration_word(word)
+                || word.starts_with("t_")
+                || word.ends_with("_t")
+                || (words.len() == 1 && is_identifier(word))
+        })
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FunctionSignature {
+    line: u32,
+    declarator_start: usize,
+    prefix_end: usize,
+    definition: bool,
+}
+
+fn fix_function_layout(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+    options: &CActionOptions,
+) -> Result<Vec<Edit>, CActionError> {
+    let signatures = function_signatures(context);
+    let target_definitions: BTreeSet<u32> = diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "SPACE_BEFORE_FUNC" | "TOO_MANY_TABS_FUNC" | "MISSING_TAB_FUNC"
+            )
+        })
+        .map(|diagnostic| diagnostic.line)
+        .collect();
+    let align_prototypes = options.format_proven_declarations
+        || diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "MISALIGNED_FUNC_DECL");
+    let lines = context.lines();
+    let mut edits = Vec::new();
+
+    for signature in signatures
+        .iter()
+        .filter(|signature| signature.definition && target_definitions.contains(&signature.line))
+    {
+        let gap = context
+            .source()
+            .get(signature.prefix_end..signature.declarator_start)
+            .unwrap_or("");
+        if gap.bytes().all(|byte| matches!(byte, b' ' | b'\t')) && gap != "\t" {
+            edits.push(Edit::new(
+                signature.prefix_end,
+                signature.declarator_start,
+                "\t",
+                "FUNCTION_SPACING",
+                "used one tab between the return type and function declarator",
+                Some(signature.line),
+            )?);
+        }
+    }
+
+    let prototypes: Vec<_> = signatures
+        .iter()
+        .filter(|signature| !signature.definition)
+        .collect();
+    if align_prototypes && !prototypes.is_empty() {
+        let mut target_column = 9_u32;
+        for signature in &prototypes {
+            let Some(line) = lines.get(signature.line) else {
+                continue;
+            };
+            let prefix_column = lines.visual_column(line, signature.prefix_end);
+            target_column = target_column.max(next_tab_stop(prefix_column));
+        }
+        for signature in prototypes {
+            let Some(line) = lines.get(signature.line) else {
+                continue;
+            };
+            let prefix_column = lines.visual_column(line, signature.prefix_end);
+            let Some(tabs) = tabs_to_column(prefix_column, target_column) else {
+                continue;
+            };
+            let gap = context
+                .source()
+                .get(signature.prefix_end..signature.declarator_start)
+                .unwrap_or("");
+            if gap.bytes().all(|byte| matches!(byte, b' ' | b'\t')) && gap != tabs {
+                let candidate_width = visual_width(lines.text(line))
+                    .saturating_sub(visual_width(gap))
+                    .saturating_add(visual_width_from(&tabs, prefix_column));
+                if candidate_width <= options.max_columns {
+                    edits.push(Edit::new(
+                        signature.prefix_end,
+                        signature.declarator_start,
+                        tabs,
+                        "MISALIGNED_FUNC_DECL",
+                        "aligned a simple function prototype at the shared tab stop",
+                        Some(signature.line),
+                    )?);
+                }
+            }
+        }
+    }
+    Ok(edits)
+}
+
+fn function_signatures(context: &ParsedContext) -> Vec<FunctionSignature> {
+    let tokens = context.tokens();
+    let lines = context.lines();
+    let mut result = Vec::new();
+    for fact in &context.facts().functions {
+        let name_start = fact.name_range.start().get() as usize;
+        let Some(name_index) = tokens.iter().position(|token| token.start == name_start) else {
+            continue;
+        };
+        let line_number = lines.line_number_at(tokens[name_index].start);
+        let mut first_on_line = name_index;
+        while first_on_line > 0
+            && lines.line_number_at(tokens[first_on_line - 1].start) == line_number
+        {
+            first_on_line -= 1;
+        }
+        if first_on_line == name_index
+            || tokens[first_on_line..name_index].iter().any(|prefix| {
+                matches!(
+                    prefix.text.as_str(),
+                    "=" | "," | "(" | ")" | "[" | "]" | "{" | "}" | ";"
+                )
+            })
+            || matches!(
+                tokens[first_on_line].text.as_str(),
+                "return" | "if" | "while" | "for" | "switch"
+            )
+        {
+            continue;
+        }
+        let mut declarator_index = name_index;
+        while declarator_index > first_on_line && tokens[declarator_index - 1].text == "*" {
+            declarator_index -= 1;
+        }
+        if declarator_index == first_on_line {
+            continue;
+        }
+        let prefix_end = tokens[declarator_index - 1].end;
+        let declarator_start = tokens[declarator_index].start;
+        if context
+            .source()
+            .get(prefix_end..declarator_start)
+            .is_none_or(|gap| !gap.bytes().all(|byte| matches!(byte, b' ' | b'\t')))
+        {
+            continue;
+        }
+        result.push(FunctionSignature {
+            line: line_number,
+            declarator_start,
+            prefix_end,
+            definition: fact.kind == CFunctionKind::Definition,
+        });
+    }
+    result
+}
+
+fn next_tab_stop(column: u32) -> u32 {
+    column.saturating_add(4 - ((column.saturating_sub(1)) % 4))
+}
+
+fn tabs_to_column(mut column: u32, target: u32) -> Option<String> {
+    if column >= target {
+        return None;
+    }
+    let mut tabs = String::new();
+    while column < target {
+        tabs.push('\t');
+        column = next_tab_stop(column);
+    }
+    (column == target).then_some(tabs)
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct IndentInfo {
+    expected: u32,
+    brace_depth: u32,
+    delimiter_depth: u32,
+    continuation_extra: u32,
+    continuation: bool,
+}
+
+fn indentation_model(context: &ParsedContext) -> BTreeMap<u32, IndentInfo> {
+    let lines = context.lines();
+    let preprocessors = preprocessor_line_set(context.source(), &lines);
+    let mut model = BTreeMap::new();
+    let mut brace_depth = 0_u32;
+    let mut delimiter_depth = 0_u32;
+    let mut continued = false;
+    for (line_number, line, text) in lines.iter() {
+        let stripped = text.trim_start_matches([' ', '\t']);
+        let closes = stripped.starts_with('}');
+        let line_brace_depth = brace_depth.saturating_sub(u32::from(closes));
+        let continuation_extra =
+            u32::from(delimiter_depth == 0 && continued && !stripped.starts_with('{'));
+        let continuation = delimiter_depth > 0 || continuation_extra > 0;
+        model.insert(
+            line_number,
+            IndentInfo {
+                expected: line_brace_depth
+                    .saturating_add(delimiter_depth)
+                    .saturating_add(continuation_extra),
+                brace_depth: line_brace_depth,
+                delimiter_depth,
+                continuation_extra,
+                continuation,
+            },
+        );
+        if preprocessors.contains(&line_number) {
+            continued = false;
+            continue;
+        }
+        for (relative, byte) in text.bytes().enumerate() {
+            if context.lexical().is_protected(line.start + relative) {
+                continue;
+            }
+            match byte {
+                b'{' => brace_depth = brace_depth.saturating_add(1),
+                b'}' => brace_depth = brace_depth.saturating_sub(1),
+                b'(' | b'[' => delimiter_depth = delimiter_depth.saturating_add(1),
+                b')' | b']' => delimiter_depth = delimiter_depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        let code = stripped.trim_end();
+        continued =
+            !code.is_empty() && !matches!(code.as_bytes().last(), Some(b';' | b'{' | b'}' | b':'));
+    }
+    model
+}
+
+#[allow(clippy::too_many_lines)]
+fn fix_indentation(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+) -> Result<Vec<Edit>, CActionError> {
+    let lines = context.lines();
+    let model = indentation_model(context);
+    let preprocessors = preprocessor_line_set(context.source(), &lines);
+    let mut by_line: BTreeMap<u32, BTreeSet<&str>> = BTreeMap::new();
+    for diagnostic in diagnostics {
+        by_line
+            .entry(diagnostic.line)
+            .or_default()
+            .insert(diagnostic.code.as_str());
+    }
+    for (line_number, _, text) in lines.iter() {
+        let leading = &text[..leading_whitespace(text)];
+        if leading.contains(' ') && leading.contains('\t') {
+            by_line
+                .entry(line_number)
+                .or_default()
+                .insert("MIXED_SPACE_TAB");
+        }
+    }
+    let mut edits = Vec::new();
+    for (line_number, codes) in by_line {
+        if preprocessors.contains(&line_number) {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let leading_end = leading_whitespace(text);
+        let raw_leading = &text[..leading_end];
+        let expected_count = model.get(&line_number).map_or(0, |info| info.expected);
+        let expected = "\t".repeat(expected_count as usize);
+
+        if codes.contains("MIXED_SPACE_TAB") {
+            if raw_leading.contains(' ') && raw_leading.contains('\t') && raw_leading != expected {
+                edits.push(Edit::new(
+                    line.start,
+                    line.start + leading_end,
+                    expected.clone(),
+                    "MIXED_SPACE_TAB",
+                    "replaced mixed leading whitespace with syntax-derived indentation tabs",
+                    Some(line_number),
+                )?);
+                continue;
+            }
+            if let Some(diagnostic) = diagnostics
+                .iter()
+                .find(|item| item.line == line_number && item.code == "MIXED_SPACE_TAB")
+            {
+                let position = lines.byte_for_visual_column(line, diagnostic.visual_column);
+                let relative = position.saturating_sub(line.start);
+                let (start, end) = whitespace_run_near(text, relative);
+                let run = &text[start..end];
+                if run.contains(' ') && run.contains('\t') {
+                    let width =
+                        visual_width_from(run, lines.visual_column(line, line.start + start));
+                    edits.push(Edit::new(
+                        line.start + start,
+                        line.start + end,
+                        "\t".repeat(width.div_ceil(4).max(1) as usize),
+                        "MIXED_SPACE_TAB",
+                        "replaced mixed internal whitespace with tabs",
+                        Some(line_number),
+                    )?);
+                    continue;
+                }
+            }
+        }
+        if codes.contains("SPACE_REPLACE_TAB") && leading_end > 0 && raw_leading.contains(' ') {
+            edits.push(Edit::new(
+                line.start,
+                line.start + leading_end,
+                expected.clone(),
+                "SPACE_REPLACE_TAB",
+                "replaced indentation spaces with syntax-derived tabs",
+                Some(line_number),
+            )?);
+            continue;
+        }
+        if codes.contains("TOO_FEW_TAB") && raw_leading != expected {
+            edits.push(Edit::new(
+                line.start,
+                line.start + leading_end,
+                expected.clone(),
+                "TOO_FEW_TAB",
+                "set indentation from surrounding syntax depth",
+                Some(line_number),
+            )?);
+            continue;
+        }
+        if codes.contains("TOO_MANY_TAB") && !raw_leading.is_empty() {
+            let replacement = if visual_width(&expected) < visual_width(raw_leading) {
+                expected.clone()
+            } else if raw_leading.bytes().all(|byte| byte == b'\t') {
+                raw_leading[..raw_leading.len() - 1].to_owned()
+            } else {
+                continue;
+            };
+            edits.push(Edit::new(
+                line.start,
+                line.start + leading_end,
+                replacement,
+                "TOO_MANY_TAB",
+                "removed extra leading indentation using syntax depth",
+                Some(line_number),
+            )?);
+            continue;
+        }
+        if codes.contains("TAB_REPLACE_SPACE") {
+            let diagnostic = diagnostics
+                .iter()
+                .find(|item| item.line == line_number && item.code == "TAB_REPLACE_SPACE");
+            if let Some(diagnostic) = diagnostic {
+                let offset = lines.byte_for_visual_column(line, diagnostic.visual_column);
+                let mut relative = offset.saturating_sub(line.start).min(text.len());
+                if text.as_bytes().get(relative) != Some(&b'\t') {
+                    relative = text[relative.saturating_sub(1)..]
+                        .find('\t')
+                        .map_or(relative, |found| relative.saturating_sub(1) + found);
+                }
+                if text.as_bytes().get(relative) == Some(&b'\t') {
+                    edits.push(Edit::new(
+                        line.start + relative,
+                        line.start + relative + 1,
+                        " ",
+                        "TAB_REPLACE_SPACE",
+                        "replaced an alignment tab with a natural space",
+                        Some(line_number),
+                    )?);
+                }
+            }
+        }
+        for code in ["MISSING_TAB_VAR", "MISSING_TAB_TYPDEF", "NO_TAB_BF_TYPEDEF"] {
+            if let Some(diagnostic) = diagnostics
+                .iter()
+                .find(|item| item.line == line_number && item.code == code)
+            {
+                let offset = lines.byte_for_visual_column(line, diagnostic.visual_column);
+                let relative = offset.saturating_sub(line.start);
+                let (start, end) = whitespace_before(text, relative);
+                if start != end {
+                    edits.push(Edit::new(
+                        line.start + start,
+                        line.start + end,
+                        "\t",
+                        code,
+                        "inserted the required declaration tab",
+                        Some(line_number),
+                    )?);
+                }
+            }
+        }
+    }
+    Ok(edits)
+}
+
+fn whitespace_run_near(text: &str, index: usize) -> (usize, usize) {
+    let bytes = text.as_bytes();
+    let mut start = index.min(bytes.len());
+    if start == bytes.len() || !matches!(bytes[start], b' ' | b'\t') {
+        start = start.saturating_sub(1);
+    }
+    while start > 0 && matches!(bytes[start - 1], b' ' | b'\t') {
+        start -= 1;
+    }
+    let mut end = index.min(bytes.len());
+    while end < bytes.len() && matches!(bytes[end], b' ' | b'\t') {
+        end += 1;
+    }
+    (start, end)
+}
+
+#[allow(clippy::too_many_lines)]
+fn fix_token_spacing(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+) -> Result<Vec<Edit>, CActionError> {
+    let lines = context.lines();
+    let blocked = multiline_preprocessor_lines(context.source(), &lines);
+    let mut edits = Vec::new();
+    for diagnostic in diagnostics {
+        if blocked.contains(&diagnostic.line) {
+            continue;
+        }
+        let Some(line) = lines.get(diagnostic.line) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let byte = lines.byte_for_visual_column(line, diagnostic.visual_column);
+        let relative = byte.saturating_sub(line.start).min(text.len());
+        let code = diagnostic.code.as_str();
+        if matches!(
+            code,
+            "SPC_BFR_OPERATOR"
+                | "SPC_AFTER_OPERATOR"
+                | "NO_SPC_BFR_OPR"
+                | "NO_SPC_AFR_OPR"
+                | "SPC_BFR_POINTER"
+                | "SPC_AFTER_POINTER"
+        ) {
+            let Some((start, end)) = operator_span(text, line.start, relative, context.lexical())
+            else {
+                continue;
+            };
+            let operator = &text[start..end];
+            if matches!(operator, "+" | "-") && inside_numeric_exponent(text, start) {
+                continue;
+            }
+            match code {
+                "SPC_BFR_OPERATOR" | "SPC_BFR_POINTER" => {
+                    let (space_start, _) = whitespace_before(text, start);
+                    if space_start == start {
+                        edits.push(Edit::new(
+                            line.start + start,
+                            line.start + start,
+                            " ",
+                            code,
+                            "inserted required space before an operator",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+                "SPC_AFTER_OPERATOR" => {
+                    let (_, space_end) = whitespace_after(text, end);
+                    if space_end == end {
+                        edits.push(Edit::new(
+                            line.start + end,
+                            line.start + end,
+                            " ",
+                            code,
+                            "inserted required space after an operator",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+                "NO_SPC_BFR_OPR" => {
+                    let (space_start, space_end) = whitespace_before(text, start);
+                    let void_return = operator == ";"
+                        && text[..start]
+                            .trim_end_matches([' ', '\t'])
+                            .ends_with("return");
+                    if space_start != space_end && !void_return {
+                        edits.push(Edit::new(
+                            line.start + space_start,
+                            line.start + space_end,
+                            "",
+                            code,
+                            "removed forbidden space before an operator",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+                "NO_SPC_AFR_OPR" | "SPC_AFTER_POINTER" => {
+                    let (space_start, space_end) = whitespace_after(text, end);
+                    if space_start != space_end {
+                        edits.push(Edit::new(
+                            line.start + space_start,
+                            line.start + space_end,
+                            "",
+                            code,
+                            "removed forbidden space after an operator",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+        if matches!(
+            code,
+            "SPC_BFR_PAR" | "SPC_AFTER_PAR" | "NO_SPC_BFR_PAR" | "NO_SPC_AFR_PAR"
+        ) {
+            let Some(parenthesis) = parenthesis_near(text, line.start, relative, context.lexical())
+            else {
+                continue;
+            };
+            match code {
+                "SPC_BFR_PAR" => {
+                    let (start, end) = whitespace_before(text, parenthesis);
+                    if start == end {
+                        edits.push(Edit::new(
+                            line.start + parenthesis,
+                            line.start + parenthesis,
+                            " ",
+                            code,
+                            "inserted required space before a parenthesis",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+                "SPC_AFTER_PAR" => {
+                    let (start, end) = whitespace_after(text, parenthesis + 1);
+                    if start == end {
+                        edits.push(Edit::new(
+                            line.start + parenthesis + 1,
+                            line.start + parenthesis + 1,
+                            " ",
+                            code,
+                            "inserted required space after a parenthesis",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+                "NO_SPC_BFR_PAR" => {
+                    let (start, end) = whitespace_before(text, parenthesis);
+                    if start != end {
+                        edits.push(Edit::new(
+                            line.start + start,
+                            line.start + end,
+                            "",
+                            code,
+                            "removed forbidden space before a parenthesis",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+                "NO_SPC_AFR_PAR" => {
+                    let (start, end) = whitespace_after(text, parenthesis + 1);
+                    if start != end {
+                        edits.push(Edit::new(
+                            line.start + start,
+                            line.start + end,
+                            "",
+                            code,
+                            "removed forbidden space after a parenthesis",
+                            Some(diagnostic.line),
+                        )?);
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+        match code {
+            "CONSECUTIVE_SPC" | "CONSECUTIVE_WS" => {
+                let (start, end) = whitespace_run_near(text, relative);
+                if end.saturating_sub(start) > 1 {
+                    edits.push(Edit::new(
+                        line.start + start,
+                        line.start + end,
+                        " ",
+                        code,
+                        "collapsed consecutive whitespace",
+                        Some(diagnostic.line),
+                    )?);
+                }
+            }
+            "TAB_INSTEAD_SPC" => {
+                let probe = find_near_byte(text, relative, b'\t');
+                if let Some(probe) = probe {
+                    edits.push(Edit::new(
+                        line.start + probe,
+                        line.start + probe + 1,
+                        " ",
+                        code,
+                        "replaced a tab with a natural space",
+                        Some(diagnostic.line),
+                    )?);
+                }
+            }
+            "SPACE_AFTER_KW" => {
+                let mut start = relative;
+                while start > 0
+                    && (text.as_bytes()[start - 1].is_ascii_alphanumeric()
+                        || text.as_bytes()[start - 1] == b'_')
+                {
+                    start -= 1;
+                }
+                let mut end = start;
+                while text
+                    .as_bytes()
+                    .get(end)
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+                {
+                    end += 1;
+                }
+                if end > start && !matches!(text.as_bytes().get(end), Some(b' ' | b'\t')) {
+                    edits.push(Edit::new(
+                        line.start + end,
+                        line.start + end,
+                        " ",
+                        code,
+                        "inserted required space after a keyword",
+                        Some(diagnostic.line),
+                    )?);
+                }
+            }
+            "SPC_LINE_START" => {
+                let end = leading_whitespace(text);
+                if end > 0 {
+                    edits.push(Edit::new(
+                        line.start,
+                        line.start + end,
+                        "",
+                        code,
+                        "removed unexpected leading whitespace",
+                        Some(diagnostic.line),
+                    )?);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(edits)
+}
+
+fn multiline_preprocessor_lines(_source: &str, lines: &SourceLines<'_>) -> BTreeSet<u32> {
+    let mut result = BTreeSet::new();
+    let mut active = false;
+    for (number, _, text) in lines.iter() {
+        let starts = text.trim_start_matches([' ', '\t']).starts_with('#');
+        let continues = has_sensitive_line_end(text);
+        if active {
+            result.insert(number);
+            active = continues;
+        } else if starts && continues {
+            result.insert(number);
+            active = true;
+        }
+    }
+    result
+}
+
+fn operator_span(
+    text: &str,
+    base: usize,
+    index: usize,
+    lexical: &LexicalMap,
+) -> Option<(usize, usize)> {
+    const SPACING_OPERATORS: &[&str] = &[
+        ">>=", "<<=", "...", "++", "--", "->", "&&", "||", "==", "!=", "<=", ">=", "+=", "-=",
+        "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>", "+", "-", "*", "/", "%", "<", ">", "=",
+        "!", "&", "|", "^", "~", "?", ":", ",", ";", ".",
+    ];
+    for probe in [index, index.saturating_sub(1), index.saturating_sub(2)] {
+        for operator in SPACING_OPERATORS {
+            let end = probe.saturating_add(operator.len());
+            if text.get(probe..end) == Some(*operator)
+                && !(probe..end).any(|offset| lexical.is_protected(base + offset))
+            {
+                return Some((probe, end));
+            }
+        }
+    }
+    None
+}
+
+fn parenthesis_near(text: &str, base: usize, index: usize, lexical: &LexicalMap) -> Option<usize> {
+    let lower = index.saturating_sub(2);
+    let upper = (index + 3).min(text.len());
+    (lower..upper).find(|position| {
+        matches!(
+            text.as_bytes()[*position],
+            b'(' | b')' | b'[' | b']' | b'{' | b'}'
+        ) && !lexical.is_protected(base + *position)
+    })
+}
+
+fn find_near_byte(text: &str, index: usize, byte: u8) -> Option<usize> {
+    if text.as_bytes().get(index) == Some(&byte) {
+        return Some(index);
+    }
+    let start = index.saturating_sub(1);
+    text.as_bytes()[start..]
+        .iter()
+        .position(|candidate| *candidate == byte)
+        .map(|position| start + position)
+}
+
+fn inside_numeric_exponent(text: &str, operator: usize) -> bool {
+    if operator < 2 || operator + 1 >= text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    let marker = bytes[operator - 1];
+    if !matches!(marker, b'e' | b'E' | b'p' | b'P') || !bytes[operator + 1].is_ascii_digit() {
+        return false;
+    }
+    let mut start = operator - 1;
+    while start > 0
+        && (bytes[start - 1].is_ascii_hexdigit() || matches!(bytes[start - 1], b'x' | b'X' | b'.'))
+    {
+        start -= 1;
+    }
+    if start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+        return false;
+    }
+    let literal = &text[start..operator - 1];
+    if matches!(marker, b'e' | b'E') {
+        decimal_mantissa_regex().is_match(literal)
+    } else {
+        hex_mantissa_regex().is_match(literal)
+    }
+}
+
+fn decimal_mantissa_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r"^(?:\d+(?:\.\d*)?|\.\d+)$").expect("constant decimal regex is valid")
+    })
+}
+
+fn hex_mantissa_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r"^0[xX](?:[0-9A-Fa-f]+(?:\.[0-9A-Fa-f]*)?|\.[0-9A-Fa-f]+)$")
+            .expect("constant hexadecimal regex is valid")
+    })
+}
+
+#[derive(Clone, Debug)]
+struct Declaration {
+    line: u32,
+    scope: Vec<u32>,
+    text: String,
+    offset: usize,
+    gap_start: usize,
+    gap_end: usize,
+    prefix_column: u32,
+    declarator_column: u32,
+}
+
+fn align_declarations(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+    options: &CActionOptions,
+) -> Result<Vec<Edit>, CActionError> {
+    let targets: BTreeSet<u32> = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "MISALIGNED_VAR_DECL")
+        .map(|diagnostic| diagnostic.line)
+        .collect();
+    if targets.is_empty() && !options.format_proven_declarations {
+        return Ok(Vec::new());
+    }
+    let groups = declaration_groups(context);
+    let mut edits = Vec::new();
+    for group in groups {
+        if group.len() < 2
+            || (!targets.is_empty()
+                && !options.format_proven_declarations
+                && group.iter().all(|item| !targets.contains(&item.line)))
+        {
+            continue;
+        }
+        let minimum = group
+            .iter()
+            .map(|item| next_tab_stop(item.prefix_column))
+            .max()
+            .unwrap_or(1);
+        let anchor = group[0].declarator_column;
+        let target = if anchor >= minimum
+            && group
+                .iter()
+                .all(|item| tabs_to_column(item.prefix_column, anchor).is_some())
+        {
+            anchor
+        } else {
+            minimum
+        };
+        let mut group_edits = Vec::new();
+        let mut safe = true;
+        for declaration in &group {
+            let Some(tabs) = tabs_to_column(declaration.prefix_column, target) else {
+                safe = false;
+                break;
+            };
+            let rebuilt = format!(
+                "{}{}{}",
+                &declaration.text[..declaration.gap_start],
+                tabs,
+                &declaration.text[declaration.gap_end..]
+            );
+            if visual_width(&rebuilt) > options.max_columns {
+                safe = false;
+                break;
+            }
+            group_edits.push(Edit::new(
+                declaration.offset + declaration.gap_start,
+                declaration.offset + declaration.gap_end,
+                tabs,
+                "MISALIGNED_VAR_DECL",
+                "aligned a simple declaration group with tabs",
+                Some(declaration.line),
+            )?);
+        }
+        if safe {
+            edits.extend(group_edits);
+        }
+    }
+    Ok(edits)
+}
+
+fn declaration_groups(context: &ParsedContext) -> Vec<Vec<Declaration>> {
+    let lines = context.lines();
+    let mut scope = vec![0_u32];
+    let mut next_scope = 1_u32;
+    let mut groups = Vec::new();
+    let mut current = Vec::new();
+    for (line_number, line, text) in lines.iter() {
+        let has_protected =
+            (line.start..line.content_end).any(|offset| context.lexical().is_protected(offset));
+        let declaration =
+            parse_declaration(text, line_number, line.start, scope.clone(), has_protected);
+        let continues_group = declaration.as_ref().is_some_and(|item| {
+            current.last().is_some_and(|previous: &Declaration| {
+                item.scope == previous.scope && item.line == previous.line.saturating_add(1)
+            })
+        });
+        if let Some(declaration) = declaration {
+            if !continues_group && !current.is_empty() {
+                groups.push(std::mem::take(&mut current));
+            }
+            current.push(declaration);
+        } else if !current.is_empty() {
+            groups.push(std::mem::take(&mut current));
+        }
+
+        if !text.trim_start_matches([' ', '\t']).starts_with('#') {
+            for (relative, byte) in text.bytes().enumerate() {
+                if context.lexical().is_protected(line.start + relative) {
+                    continue;
+                }
+                if byte == b'}' {
+                    if scope.len() > 1 {
+                        scope.pop();
+                    }
+                } else if byte == b'{' {
+                    scope.push(next_scope);
+                    next_scope = next_scope.saturating_add(1);
+                }
+            }
+        }
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    groups
+}
+
+fn parse_declaration(
+    text: &str,
+    line: u32,
+    offset: usize,
+    scope: Vec<u32>,
+    has_protected: bool,
+) -> Option<Declaration> {
+    if has_protected
+        || text
+            .bytes()
+            .any(|byte| matches!(byte, b',' | b'(' | b')' | b':' | b'\\' | b'{' | b'}'))
+        || text.bytes().filter(|byte| *byte == b';').count() != 1
+        || !text.trim_end().ends_with(';')
+    {
+        return None;
+    }
+    let captures = simple_declaration_regex().captures(text)?;
+    let gap = captures.name("gap")?;
+    let declarator = captures.name("declarator")?;
+    Some(Declaration {
+        line,
+        scope,
+        text: text.to_owned(),
+        offset,
+        gap_start: gap.start(),
+        gap_end: gap.end(),
+        prefix_column: visual_width(&text[..gap.start()]) + 1,
+        declarator_column: visual_width(&text[..declarator.start()]) + 1,
+    })
+}
+
+fn simple_declaration_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(
+            r"(?x)
+            ^
+            (?P<indent>\t*)
+            (?P<type>
+                (?:
+                    (?:(?:static|extern|register|const|volatile|restrict|signed|unsigned|short|long)\x20+)*
+                    (?:
+                        (?:struct|union|enum)\x20+[A-Za-z_][A-Za-z0-9_]*
+                        |void|char|int|float|double|_Bool|short|long|signed|unsigned
+                        |va_list|size_t|ssize_t|ptrdiff_t|bool|FILE
+                        |t_[A-Za-z0-9_]+|[A-Za-z_][A-Za-z0-9_]*_t|[A-Z][A-Za-z0-9_]*
+                    )
+                    (?:\x20+(?:const|volatile|restrict|signed|unsigned|short|long|int))*
+                )
+            )
+            (?P<gap>[\x20\t]+)
+            (?P<declarator>\*+[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)
+            (?P<arrays>(?:\[[0-9A-Z_+\-*/\x20\t]*\])*)
+            (?P<initializer>[\x20\t]*=[\x20\t]*[A-Za-z0-9_+\-*/%&|^~!.<>\x20\t]+)?
+            [\x20\t]*;
+            $
+            ",
+        )
+        .expect("constant simple declaration regex is valid")
+    })
+}
+
+fn is_declaration_word(word: &str) -> bool {
+    matches!(
+        word,
+        "_Atomic"
+            | "_Bool"
+            | "auto"
+            | "char"
+            | "const"
+            | "double"
+            | "enum"
+            | "extern"
+            | "float"
+            | "inline"
+            | "int"
+            | "long"
+            | "register"
+            | "restrict"
+            | "short"
+            | "signed"
+            | "static"
+            | "struct"
+            | "typedef"
+            | "union"
+            | "unsigned"
+            | "void"
+            | "volatile"
+    )
+}
+
+fn parenthesize_returns(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+) -> Result<Vec<Edit>, CActionError> {
+    let targets: BTreeSet<u32> = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "RETURN_PARENTHESIS")
+        .map(|diagnostic| diagnostic.line)
+        .collect();
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tokens = context.tokens();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(context.source(), &lines);
+    let mut edits = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if token.text != "return" {
+            continue;
+        }
+        let line_number = lines.line_number_at(token.start);
+        if !targets.contains(&line_number) || blocked.contains(&line_number) {
+            continue;
+        }
+        let Some(semicolon) = statement_semicolon(tokens, index + 1) else {
+            continue;
+        };
+        if semicolon == index + 1 {
+            continue;
+        }
+        let expression_start = index + 1;
+        let expression_end = semicolon - 1;
+        if tokens[expression_start].text == "("
+            && matching_forward(tokens, expression_start, "(", ")") == Some(expression_end)
+        {
+            continue;
+        }
+        if (token.end..tokens[expression_start].start)
+            .any(|offset| context.lexical().is_protected(offset))
+        {
+            continue;
+        }
+        edits.push(Edit::new(
+            tokens[expression_start].start,
+            tokens[expression_start].start,
+            "(",
+            "RETURN_PARENTHESIS",
+            "wrapped the complete return expression in parentheses",
+            Some(line_number),
+        )?);
+        edits.push(Edit::new(
+            tokens[semicolon].start,
+            tokens[semicolon].start,
+            ")",
+            "RETURN_PARENTHESIS",
+            "wrapped the complete return expression in parentheses",
+            Some(line_number),
+        )?);
+    }
+    Ok(edits)
+}
+
+fn statement_semicolon(tokens: &[Token], start: usize) -> Option<usize> {
+    let mut parentheses = 0_u32;
+    let mut brackets = 0_u32;
+    let mut braces = 0_u32;
+    for (index, token) in tokens.iter().enumerate().skip(start) {
+        match token.text.as_str() {
+            "(" => parentheses = parentheses.saturating_add(1),
+            ")" => parentheses = parentheses.saturating_sub(1),
+            "[" => brackets = brackets.saturating_add(1),
+            "]" => brackets = brackets.saturating_sub(1),
+            "{" => braces = braces.saturating_add(1),
+            "}" if braces == 0 => return None,
+            "}" => braces = braces.saturating_sub(1),
+            ";" if parentheses == 0 && brackets == 0 && braces == 0 => return Some(index),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn add_void_to_definitions(
+    context: &ParsedContext,
+    diagnostics: &[ReportedDiagnostic],
+) -> Result<Vec<Edit>, CActionError> {
+    let targets: BTreeSet<u32> = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "NO_ARGS_VOID")
+        .map(|diagnostic| diagnostic.line)
+        .collect();
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for fact in context
+        .facts()
+        .functions
+        .iter()
+        .filter(|fact| fact.kind == CFunctionKind::Definition)
+    {
+        let line_number = lines.line_number_at(fact.name_range.start().get() as usize);
+        if !targets.contains(&line_number) {
+            continue;
+        }
+        let start = fact.parameters_range.start().get() as usize;
+        let end = fact.parameters_range.end().get() as usize;
+        let Some(parameters) = context.source().get(start..end) else {
+            continue;
+        };
+        if !parameters.starts_with('(')
+            || !parameters.ends_with(')')
+            || !parameters[1..parameters.len() - 1].trim().is_empty()
+        {
+            continue;
+        }
+        edits.push(Edit::new(
+            start + 1,
+            end - 1,
+            "void",
+            "NO_ARGS_VOID",
+            "made an empty function definition parameter list explicit",
+            Some(line_number),
+        )?);
+    }
+    Ok(edits)
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BreakCandidate {
+    priority: u8,
+    nesting: u32,
+    prefix_width: u32,
+    start: usize,
+    end: usize,
+}
+
+fn wrap_long_lines(context: &ParsedContext, max_columns: u32) -> Result<Vec<Edit>, CActionError> {
+    if max_columns == 0 {
+        return Ok(Vec::new());
+    }
+    let lines = context.lines();
+    let preprocessors = preprocessor_line_set(context.source(), &lines);
+    let model = indentation_model(context);
+    let mut edits = Vec::new();
+    for (line_number, line, text) in lines.iter() {
+        if visual_width(text) <= max_columns
+            || preprocessors.contains(&line_number)
+            || context.lexical().line_has_comment(line_number)
+        {
+            continue;
+        }
+        let initial_delimiter = model
+            .get(&line_number)
+            .map_or(0, |information| information.delimiter_depth);
+        let mut candidates = Vec::new();
+        scan_operator_breaks(
+            context,
+            line,
+            text,
+            initial_delimiter,
+            max_columns,
+            &mut candidates,
+        );
+        scan_comma_breaks(
+            context,
+            line,
+            text,
+            initial_delimiter,
+            max_columns,
+            &mut candidates,
+        );
+        let Some(best) = select_break(&candidates) else {
+            continue;
+        };
+        let delimiter = delimiter_depth_at(context, line, text, best.start, initial_delimiter);
+        let information = model.get(&line_number).copied().unwrap_or_default();
+        let continuation_depth = delimiter.saturating_add(information.continuation_extra);
+        let mut continuation_level = information
+            .brace_depth
+            .saturating_add(continuation_depth.max(1));
+        if information.continuation {
+            continuation_level = continuation_level.max(information.expected);
+        }
+        edits.push(Edit::new(
+            line.start + best.start,
+            line.start + best.end,
+            format!("\n{}", "\t".repeat(continuation_level as usize)),
+            "LINE_TOO_LONG",
+            "wrapped a long line at a token-safe operator or comma",
+            Some(line_number),
+        )?);
+    }
+    Ok(edits)
+}
+
+fn scan_operator_breaks(
+    context: &ParsedContext,
+    line: PhysicalLine,
+    text: &str,
+    initial_delimiter: u32,
+    max_columns: u32,
+    candidates: &mut Vec<BreakCandidate>,
+) {
+    const BREAK_OPERATORS: &[&str] = &[
+        "<<=", ">>=", "&&", "||", "==", "!=", "<=", ">=", "<<", ">>", "->", "+=", "-=", "*=", "/=",
+        "%=", "&=", "|=", "^=", "++", "--", "+", "-", "*", "/", "%", "<", ">", "|", "^", "&", "=",
+    ];
+    let mut index = 0;
+    while index < text.len() {
+        if context.lexical().is_protected(line.start + index) {
+            index += 1;
+            continue;
+        }
+        let Some(operator) = BREAK_OPERATORS
+            .iter()
+            .copied()
+            .find(|operator| text.as_bytes()[index..].starts_with(operator.as_bytes()))
+        else {
+            index += 1;
+            continue;
+        };
+        let end = index + operator.len();
+        if matches!(operator, "++" | "--")
+            || (matches!(operator, "+" | "-" | "*" | "&")
+                && looks_unary(context, line, text, index))
+            || (matches!(operator, "+" | "-") && inside_numeric_exponent(text, index))
+        {
+            index = end;
+            continue;
+        }
+        let (whitespace_start, _) = whitespace_before(text, index);
+        let prefix_width = visual_width(text[..whitespace_start].trim_end());
+        if (12..=max_columns).contains(&prefix_width) {
+            candidates.push(BreakCandidate {
+                priority: u8::from(!matches!(operator, "&&" | "||")) * 2,
+                nesting: delimiter_depth_at(
+                    context,
+                    line,
+                    text,
+                    whitespace_start,
+                    initial_delimiter,
+                ),
+                prefix_width,
+                start: whitespace_start,
+                end: index,
+            });
+        }
+        index = end;
+    }
+}
+
+fn scan_comma_breaks(
+    context: &ParsedContext,
+    line: PhysicalLine,
+    text: &str,
+    initial_delimiter: u32,
+    max_columns: u32,
+    candidates: &mut Vec<BreakCandidate>,
+) {
+    for (index, byte) in text.bytes().enumerate() {
+        if byte != b',' || context.lexical().is_protected(line.start + index) {
+            continue;
+        }
+        let (start, end) = whitespace_after(text, index + 1);
+        let prefix_width = visual_width(&text[..=index]);
+        if (12..=max_columns).contains(&prefix_width) {
+            candidates.push(BreakCandidate {
+                priority: 1,
+                nesting: delimiter_depth_at(context, line, text, index, initial_delimiter),
+                prefix_width,
+                start,
+                end,
+            });
+        }
+    }
+}
+
+fn select_break(candidates: &[BreakCandidate]) -> Option<BreakCandidate> {
+    let priority = candidates
+        .iter()
+        .map(|candidate| candidate.priority)
+        .min()?;
+    let nesting = candidates
+        .iter()
+        .filter(|candidate| candidate.priority == priority)
+        .map(|candidate| candidate.nesting)
+        .min()?;
+    candidates
+        .iter()
+        .filter(|candidate| candidate.priority == priority && candidate.nesting == nesting)
+        .max_by_key(|candidate| candidate.prefix_width)
+        .copied()
+}
+
+fn delimiter_depth_at(
+    context: &ParsedContext,
+    line: PhysicalLine,
+    text: &str,
+    end: usize,
+    initial: u32,
+) -> u32 {
+    let mut depth = initial;
+    for (relative, byte) in text.bytes().take(end).enumerate() {
+        if context.lexical().is_protected(line.start + relative) {
+            continue;
+        }
+        match byte {
+            b'(' | b'[' => depth = depth.saturating_add(1),
+            b')' | b']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    depth
+}
+
+fn looks_unary(context: &ParsedContext, line: PhysicalLine, text: &str, operator: usize) -> bool {
+    let mut probe = operator;
+    while probe > 0 {
+        probe -= 1;
+        if context.lexical().is_protected(line.start + probe)
+            || matches!(text.as_bytes()[probe], b' ' | b'\t')
+        {
+            continue;
+        }
+        return b"([{,=?:!~+-*/%&|^<>".contains(&text.as_bytes()[probe]);
+    }
+    true
+}

@@ -1,0 +1,24 @@
+[package]
+name = "normfix-cache"
+version = "0.4.0-alpha.1"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Fail-open persistent cache for norminette-fix"
+
+[dependencies]
+blake3 = "1.8"
+redb = "=2.6.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.20"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

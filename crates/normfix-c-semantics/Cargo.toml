@@ -1,0 +1,15 @@
+[package]
+name = "normfix-c-semantics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Conservative semantic facts for native Norminette diagnostics"
+
+[dependencies]
+normfix-c-syntax = { path = "../normfix-c-syntax" }
+normfix-core = { path = "../normfix-core" }
+
+[lints]
+workspace = true

@@ -1,0 +1,34 @@
+[package]
+name = "normfix-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+blake3.workspace = true
+camino.workspace = true
+normfix-actions = { path = "../normfix-actions" }
+normfix-c-actions = { path = "../normfix-c-actions" }
+normfix-c-semantics = { path = "../normfix-c-semantics" }
+normfix-c-syntax = { path = "../normfix-c-syntax" }
+normfix-cache = { path = "../normfix-cache" }
+normfix-core = { path = "../normfix-core" }
+normfix-destructive = { path = "../normfix-destructive" }
+normfix-header = { path = "../normfix-header" }
+normfix-makefile = { path = "../normfix-makefile" }
+normfix-markdown = { path = "../normfix-markdown" }
+normfix-oracle = { path = "../normfix-oracle" }
+normfix-project = { path = "../normfix-project" }
+normfix-report = { path = "../normfix-report" }
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

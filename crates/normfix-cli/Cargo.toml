@@ -1,0 +1,25 @@
+[package]
+name = "normfix-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "norminette-fix"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+normfix-engine = { path = "../normfix-engine" }
+normfix-destructive = { path = "../normfix-destructive" }
+normfix-header = { path = "../normfix-header" }
+normfix-report = { path = "../normfix-report" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

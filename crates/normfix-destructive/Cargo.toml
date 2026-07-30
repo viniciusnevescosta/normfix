@@ -1,0 +1,21 @@
+[package]
+name = "normfix-destructive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Explicitly authorized destructive planners for norminette-fix"
+
+[dependencies]
+blake3.workspace = true
+camino.workspace = true
+normfix-c-syntax = { path = "../normfix-c-syntax" }
+normfix-core = { path = "../normfix-core" }
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

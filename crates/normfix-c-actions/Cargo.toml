@@ -1,0 +1,19 @@
+[package]
+name = "normfix-c-actions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Deterministic native C formatting and Norm action planning"
+
+[dependencies]
+blake3.workspace = true
+camino.workspace = true
+normfix-c-syntax = { path = "../normfix-c-syntax" }
+normfix-core = { path = "../normfix-core" }
+regex.workspace = true
+thiserror.workspace = true
+unicode-width.workspace = true
+
+[lints]
+workspace = true

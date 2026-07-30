@@ -1,0 +1,28 @@
+[package]
+name = "normfix-oracle"
+version = "0.4.0-alpha.1"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Bounded subprocess oracles for norminette-fix"
+
+[dependencies]
+blake3 = "1.8"
+normfix-c-syntax = { path = "../normfix-c-syntax" }
+serde = { version = "1.0", features = ["derive"] }
+tempfile = "3.20"
+thiserror = "2.0"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", default-features = false, features = ["process", "signal"] }
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
