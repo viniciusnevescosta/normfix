@@ -46,6 +46,7 @@ jobs:
         run: |
           cargo test --locked -p normfix-oracle installed_official_norminette_smoke_test -- --ignored
           cargo test --locked -p normfix-oracle installed_compiler_smoke_test -- --ignored
+          cargo test --locked -p normfix-engine --test differential -- --ignored
       - name: Deny Clippy warnings
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Deny rustdoc warnings

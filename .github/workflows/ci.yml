@@ -38,6 +38,20 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps --locked
 
+  supply-chain:
+    name: Dependency advisories, licences, and sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: Check dependencies
+        run: cargo deny --all-features check
+
   msrv:
     name: Rust 1.85 MSRV
     runs-on: ubuntu-24.04
@@ -83,3 +97,5 @@ jobs:
         run: cargo test --locked -p normfix-oracle installed_official_norminette_smoke_test -- --ignored
       - name: Exercise system C compiler adapter
         run: cargo test --locked -p normfix-oracle installed_compiler_smoke_test -- --ignored
+      - name: Prove a run never worsens the official result
+        run: cargo test --locked -p normfix-engine --test differential -- --ignored
