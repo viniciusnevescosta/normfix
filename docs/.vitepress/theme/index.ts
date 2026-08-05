@@ -1,5 +1,5 @@
 import DefaultTheme from "vitepress/theme";
-import { h } from "vue";
+import { defineAsyncComponent, h } from "vue";
 
 import "./custom.css";
 import "./playground-link.css";
@@ -10,6 +10,14 @@ import "./playground-link.css";
 // the theme's link normalization.
 export default {
   extends: DefaultTheme,
+  enhanceApp({ app }: { app: import("vue").App }) {
+    // The renderer is several megabytes. Registering it asynchronously keeps it
+    // out of the shared bundle, so only a page with a diagram pays for it.
+    app.component(
+      "Mermaid",
+      defineAsyncComponent(() => import("vitepress-plugin-mermaid/Mermaid.vue")),
+    );
+  },
   Layout() {
     return h(DefaultTheme.Layout, null, {
       "nav-bar-content-after": () =>

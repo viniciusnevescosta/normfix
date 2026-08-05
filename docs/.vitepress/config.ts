@@ -1,5 +1,5 @@
 import { defineConfig } from "vitepress";
-import { withMermaid } from "vitepress-plugin-mermaid";
+import { MermaidMarkdown, MermaidPlugin } from "vitepress-plugin-mermaid";
 
 // The playground owns the site root and the documentation is published beneath
 // it, so `base` must match the deployed `/docs/` prefix and `outDir` must write
@@ -7,7 +7,7 @@ import { withMermaid } from "vitepress-plugin-mermaid";
 //
 // `withMermaid` renders the architecture diagram that the reference documents
 // already express as a fenced `mermaid` block for GitHub.
-export default withMermaid(defineConfig({
+export default defineConfig({
   title: "normfix",
   description:
     "Safe automatic fixes and actionable diagnostics for the 42 Norm.",
@@ -106,8 +106,45 @@ export default withMermaid(defineConfig({
       copyright: "Copyright © 2026 Vinicius Neves Costa",
     },
   },
-  mermaid: {
-    theme: "dark",
-    securityLevel: "strict",
+  markdown: {
+    config: (md) => {
+      md.use(MermaidMarkdown);
+    },
   },
-}));
+  // VitePress preloads every async chunk it knows about, so a page with no
+  // diagram still told the browser to fetch several megabytes of renderer.
+  // Only a page that actually renders one keeps the hint.
+  transformHtml(code) {
+    if (code.includes('class="mermaid')) {
+      return code;
+    }
+    return code.replace(
+      /\s*<link rel="modulepreload" href="[^"]*(?:mermaid|cynefin)[^"]*">/g,
+      "",
+    );
+  },
+  vite: {
+    plugins: [MermaidPlugin()],
+    build: {
+      // The mermaid renderer is large and the plugin imports it statically into
+      // the theme, so it cannot be made lazy from here. Isolating it in its own
+      // chunk at least keeps its hash stable: editing a page no longer
+      // invalidates the renderer in a reader's cache.
+      chunkSizeWarningLimit: 700,
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (
+              /node_modules\/(mermaid|cytoscape|dagre|@?d3|katex|elkjs|khroma|roughjs)/.test(
+                id,
+              )
+            ) {
+              return "mermaid";
+            }
+            return undefined;
+          },
+        },
+      },
+    },
+  },
+});
