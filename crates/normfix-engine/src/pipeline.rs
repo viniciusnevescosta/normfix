@@ -271,8 +271,9 @@ impl OracleContext {
             .strip_prefix(&self.project_root)
             .unwrap_or(path)
             .to_string_lossy();
+        let family = CompilerFamily::from_version(&compiler.fingerprint().version_output);
         let namespace = if analyzer {
-            "gcc-fanalyzer-v3"
+            family.analyzer_namespace()
         } else {
             "cc-wall-wextra-werror-v3"
         };
@@ -292,7 +293,7 @@ impl OracleContext {
                 return Ok(Some(report));
             }
         }
-        let arguments = compiler_arguments(analyzer, &self.compiler_include_directories);
+        let arguments = compiler_arguments(analyzer, family, &self.compiler_include_directories);
         let before = std::fs::read(path).map_err(|error| {
             CompilerError::InvalidProjectSource(format!(
                 "could not re-read `{}` before compiler preflight: {error}",
@@ -593,15 +594,101 @@ fn build_oracle_context(
     }))
 }
 
-fn compiler_arguments(analyzer: bool, include_directories: &[PathBuf]) -> Vec<OsString> {
-    let mut arguments = ["-fsyntax-only", "-Wall", "-Wextra"]
-        .into_iter()
-        .map(OsString::from)
-        .collect::<Vec<_>>();
+/// Drops the path-trace note that merely repeats its own finding.
+///
+/// The Clang analyzer reports a finding twice at the same position: once as a
+/// warning tagged with the checker that produced it, and once as the first note
+/// of the trace, untagged. Both are useful in a raw log and redundant in a
+/// report, so keep the tagged one.
+fn deduplicate_analyzer_trace(diagnostics: &mut Vec<Diagnostic>) {
+    fn untagged(message: &str) -> &str {
+        message
+            .rfind(" [")
+            .filter(|_| message.ends_with(']'))
+            .map_or(message, |index| &message[..index])
+    }
+
+    let tagged = diagnostics
+        .iter()
+        .filter(|diagnostic| untagged(&diagnostic.message) != diagnostic.message)
+        .map(|diagnostic| {
+            (
+                diagnostic.range.start(),
+                untagged(&diagnostic.message).to_owned(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    diagnostics.retain(|diagnostic| {
+        untagged(&diagnostic.message) != diagnostic.message
+            || !tagged.contains(&(diagnostic.range.start(), diagnostic.message.clone()))
+    });
+}
+
+/// The analyzer a compiler actually ships, which is not the same question as
+/// what the command is called.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CompilerFamily {
+    Gcc,
+    Clang,
+    Unknown,
+}
+
+impl CompilerFamily {
+    /// Classifies a compiler from its own version banner.
+    ///
+    /// Clang is checked first on purpose: `/usr/bin/gcc` on macOS is Clang
+    /// wearing another name, and it answers `Apple clang version ...`. Trusting
+    /// the command name would send `-fanalyzer` to a compiler that rejects it.
+    fn from_version(version_output: &str) -> Self {
+        let banner = version_output.to_ascii_lowercase();
+        if banner.contains("clang") {
+            Self::Clang
+        } else if banner.contains("gcc") || banner.contains("free software foundation") {
+            Self::Gcc
+        } else {
+            Self::Unknown
+        }
+    }
+
+    /// Stable cache namespace, because the flags differ per family.
+    const fn analyzer_namespace(self) -> &'static str {
+        match self {
+            Self::Clang => "clang-analyze-v1",
+            Self::Gcc | Self::Unknown => "gcc-fanalyzer-v3",
+        }
+    }
+}
+
+fn compiler_arguments(
+    analyzer: bool,
+    family: CompilerFamily,
+    include_directories: &[PathBuf],
+) -> Vec<OsString> {
+    let mut arguments = Vec::<OsString>::new();
     if analyzer {
-        arguments.push(OsString::from("-fanalyzer"));
+        match family {
+            CompilerFamily::Clang => {
+                // `--analyze` replaces the syntax-only mode. Passing both makes
+                // Clang ignore the analyzer and warn about an unused argument.
+                arguments.extend(
+                    [
+                        "--analyze",
+                        "-Xclang",
+                        "-analyzer-output=text",
+                        "-Wall",
+                        "-Wextra",
+                    ]
+                    .map(OsString::from),
+                );
+            }
+            CompilerFamily::Gcc | CompilerFamily::Unknown => {
+                arguments.extend(
+                    ["-fsyntax-only", "-Wall", "-Wextra", "-fanalyzer"].map(OsString::from),
+                );
+            }
+        }
     } else {
-        arguments.push(OsString::from("-Werror"));
+        arguments.extend(["-fsyntax-only", "-Wall", "-Wextra", "-Werror"].map(OsString::from));
     }
     for directory in include_directories {
         arguments.push(OsString::from("-I"));
@@ -3148,11 +3235,11 @@ fn compiler_report_diagnostics(
             } else {
                 Severity::Info
             },
-            "This compiler does not support GCC `-fanalyzer`; deep analysis was skipped."
+            "This compiler supports neither GCC `-fanalyzer` nor the Clang analyzer; deep analysis was skipped."
                 .to_owned(),
             DiagnosticSource::Compiler,
             Some(
-                "Select a GCC executable that supports -fanalyzer, or omit --analyzer.".to_owned(),
+                "Point --cc at a real GCC or Clang, or omit --analyzer.".to_owned(),
             ),
         )];
     }
@@ -3267,6 +3354,9 @@ fn compiler_report_diagnostics(
             }
         })
         .collect::<Vec<_>>();
+    if analyzer {
+        deduplicate_analyzer_trace(&mut diagnostics);
+    }
     if diagnostics.is_empty() && !report.accepted {
         let detail = report
             .stderr
@@ -3549,6 +3639,51 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{makefile_source_path, prepare_external_recovery_root, transaction_root};
+
+    #[test]
+    fn a_compiler_is_classified_by_its_banner_not_its_command_name() {
+        use super::CompilerFamily;
+
+        // /usr/bin/gcc on macOS answers this, and sending it -fanalyzer fails.
+        assert_eq!(
+            CompilerFamily::from_version("Apple clang version 17.0.0 (clang-1700.6.4.2)"),
+            CompilerFamily::Clang
+        );
+        assert_eq!(
+            CompilerFamily::from_version("gcc (Homebrew GCC 14.2.0) 14.2.0"),
+            CompilerFamily::Gcc
+        );
+        assert_eq!(
+            CompilerFamily::from_version("cc (Free Software Foundation) 13"),
+            CompilerFamily::Gcc
+        );
+        assert_eq!(
+            CompilerFamily::from_version("tcc version 0.9.27"),
+            CompilerFamily::Unknown
+        );
+    }
+
+    #[test]
+    fn each_family_gets_the_analyzer_flags_it_understands() {
+        use super::{CompilerFamily, compiler_arguments};
+
+        let clang = compiler_arguments(true, CompilerFamily::Clang, &[]);
+        assert!(clang.iter().any(|flag| flag == "--analyze"));
+        // Combining the two makes Clang ignore the analyzer entirely.
+        assert!(!clang.iter().any(|flag| flag == "-fsyntax-only"));
+
+        let gcc = compiler_arguments(true, CompilerFamily::Gcc, &[]);
+        assert!(gcc.iter().any(|flag| flag == "-fanalyzer"));
+        assert!(gcc.iter().any(|flag| flag == "-fsyntax-only"));
+
+        // The strict preflight is the same for everyone and keeps -Werror.
+        for family in [CompilerFamily::Clang, CompilerFamily::Gcc] {
+            let strict = compiler_arguments(false, family, &[]);
+            assert!(strict.iter().any(|flag| flag == "-Werror"));
+            assert!(!strict.iter().any(|flag| flag == "--analyze"));
+            assert!(!strict.iter().any(|flag| flag == "-fanalyzer"));
+        }
+    }
 
     #[test]
     fn makefile_source_paths_stay_in_the_caller_path_vocabulary() {

@@ -10,6 +10,24 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## Unreleased
+
+### Added
+
+- **Clang analyzer support.** `--analyzer` previously meant GCC `-fanalyzer`
+  only, so on macOS, where `cc` is Clang, the deep pass was always skipped.
+  The compiler is now classified by its own version banner and gets the flags it
+  understands: `-fanalyzer` on GCC, `--analyze` on Clang. This matters because
+  `/usr/bin/gcc` on macOS answers `Apple clang version ...`, so the command name
+  cannot be trusted.
+
+### Fixed
+
+- `normfix explain CC_ANALYZER_UNAVAILABLE` described the rule as a finding the
+  analyzer had produced, when it means the analyzer never ran.
+- A Clang analyzer finding was reported twice, once as the tagged warning and
+  once as the first note of its own path trace.
+
 ## [0.4.0-beta.2] / 2026-08-05
 
 The release that prepares 1.0.0. No new formatting behavior beyond the

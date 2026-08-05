@@ -9,6 +9,15 @@ pub(crate) fn explain(rule: &str) -> Option<String> {
     {
         return None;
     }
+    if canonical == "CC_ANALYZER_UNAVAILABLE" {
+        return Some(formatted(
+            &canonical,
+            "The requested analyzer is not available",
+            "--analyzer was requested, but the selected compiler ships neither GCC -fanalyzer nor the Clang analyzer, so the deep pass was skipped. Nothing was analyzed and nothing failed.",
+            "Point --cc at a real GCC or Clang, or drop --analyzer. On macOS, /usr/bin/gcc is Clang under another name, and normfix already uses the Clang analyzer for it.",
+            "This is informational and fail-open: a missing analyzer never changes the exit status and never blocks a fix.",
+        ));
+    }
     if canonical.starts_with("CC_ANALYZER_") {
         return Some(formatted(
             &canonical,

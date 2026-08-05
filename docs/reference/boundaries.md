@@ -18,3 +18,19 @@ Every limit below is deliberate. Reading them is the fastest way to understand w
 - The source transaction is recoverable and ordered, but a filesystem does not
   provide a single atomic rename spanning multiple files; rollback is the
   cross-file failure strategy.
+
+## Analyzers that are not wired in
+
+`--analyzer` uses what the compiler already ships: `-fanalyzer` on GCC, the
+Clang static analyzer otherwise. Other tools are deliberately left to you,
+because each needs a build or a run that `normfix` refuses to perform:
+
+| Tool | Why it is not run |
+|---|---|
+| `valgrind`, `leaks` | Runtime tools. They need a linked binary and a workload, and `normfix` never builds or executes your program. |
+| AddressSanitizer, UBSan | Instrumented builds, for the same reason. |
+| `cppcheck`, `scan-build` | Separate installs with their own project configuration; wiring them would mean guessing your build. |
+
+The rule behind all four rows is the same one behind everything else: a result
+this tool cannot reproduce and explain is not a result it will report.
+

@@ -244,22 +244,49 @@ inferred context cannot supply, and the noise is not useful.
 
 ### `--cc PATH`
 
-Use one exact compiler.
+Use one exact compiler for the strict preflight and, with `--analyzer`, for the
+deep pass.
 
 ```sh
 normfix --cc /usr/bin/gcc-14
 ```
 
+The compiler is identified by its version banner, so a command named `gcc` that
+is really Clang is treated as Clang.
+
 ### `--analyzer`
 
-Also run GCC `-fanalyzer`.
+Also run the deep static analyzer your compiler ships.
 
 ```sh
 normfix preflight --analyzer
 ```
 
-Slower, opt-in, and informational. It can suggest a leak or an invalid access
-along a path; it is not proof of either, and never proof of their absence.
+`normfix` picks the flags from the compiler's own version banner, not from the
+command name:
+
+| Compiler | What runs |
+|---|---|
+| GCC | `-fanalyzer` |
+| Clang | `--analyze -Xclang -analyzer-output=text` |
+| Anything else | Nothing; the run reports `CC_ANALYZER_UNAVAILABLE` and continues |
+
+::: warning `/usr/bin/gcc` on macOS is Clang
+Apple ships a `gcc` command that answers `Apple clang version ...`. Choosing it
+with `--cc` does not get you `-fanalyzer`. `normfix` detects this and uses the
+Clang analyzer instead, so the flag does what you meant either way.
+:::
+
+Both analyzers are slower, opt-in, and informational. They can suggest a leak or
+an invalid access along a path; neither is proof of either, and neither is ever
+proof of their absence. A missing analyzer never changes the exit status.
+
+For a real GCC on macOS, install one and point at it explicitly:
+
+```sh
+brew install gcc
+normfix preflight --analyzer --cc "$(brew --prefix)/bin/gcc-14"
+```
 
 ## Content that is rewritten
 

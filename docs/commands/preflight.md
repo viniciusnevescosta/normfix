@@ -34,8 +34,13 @@ the absence of leaks. Those remain yours, and the report says so.
 normfix preflight --analyzer
 ```
 
-adds GCC `-fanalyzer` findings. They can *suggest* a leak or an invalid access;
-they never prove correctness, and they never authorize an edit.
+adds deep static-analysis findings: `-fanalyzer` on GCC, `--analyze` on Clang.
+`normfix` chooses from the compiler's version banner, which matters because
+`/usr/bin/gcc` on macOS is Clang wearing another name.
+
+They can *suggest* a leak or an invalid access; they never prove correctness,
+and they never authorize an edit. A compiler with no analyzer at all reports
+`CC_ANALYZER_UNAVAILABLE` and the run continues.
 
 `preflight` refuses to combine with `--no-compiler-preflight`, because the compiler
 pass is the point of the command.
