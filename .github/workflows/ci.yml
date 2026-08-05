@@ -96,6 +96,15 @@ jobs:
         uses: actions/checkout@v7
       - name: Run all tests
         run: cargo test --workspace --all-targets --locked
+      - name: Install Python for the official checker
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install exact official Norminette
+        run: python -m pip install --disable-pip-version-check norminette==3.3.59
+      # The analyzer runs inside the normal pipeline, which requires the
+      # official checker, so this job needs it even though it is not the job
+      # that exists to exercise the oracle.
       - name: Exercise the deep analyzer with the system compiler
         run: cargo test --locked -p normfix-engine --test analyzer -- --ignored
 
