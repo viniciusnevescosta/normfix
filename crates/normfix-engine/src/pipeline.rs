@@ -144,6 +144,9 @@ pub struct FixOptions {
     pub remove_invalid_comments: bool,
     /// Compact simple standard NULL comparisons under explicit unsafe mode.
     pub compact_null_checks: bool,
+    /// Reorder contiguous include blocks: system headers before project
+    /// headers, alphabetically inside each category.
+    pub reorder_includes: bool,
     /// Remove proven-missing paths from simple literal Makefile source lists.
     pub remove_missing_makefile_sources: bool,
     /// Remove only unreachable `static` functions under explicit authorization.
@@ -187,6 +190,7 @@ impl FixOptions {
             cache: true,
             remove_invalid_comments: false,
             compact_null_checks: false,
+            reorder_includes: true,
             remove_missing_makefile_sources: false,
             remove_unused_static: false,
             quarantine_unexpected: false,
@@ -1625,6 +1629,7 @@ fn process_c(
         remove_invalid_comments: options.remove_invalid_comments,
         format_proven_declarations: true,
         compact_null_checks: options.compact_null_checks,
+        reorder_includes: options.reorder_includes,
     };
     let mut action_changed = false;
     match apply_c_actions(path.as_path(), &current, &reported, &action_options) {
