@@ -131,6 +131,7 @@ const elements = {
   summary: requiredElement<HTMLElement>("#summary"),
   resultFile: requiredElement<HTMLSelectElement>("#result-file"),
   applyResult: requiredElement<HTMLButtonElement>("#apply-result"),
+  copyCurrent: requiredElement<HTMLButtonElement>("#copy-current"),
   downloadCurrent: requiredElement<HTMLButtonElement>("#download-current"),
   downloadAll: requiredElement<HTMLButtonElement>("#download-all"),
   formattedOutput: requiredElement<HTMLElement>("#formatted-output"),
@@ -451,6 +452,8 @@ function renderSelectedResult(): void {
   elements.diagnosticCount.textContent = String(result.diagnostics.length);
   elements.applyResult.disabled = Boolean(result.error) || !result.stable;
   elements.downloadCurrent.disabled = Boolean(result.error) || !result.stable;
+  elements.copyCurrent.disabled = Boolean(result.error) || !result.stable;
+  resetCopyLabel();
   renderDiagnostics(result);
 }
 
@@ -604,6 +607,49 @@ function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+const COPY_LABEL = "Copy file";
+let copyLabelTimer: number | undefined;
+
+function resetCopyLabel(): void {
+  if (copyLabelTimer !== undefined) {
+    window.clearTimeout(copyLabelTimer);
+    copyLabelTimer = undefined;
+  }
+  elements.copyCurrent.textContent = COPY_LABEL;
+}
+
+function flashCopyLabel(label: string): void {
+  elements.copyCurrent.textContent = label;
+  if (copyLabelTimer !== undefined) window.clearTimeout(copyLabelTimer);
+  copyLabelTimer = window.setTimeout(resetCopyLabel, 1600);
+}
+
+/// Selects the formatted output so a keyboard copy works.
+function selectFormattedOutput(): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(elements.formattedOutput);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/// Copies the formatted source of the selected file to the clipboard.
+async function copyCurrent(): Promise<void> {
+  const result = selectedResult();
+  if (!result || result.error || !result.stable) return;
+  try {
+    await navigator.clipboard.writeText(result.formatted);
+    flashCopyLabel("Copied");
+  } catch {
+    // The clipboard needs a secure context and a trusted user gesture, and a
+    // browser can refuse for either reason. Select the text so the keyboard
+    // shortcut still works instead of leaving the reader with nothing.
+    selectFormattedOutput();
+    flashCopyLabel("Press \u2318C");
+  }
+}
+
 function downloadCurrent(): void {
   const result = selectedResult();
   if (!result || result.error || !result.stable) return;
@@ -720,6 +766,9 @@ elements.resultFile.addEventListener("change", () => {
   renderSelectedResult();
 });
 elements.applyResult.addEventListener("click", applySelectedResult);
+elements.copyCurrent.addEventListener("click", () => {
+  void copyCurrent();
+});
 elements.downloadCurrent.addEventListener("click", downloadCurrent);
 elements.downloadAll.addEventListener("click", downloadAll);
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[role=tab][data-view]")) {

@@ -33,6 +33,19 @@ function budgets.
 The playground is served from the root of this site; the documentation you are
 reading lives beneath `/docs/` on the same origin.
 
+## Getting the result out
+
+Each formatted file can leave the tab three ways:
+
+- **Copy file** puts the formatted source on the clipboard. If the browser
+  refuses clipboard access, the text is selected instead so the keyboard
+  shortcut still works.
+- **Download file** saves the selected file.
+- **Download all (.tar)** saves every stable result in one archive.
+
+**Use as new input** feeds the result back into the editor, which is the fast
+way to see whether a second run proposes anything else.
+
 ## Privacy
 
 All source stays inside the browser process. The playground has no filesystem
