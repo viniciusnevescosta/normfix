@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    name: Format, lint, test, and docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Show pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Run all tests
+        run: cargo test --workspace --all-targets --locked
+      - name: Deny Clippy warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Deny rustdoc warnings
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+  msrv:
+    name: Rust 1.85 MSRV
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Install declared MSRV
+        run: rustup toolchain install 1.85.0 --profile minimal
+      - name: Test workspace with MSRV
+        run: cargo +1.85.0 test --workspace --all-targets --locked
+
+  platforms:
+    name: Tests on ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - macos-15
+          - macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Run all tests
+        run: cargo test --workspace --all-targets --locked
+
+  official-tools:
+    name: Official Norminette and C compiler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install exact official Norminette
+        run: python -m pip install --disable-pip-version-check norminette==3.3.59
+      - name: Exercise official Norminette adapter
+        run: cargo test --locked -p normfix-oracle installed_official_norminette_smoke_test -- --ignored
+      - name: Exercise system C compiler adapter
+        run: cargo test --locked -p normfix-oracle installed_compiler_smoke_test -- --ignored

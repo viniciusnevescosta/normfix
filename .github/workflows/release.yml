@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    name: Release quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+      - name: Require tag to match workspace version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          manifest_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [[ "$tag_version" != "$manifest_version" ]]; then
+            echo "tag version $tag_version does not match Cargo.toml $manifest_version" >&2
+            exit 1
+          fi
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Run all tests
+        run: cargo test --workspace --all-targets --locked
+      - name: Install Python for the official checker
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install exact official Norminette
+        run: python -m pip install --disable-pip-version-check norminette==3.3.59
+      - name: Exercise official Norminette and system compiler adapters
+        run: |
+          cargo test --locked -p normfix-oracle installed_official_norminette_smoke_test -- --ignored
+          cargo test --locked -p normfix-oracle installed_compiler_smoke_test -- --ignored
+      - name: Deny Clippy warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Deny rustdoc warnings
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: normfix-x86_64-linux-gnu.tar.gz
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            archive: normfix-aarch64-linux-gnu.tar.gz
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            archive: normfix-x86_64-macos.tar.gz
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            archive: normfix-aarch64-macos.tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+      - name: Install release target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build locked release binary
+        run: cargo build --release --locked -p normfix --target ${{ matrix.target }}
+      - name: Exercise release binary
+        run: target/${{ matrix.target }}/release/normfix --version
+      - name: Create release archive
+        shell: bash
+        run: |
+          stage="dist/${{ matrix.target }}"
+          mkdir -p "$stage"
+          cp "target/${{ matrix.target }}/release/normfix" "$stage/normfix"
+          cp README.md LICENSE "$stage/"
+          tar -czf "dist/${{ matrix.archive }}" -C "$stage" normfix README.md LICENSE
+      - name: Attest release archive
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.tar.gz
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Create checksum manifest
+        working-directory: dist
+        run: shasum -a 256 *.tar.gz > SHA256SUMS
+      - name: Attest checksum manifest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/SHA256SUMS
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}"
+          fi

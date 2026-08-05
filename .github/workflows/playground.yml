@@ -1,0 +1,64 @@
+name: Browser playground
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/normfix-c-actions/**"
+      - "crates/normfix-c-syntax/**"
+      - "crates/normfix-core/**"
+      - "crates/normfix-wasm/**"
+      - "web/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/playground.yml"
+  pull_request:
+    paths:
+      - "crates/normfix-c-actions/**"
+      - "crates/normfix-c-syntax/**"
+      - "crates/normfix-core/**"
+      - "crates/normfix-wasm/**"
+      - "web/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/playground.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playground-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Vite and WebAssembly site
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Install supported Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install browser compilation target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Install matching JavaScript binding generator
+        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+      - name: Install locked frontend dependencies
+        run: npm ci --prefix web
+      - name: Build Vite playground
+        run: npm run build --prefix web
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: normfix-playground
+          path: web/dist/
+          if-no-files-found: error
+          retention-days: 7
