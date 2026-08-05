@@ -346,9 +346,10 @@ fn collect_candidates(parsed: &[ParsedSnapshot<'_>]) -> (Vec<Candidate>, Option<
     let mut token_paste = false;
     for (path_index, input) in parsed.iter().enumerate() {
         for piece in input.parsed.tape().pieces() {
-            if let TapePiece::Token(token) = piece
-                && source_range(input.parsed.source(), token.range()) == Some("##")
-            {
+            let TapePiece::Token(token) = piece else {
+                continue;
+            };
+            if source_range(input.parsed.source(), token.range()) == Some("##") {
                 token_paste = true;
             }
         }
@@ -670,9 +671,10 @@ fn merge_expanded_ranges(source: &str, ranges: &[TextRange]) -> Vec<TextRange> {
     expanded.sort();
     let mut merged: Vec<TextRange> = Vec::new();
     for range in expanded {
-        if let Some(previous) = merged.last_mut()
-            && previous.end().get() >= range.start().get()
-        {
+        let overlapping = merged
+            .last_mut()
+            .filter(|previous| previous.end().get() >= range.start().get());
+        if let Some(previous) = overlapping {
             if range.end().get() <= previous.end().get() {
                 continue;
             }
