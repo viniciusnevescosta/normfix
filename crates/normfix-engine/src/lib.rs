@@ -8,7 +8,7 @@
 
 mod pipeline;
 
-pub use pipeline::{BackupPolicy, FixOptions, FixRunError, run_fixes};
+pub use pipeline::{BackupPolicy, FixOptions, FixRunError, WriteApproval, run_fixes};
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
