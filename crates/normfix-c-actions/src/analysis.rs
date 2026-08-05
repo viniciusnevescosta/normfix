@@ -324,8 +324,10 @@ pub(crate) fn analyze_native(
     diagnostics
 }
 
+/// Sort position of one include directive: system headers before project
+/// headers, then alphabetically inside each category.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct IncludeOrderKey {
+pub(crate) struct IncludeOrderKey {
     category: u8,
     name: String,
 }
@@ -360,11 +362,16 @@ fn append_include_group_diagnostic(
         point(group[0].0),
         "INCLUDE_ORDER_REVIEW",
         "This contiguous include block is not ordered with system headers first and each group alphabetically.",
-        "Review and reorder the block manually; expected display order is <system headers>, then \"project headers\", alphabetically within each category. Changing preprocessor order can alter declarations, feature macros, and conditional compilation, so normfix does not guess.",
+        "Expected display order is <system headers>, then \"project headers\", alphabetically within each category. A fixing run reorders a block whose every line is exactly one include directive; pass --no-reorder-includes to keep the current order. Reorder manually when a comment, conditional, or macro interrupts the block, because changing preprocessor order across those can alter declarations, feature macros, and conditional compilation.",
     ));
 }
 
-fn include_order_key(text: &str) -> Option<IncludeOrderKey> {
+/// Returns the sort key of a line that is exactly one include directive.
+///
+/// Anything else — a comment, a conditional, trailing text after the closing
+/// delimiter — yields `None`, which is what keeps an include block contiguous
+/// and safe to reorder.
+pub(crate) fn include_order_key(text: &str) -> Option<IncludeOrderKey> {
     let directive = text.trim().strip_prefix('#')?.trim_start();
     let rest = directive.strip_prefix("include")?;
     if rest

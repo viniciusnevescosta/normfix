@@ -6,7 +6,9 @@ use std::sync::OnceLock;
 use normfix_c_syntax::CFunctionKind;
 use regex::Regex;
 
-use crate::analysis::{function_infos, is_identifier, matching_forward};
+use crate::analysis::{
+    IncludeOrderKey, function_infos, include_order_key, is_identifier, matching_forward,
+};
 use crate::context::{ParsedContext, Token};
 use crate::edit::Edit;
 use crate::source::{
@@ -51,6 +53,7 @@ impl ActionBatch {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum Phase {
     Preprocessor,
+    IncludeOrder,
     InvalidComments,
     CompactContinuations,
     BlankLines,
@@ -71,6 +74,9 @@ pub(crate) enum Phase {
 
 pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
     let mut result = vec![Phase::Preprocessor];
+    if options.reorder_includes {
+        result.push(Phase::IncludeOrder);
+    }
     if options.remove_invalid_comments {
         result.push(Phase::InvalidComments);
     }
@@ -109,6 +115,10 @@ impl Phase {
             Self::Preprocessor => Ok(ActionBatch::layout(
                 "PREPROCESSOR_SPACING",
                 format_preprocessors(context)?,
+            )),
+            Self::IncludeOrder => Ok(ActionBatch::semantic(
+                "INCLUDE_ORDER",
+                reorder_includes(context)?,
             )),
             Self::InvalidComments => Ok(ActionBatch::destructive(
                 "REMOVE_INVALID_COMMENT",
@@ -182,6 +192,58 @@ impl Phase {
             )),
         }
     }
+}
+
+/// Reorders each contiguous include block: system headers first, then project
+/// headers, alphabetically inside both categories.
+///
+/// A block ends at the first line that is not exactly one include directive, so
+/// a comment, blank line, conditional, macro definition, or trailing text keeps
+/// the surrounding directives where they are. That containment is the proof:
+/// nothing is moved across a construct that could change what a header means.
+fn reorder_includes(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let source = context.source();
+    let mut edits = Vec::new();
+    let mut block = Vec::<(u32, PhysicalLine, IncludeOrderKey)>::new();
+    for (number, line, text) in context.lines().iter() {
+        if let Some(key) = include_order_key(text) {
+            block.push((number, line, key));
+            continue;
+        }
+        append_include_order_edits(source, &block, &mut edits)?;
+        block.clear();
+    }
+    append_include_order_edits(source, &block, &mut edits)?;
+    Ok(edits)
+}
+
+fn append_include_order_edits(
+    source: &str,
+    block: &[(u32, PhysicalLine, IncludeOrderKey)],
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    if block.len() < 2 || block.windows(2).all(|pair| pair[0].2 <= pair[1].2) {
+        return Ok(());
+    }
+    let mut order = (0..block.len()).collect::<Vec<_>>();
+    order.sort_by(|left, right| block[*left].2.cmp(&block[*right].2));
+    for (slot, origin) in order.into_iter().enumerate() {
+        if slot == origin {
+            continue;
+        }
+        let (number, target, _) = block[slot];
+        let (_, moved, _) = block[origin];
+        edits.push(Edit::new(
+            target.start,
+            target.content_end,
+            &source[moved.start..moved.content_end],
+            "INCLUDE_ORDER",
+            "reordered the include block with system headers before project headers, \
+             alphabetically inside each",
+            Some(number),
+        )?);
+    }
+    Ok(())
 }
 
 fn format_preprocessors(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {

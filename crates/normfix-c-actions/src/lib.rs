@@ -65,6 +65,9 @@ impl ReportedDiagnostic {
 }
 
 /// Configuration for one native C action run.
+// Each switch enables an independent phase; collapsing them into one state enum
+// would incorrectly make combinations that are valid together exclusive.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CActionOptions {
     /// Maximum permitted display columns per physical line.
@@ -79,6 +82,11 @@ pub struct CActionOptions {
     /// Explicit permission to compact standard `NULL` comparisons into unary
     /// truth tests. This is opt-in because projects may redefine `NULL`.
     pub compact_null_checks: bool,
+    /// Reorder contiguous include blocks so system headers precede project
+    /// headers, alphabetically inside each category. Enabled by default; a
+    /// block is only rewritten when every one of its lines is exactly one
+    /// include directive.
+    pub reorder_includes: bool,
 }
 
 impl Default for CActionOptions {
@@ -89,6 +97,7 @@ impl Default for CActionOptions {
             remove_invalid_comments: false,
             format_proven_declarations: true,
             compact_null_checks: false,
+            reorder_includes: true,
         }
     }
 }

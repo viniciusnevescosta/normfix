@@ -438,6 +438,108 @@ fn structural_analysis_reports_exact_limits_and_manual_guidance() {
 }
 
 #[test]
+fn include_block_is_reordered_with_system_headers_first_then_alphabetically() {
+    let source = concat!(
+        "# include \"zeta.h\"\n",
+        "# include <stdlib.h>\n",
+        "# include <limits.h>\n",
+        "# include \"alpha.h\"\n",
+        "\n",
+        "int\tmain(void)\n",
+        "{\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+
+    let fixed = apply(source, &[]);
+
+    assert!(
+        fixed.starts_with(concat!(
+            "#include <limits.h>\n",
+            "#include <stdlib.h>\n",
+            "#include \"alpha.h\"\n",
+            "#include \"zeta.h\"\n",
+        )),
+        "{fixed}"
+    );
+    assert_eq!(
+        apply(&fixed, &[]),
+        fixed,
+        "reordering must reach a fixpoint"
+    );
+    assert!(
+        analyze_c(Utf8Path::new("includes.c"), &fixed, 80)
+            .unwrap()
+            .iter()
+            .all(|diagnostic| diagnostic.rule_id != "INCLUDE_ORDER_REVIEW")
+    );
+}
+
+#[test]
+fn an_interrupted_include_block_keeps_each_run_in_place() {
+    let source = concat!(
+        "# include \"zeta.h\"\n",
+        "# include <stdlib.h>\n",
+        "# ifdef DEBUG\n",
+        "#  include <stdio.h>\n",
+        "# endif\n",
+        "# include \"beta.h\"\n",
+        "# include <limits.h>\n",
+        "\n",
+        "int\tmain(void)\n",
+        "{\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+
+    let fixed = apply(source, &[]);
+
+    // Each contiguous run is sorted on its own; nothing crosses the conditional.
+    assert!(
+        fixed.contains(concat!(
+            "#include <stdlib.h>\n",
+            "#include \"zeta.h\"\n",
+            "#ifdef DEBUG\n",
+        )),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains(concat!(
+            "#endif\n",
+            "#include <limits.h>\n",
+            "#include \"beta.h\"\n",
+        )),
+        "{fixed}"
+    );
+}
+
+#[test]
+fn include_reordering_can_be_disabled() {
+    let source = concat!(
+        "# include \"zeta.h\"\n",
+        "# include <stdlib.h>\n",
+        "\n",
+        "int\tmain(void)\n",
+        "{\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+    let options = CActionOptions {
+        reorder_includes: false,
+        ..CActionOptions::default()
+    };
+
+    let fixed = apply_c_actions(Utf8Path::new("fixture.c"), source, &[], &options)
+        .expect("fixture must remain safe")
+        .source;
+
+    assert!(
+        fixed.starts_with("#include \"zeta.h\"\n#include <stdlib.h>\n"),
+        "{fixed}"
+    );
+}
+
+#[test]
 fn include_order_is_reported_without_reordering_preprocessor_tokens() {
     let source = "# include \"zeta.h\"\n# include <stdlib.h>\n# include <limits.h>\n# include \"alpha.h\"\n\nint\tmain(void)\n{\n\treturn (0);\n}\n";
 
