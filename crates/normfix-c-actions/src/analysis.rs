@@ -368,8 +368,8 @@ fn append_include_group_diagnostic(
 
 /// Returns the sort key of a line that is exactly one include directive.
 ///
-/// Anything else — a comment, a conditional, trailing text after the closing
-/// delimiter — yields `None`, which is what keeps an include block contiguous
+/// Anything else (a comment, a conditional, trailing text after the closing
+/// delimiter) yields `None`, which is what keeps an include block contiguous
 /// and safe to reorder.
 pub(crate) fn include_order_key(text: &str) -> Option<IncludeOrderKey> {
     let directive = text.trim().strip_prefix('#')?.trim_start();

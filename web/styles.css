@@ -140,6 +140,15 @@ code {
   background: var(--warning);
 }
 
+/*
+ * A badge that only ever says "ready" is noise. It stays hidden while nothing
+ * is wrong and appears for the two states worth interrupting the reader for:
+ * the formatter still loading, and the formatter failing.
+ */
+.runtime-status[data-state="ready"] {
+  display: none;
+}
+
 .runtime-status[data-state="ready"] .status-dot {
   background: var(--accent);
 }

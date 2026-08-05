@@ -104,8 +104,8 @@ backup directory. No project file is written in `--check` or `--diff` mode.
 
 ## Next steps
 
-- [Command line](/guide/command-line) — workflows, flags, Git scopes, and exit
+- [Command line](/guide/command-line): workflows, flags, Git scopes, and exit
   codes.
-- [Browser playground](/guide/playground) — try the formatter with no install.
-- [Architecture](/ARCHITECTURE) — what each crate owns and why the boundaries
+- [Browser playground](/guide/playground): try the formatter with no install.
+- [Architecture](/ARCHITECTURE): what each crate owns and why the boundaries
   exist.

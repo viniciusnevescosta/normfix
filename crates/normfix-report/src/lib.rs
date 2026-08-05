@@ -482,7 +482,7 @@ fn render_fixes(output: &mut String, paint: &Paint, files: &[FileReport]) {
         };
         let _ = writeln!(
             output,
-            "\n{}{label} — {}{}",
+            "\n{}{label}: {}{}",
             paint.bold_cyan,
             safe_path(&file.path),
             paint.reset
@@ -493,7 +493,7 @@ fn render_fixes(output: &mut String, paint: &Paint, files: &[FileReport]) {
                 .map_or_else(String::new, |line| format!(" at line {line}"));
             let _ = writeln!(
                 output,
-                "  {} ×{}{} — {}",
+                "  {} ×{}{}: {}",
                 terminal_safe_inline(&fix.rule_id),
                 fix.count,
                 location,

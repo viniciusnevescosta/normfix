@@ -377,9 +377,9 @@ Preprocessor lines are not rewritten merely to satisfy width.
 ### Include order
 
 A run of `#include` directives is reordered only while **every** line in it is
-exactly one include directive. The first line that is anything else — a comment,
+exactly one include directive. The first line that is anything else (a comment,
 a blank line, a conditional, a macro definition, or trailing text after the
-closing delimiter — ends the run, and the directives on each side are sorted
+closing delimiter) ends the run, and the directives on each side are sorted
 independently. No directive is ever moved across such a construct, because
 crossing one can change declarations, feature macros, or conditional
 compilation.

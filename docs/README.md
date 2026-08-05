@@ -5,7 +5,7 @@ publishes them.
 
 Every `.md` file here is written to be read two ways: directly on GitHub, and
 rendered as a page of the documentation site. Keep links working in both
-contexts — a repository-relative link that leaves this directory has to be
+contexts. A repository-relative link that leaves this directory has to be
 exempted in `.vitepress/config.ts`, so prefer linking within `docs/`.
 
 ## Layout

@@ -5,18 +5,18 @@ hero:
   name: normfix
   text: Safe fixes for the 42 Norm
   tagline: >-
-    Change what can be proven, explain what cannot, and never turn uncertainty
-    into permission.
+    One command fixes the mechanical mistakes across a whole 42 project, and
+    explains the ones worth your time. Your hours are the scarce resource.
   actions:
     - theme: brand
+      text: Why normfix
+      link: /why
+    - theme: alt
       text: Getting started
       link: /guide/getting-started
     - theme: alt
-      text: Open the browser playground
+      text: Try it in the browser
       link: /guide/playground
-    - theme: alt
-      text: View on GitHub
-      link: https://github.com/viniciusnevescosta/normfix
 
 features:
   - title: Proven edits only

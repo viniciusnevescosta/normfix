@@ -37,5 +37,5 @@ normfix preflight --analyzer
 adds GCC `-fanalyzer` findings. They can *suggest* a leak or an invalid access;
 they never prove correctness, and they never authorize an edit.
 
-`preflight` refuses to combine with `--no-compiler-preflight` — the compiler
+`preflight` refuses to combine with `--no-compiler-preflight`, because the compiler
 pass is the point of the command.

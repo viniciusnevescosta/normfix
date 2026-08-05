@@ -1,0 +1,364 @@
+# Every flag
+
+Each entry says what the flag does, when you would reach for it, and shows it
+being used. Flags are global: they work with the bare command and with every
+subcommand.
+
+Run `normfix --help` for the same list without the prose.
+
+## Selecting what to process
+
+### `PATH...`
+
+Zero, one, or many files and directories. Zero means the current directory,
+scanned recursively without following symbolic links.
+
+```sh
+normfix                                   # the whole project
+normfix main.c                            # one file
+normfix src includes                      # two directories
+normfix src/parser.c includes/shell.h     # a mixture
+```
+
+An explicit file argument is always processed, even if an ignore file would
+have excluded it.
+
+### `--changed`
+
+Process unstaged tracked changes plus untracked files Git does not ignore.
+
+```sh
+normfix --changed
+```
+
+Use it while working: it formats what you just touched instead of rewriting the
+whole project. It deliberately excludes staged-only paths.
+
+### `--staged`
+
+Process only the paths recorded as changed in the Git index.
+
+```sh
+normfix check --staged
+```
+
+It reads the index to select *names*, then analyzes the current working-tree
+bytes. It does not rewrite the index or stage the result, so `git diff --staged`
+is unaffected.
+
+Cannot be combined with `--changed` or with explicit paths. An empty scope is a
+successful no-op, and it never falls back to scanning everything.
+
+### `--use-gitignore`
+
+Also honor `.gitignore` during recursive discovery.
+
+```sh
+normfix --use-gitignore
+```
+
+Off by default, deliberately: a C file you told Git to ignore still takes part
+in project-wide proofs like the allowed-function check. `.normfixignore` is
+always honored.
+
+## Previewing instead of writing
+
+### `--check`
+
+Plan everything, write nothing.
+
+```sh
+normfix --check
+normfix --check --format json > report.json
+```
+
+Exit code `1` means there is work to do, which makes it a one-line CI gate.
+
+### `--diff`
+
+Print a unified diff of every proposed change, and write nothing.
+
+```sh
+normfix --diff
+normfix --diff src/parser.c
+```
+
+Tabs render as `\t` so indentation changes stay visible. Mutually exclusive
+with `--check`.
+
+### `--interactive`
+
+Preview each changed file and choose which ones get written.
+
+```sh
+normfix format --interactive
+```
+
+Answer `y`, `n`, `a` (all), or `q` (cancel). The approval is bound to the exact
+bytes you were shown; if a file changes underneath you, it is skipped rather
+than written. Requires a terminal, and refuses to combine with `--check`,
+`--diff`, JSON output, or destructive flags.
+
+## Identity for official headers
+
+### `--login LOGIN`
+
+Supply or constrain the 42 login used in the official header.
+
+```sh
+normfix --login vneves-c
+```
+
+### `--email EMAIL`
+
+Supply the verified 42 student email. The email is the source of truth; the
+login is validated against it.
+
+```sh
+normfix --email vneves-c@student.42.fr
+```
+
+Without either flag, `normfix` resolves the identity from your environment and
+Git configuration, and asks interactively when it cannot and the run needs one.
+
+## Backups and recovery
+
+### `--no-backup`
+
+Skip retained backups for ordinary formatting writes.
+
+```sh
+normfix --no-backup
+```
+
+It does **not** skip recovery for a destructive removal. Those always require
+external storage and fail closed without it. Skipping backups means
+[`undo`](/commands/undo) has nothing to restore for that run.
+
+### `--backup-dir PATH`
+
+Use a specific external backup base instead of the default under
+`$XDG_DATA_HOME`.
+
+```sh
+normfix --backup-dir ~/normfix-backups
+```
+
+The directory must not overlap the project. A path inside it, or above it, is
+refused, before and after resolving symbolic links.
+
+## Output
+
+### `--format human|json`
+
+Terminal output, or the versioned JSON report.
+
+```sh
+normfix --check --format json | jq '.summary'
+```
+
+Always branch on `schema_version` before reading JSON. The human layout is free
+to improve between releases; the JSON structure is not.
+
+### `--no-color`
+
+Disable ANSI colors even on a terminal.
+
+```sh
+normfix --no-color
+```
+
+Colors are already disabled when output is not a terminal, or when `NO_COLOR`
+is set.
+
+### `-v`, `--verbose`
+
+List every accepted fix instead of only the count.
+
+```sh
+normfix --check -v
+```
+
+Useful when you want to know exactly which seventeen fixes a file received.
+
+## Execution
+
+### `--threads N`
+
+Set the parallel worker count. Defaults to available hardware.
+
+```sh
+normfix --threads 1
+```
+
+Use `1` to make output ordering trivially reproducible while debugging. Results
+and writes are sorted by path regardless, so worker count never changes the
+report or the order files are written in.
+
+### `--timeout SECONDS`
+
+Per-file Norminette timeout. Default `5`.
+
+```sh
+normfix --timeout 15
+```
+
+Raise it on a slow machine or a very large file. A timeout is an operational
+failure for that file, not a diagnostic.
+
+### `--no-cache`
+
+Disable the external analysis cache.
+
+```sh
+normfix --no-cache
+```
+
+The cache stores official checker results outside the project, keyed by the
+source bytes and the verified checker fingerprint. Disable it to force a full
+re-run; a cache failure already fails open as a miss.
+
+### `--norminette PATH`
+
+Use one exact Norminette executable instead of searching `PATH`.
+
+```sh
+normfix --norminette ~/.local/pipx/venvs/norminette/bin/norminette
+```
+
+The version is still verified: it must be 3.3.59.
+
+## Compiler checks
+
+### `--no-compiler-preflight`
+
+Skip the strict `cc -fsyntax-only -Wall -Wextra -Werror` pass.
+
+```sh
+normfix --no-compiler-preflight
+```
+
+The pass is on by default and is diagnostics-only: it never authorizes or
+rejects a formatter edit. Skip it when your project needs build flags the
+inferred context cannot supply, and the noise is not useful.
+
+### `--cc PATH`
+
+Use one exact compiler.
+
+```sh
+normfix --cc /usr/bin/gcc-14
+```
+
+### `--analyzer`
+
+Also run GCC `-fanalyzer`.
+
+```sh
+normfix preflight --analyzer
+```
+
+Slower, opt-in, and informational. It can suggest a leak or an invalid access
+along a path; it is not proof of either, and never proof of their absence.
+
+## Content that is rewritten
+
+### `--no-reorder-includes`
+
+Leave contiguous `#include` blocks in their current order.
+
+```sh
+normfix --no-reorder-includes
+```
+
+By default a run of include directives is sorted with system headers first,
+then project headers, alphabetically inside each. A block is only rewritten
+while every line in it is exactly one include directive, so a comment or a
+conditional ends the run and nothing crosses it.
+
+### `--no-format-markdown`
+
+Leave README documents unchanged.
+
+```sh
+normfix --no-format-markdown
+```
+
+README files are reprinted as canonical CommonMark by default. That can produce
+a large first-run diff, which is the usual reason to turn it off.
+
+## Destructive operations
+
+Each of these deletes or moves something. All of them keep recoverable external
+storage, and all of them require confirmation.
+
+### `--remove-invalid-comments`
+
+Delete only the comments the official checker rejected at exact locations.
+
+```sh
+normfix --remove-invalid-comments
+```
+
+Nothing else is touched: a comment the checker accepts is never removed.
+
+### `--remove-unused`
+
+Remove `static` functions proven unreachable in the complete project.
+
+```sh
+normfix --remove-unused
+```
+
+The proof needs every project source to be readable and unambiguous. One
+unreadable file disables the whole analysis rather than producing a partial
+answer.
+
+### `--remove-unexpected`
+
+Move unexpected regular files into external quarantine.
+
+```sh
+normfix --remove-unexpected
+```
+
+Nothing is deleted: files are moved to recovery storage with their relative
+path preserved, and an existing destination is never overwritten.
+
+### `--unsafe`
+
+Enable the closed set above, plus NULL-check compaction and stale Makefile
+source removal.
+
+```sh
+normfix --unsafe
+```
+
+It is a named set, not an open switch. It cannot enable an operation that does
+not already exist as its own flag.
+
+### `--force`
+
+Confirm destructive operations without a prompt.
+
+```sh
+normfix --unsafe --force
+```
+
+For CI and scripts. `--force` on its own, with no destructive flag, is an
+error, so it cannot silently become a blanket approval.
+
+## Information
+
+### `-h`, `--help`
+
+```sh
+normfix --help
+normfix undo --help
+```
+
+### `-V`, `--version`
+
+```sh
+normfix --version
+```

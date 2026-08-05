@@ -32,8 +32,10 @@ export default withMermaid(defineConfig({
   themeConfig: {
     siteTitle: "normfix",
     nav: [
+      { text: "Why", link: "/why" },
       { text: "Guide", link: "/guide/getting-started" },
       { text: "Commands", link: "/commands/" },
+      { text: "Flags", link: "/reference/flags" },
       { text: "Architecture", link: "/ARCHITECTURE" },
       {
         text: "More",
@@ -49,6 +51,7 @@ export default withMermaid(defineConfig({
       {
         text: "Guide",
         items: [
+          { text: "Why normfix", link: "/why" },
           { text: "Getting started", link: "/guide/getting-started" },
           { text: "Command line", link: "/guide/command-line" },
           { text: "Browser playground", link: "/guide/playground" },
@@ -70,6 +73,7 @@ export default withMermaid(defineConfig({
       {
         text: "Reference",
         items: [
+          { text: "Every flag", link: "/reference/flags" },
           { text: "Architecture", link: "/ARCHITECTURE" },
           { text: "Compatibility policy", link: "/COMPATIBILITY" },
           { text: "Release process", link: "/RELEASING" },

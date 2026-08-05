@@ -812,7 +812,7 @@ fn backup_roots(explicit: Option<&std::path::Path>) -> Vec<PathBuf> {
 fn render_undo_list(format: OutputFormat, runs: &[UndoRun]) {
     match format {
         OutputFormat::Human => {
-            println!("normfix undo — {} recovery point(s)", runs.len());
+            println!("normfix undo: {} recovery point(s)", runs.len());
             for run in runs.iter().rev() {
                 println!("  {}  {} file(s)", run.run_id, run.files.len());
             }

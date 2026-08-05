@@ -84,8 +84,8 @@ project headers, alphabetically inside each category:
 
 ::: warning The block must be provably contiguous
 A run is rewritten only while **every** line in it is exactly one include
-directive. The first line that is anything else — a comment, a blank line, a
-conditional, a macro definition, or trailing text after the closing delimiter —
+directive. The first line that is anything else (a comment, a blank line, a
+conditional, a macro definition, or trailing text after the closing delimiter)
 ends the run, and each side is sorted independently. No directive crosses such a
 construct, because doing so can change declarations, feature macros, or
 conditional compilation.
@@ -108,7 +108,7 @@ normfix format --staged
 `--changed` means unstaged tracked changes plus untracked files not ignored by
 Git; it deliberately does not include staged-only paths. `--staged` uses the
 index diff to select names, then analyzes and formats their current
-working-tree bytes — it does not rewrite the index or stage the result.
+working-tree bytes. It does not rewrite the index or stage the result.
 
 An empty scope is a successful no-op and never falls back to a full-directory
 scan. Git is invoked directly, with NUL-delimited paths, a timeout, an output

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="normfix">
+  <title>normfix</title>
+  <!--
+    The playground's brand tile: an "nf" monogram cut out of the accent green
+    the rest of the product uses. The letters are drawn as rectangles rather
+    than text, because a favicon renderer cannot be relied on to have a font,
+    and a solid tile keeps the glyph legible on both a light and a dark tab.
+  -->
+  <rect width="64" height="64" rx="13" fill="#8fc7a8"/>
+  <g fill="#111311">
+    <!-- n -->
+    <rect x="12" y="26" width="6" height="21"/>
+    <rect x="12" y="26" width="18" height="6"/>
+    <rect x="24" y="26" width="6" height="21"/>
+    <!-- f -->
+    <rect x="40" y="17" width="6" height="30"/>
+    <rect x="40" y="17" width="13" height="6"/>
+    <rect x="40" y="29" width="11" height="5"/>
+  </g>
+</svg>

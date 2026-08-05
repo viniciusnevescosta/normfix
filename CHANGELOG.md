@@ -10,7 +10,7 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
-## [0.4.0-beta.1] — 2026-08-05
+## [0.4.0-beta.1] / 2026-08-05
 
 First published release, and the first release of the native Rust
 implementation. The Python package that preceded it is gone; the CLI is now a
@@ -96,12 +96,12 @@ single native binary and the command is `normfix`, not `norminette-fix`.
   `'unsafe-inline'`, because VitePress emits an inline script whose content
   changes with every build. The playground keeps the strict policy.
 
-## [0.4.0-alpha.1] — unreleased
+## [0.4.0-alpha.1] / unreleased
 
 The native Rust rewrite as first committed. Never published; superseded by
 `0.4.0-beta.1` before any archive existed.
 
-## 0.3.0, 0.2.0, 0.1.0 — unreleased
+## 0.3.0, 0.2.0, 0.1.0 / unreleased
 
 The original Python `norminette-fix` package: a Norminette adapter, header
 handling, declaration alignment, line compaction, Makefile support, and a

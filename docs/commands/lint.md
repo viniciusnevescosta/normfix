@@ -1,7 +1,7 @@
 # `normfix lint`
 
 Reports what is wrong with the bytes currently on disk. It proposes nothing and
-writes nothing — not formatting, not the official header, not Makefile or
+writes nothing: not formatting, not the official header, not Makefile or
 README changes.
 
 ```sh
@@ -33,8 +33,8 @@ Note `0 proposed`: lint never plans an edit. The same project under
 check is allowed to plan them.
 
 Diagnostics are grouped by rule and every location is kept. Each group names
-its origin — the official Norminette, the C compiler, the native parser, or a
-project rule — so you know which authority you are arguing with.
+its origin (the official Norminette, the C compiler, the native parser, or a
+project rule) so you know which authority you are arguing with.
 
 ## In CI
 

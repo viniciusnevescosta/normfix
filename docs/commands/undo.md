@@ -13,7 +13,7 @@ normfix undo --run run-1785950998077000000-53423
 
 ```console
 $ normfix undo --list
-normfix undo — 1 recovery point(s)
+normfix undo: 1 recovery point(s)
   run-1785950998077000000-53423  1 file(s)
 ```
 
@@ -33,7 +33,7 @@ normfix undo --force
 
 `undo` fails closed. It will not restore when:
 
-- a target file no longer matches the bytes that run wrote — someone edited it
+- a target file no longer matches the bytes that run wrote, because someone edited it
   afterwards, and restoring would silently discard that work;
 - a backup file is missing or its hash does not match the journal;
 - any path in the backup or the project resolves through a symbolic link;

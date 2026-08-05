@@ -161,7 +161,7 @@ fn toolchain_article(canonical: &str) -> Option<Article> {
 }
 
 fn formatted(canonical: &str, title: &str, why: &str, next: &str, safety: &str) -> String {
-    format!("{canonical} — {title}\n\nWhy\n  {why}\n\nNext\n  {next}\n\nSafety\n  {safety}\n")
+    format!("{canonical}: {title}\n\nWhy\n  {why}\n\nNext\n  {next}\n\nSafety\n  {safety}\n")
 }
 
 #[cfg(test)]

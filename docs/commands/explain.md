@@ -20,7 +20,7 @@ rule, so you rarely have to type the identifier from memory:
 
 ```console
 $ normfix explain TOO_MANY_LINES
-TOO_MANY_LINES — Function body exceeds 25 lines
+TOO_MANY_LINES: Function body exceeds 25 lines
 
 Why
   The 42 Norm limits each function body to 25 physical lines so
@@ -45,5 +45,5 @@ Identifiers prefixed `CC_` come from the C compiler and `CC_ANALYZER_` from
 is the compiler's own. Everything else is either an official Norminette rule
 name or a native `normfix` rule.
 
-An unknown identifier still gets a useful answer rather than an error — the
+An unknown identifier still gets a useful answer rather than an error. The
 bundled article set is a convenience, not the source of truth.
