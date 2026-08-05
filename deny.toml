@@ -1,0 +1,43 @@
+# Dependency policy enforced by `cargo deny check` in CI.
+#
+# The project publishes prebuilt binaries with build provenance, so the other
+# half of that promise is knowing what goes into them.
+
+[advisories]
+# Fail on any known vulnerability or unmaintained crate.
+yanked = "deny"
+
+[licenses]
+# Permissive licences only. A copyleft dependency would change what the
+# published archives can be.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace members depend on each other by path, which carries no version
+# requirement. That is internal wiring, not an unpinned external dependency.
+allow-wildcard-paths = true
+# The compatibility authority and the parser are pinned exactly on purpose;
+# a duplicate copy of either would make results non-deterministic.
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
