@@ -2,113 +2,197 @@
 
 #![forbid(unsafe_code)]
 
+mod rules;
+
+use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, IsTerminal, Write as _};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use normfix_actions::{UndoRun, list_undo_runs, undo_run};
 use normfix_destructive::{DestructiveAuthorization, DestructiveCapability, DestructiveRequest};
-use normfix_engine::{BackupPolicy, FixOptions, run_fixes};
-use normfix_header::{IdentityResolution, identity_from_email, resolve_identity};
-use normfix_report::{RenderOptions, ReportMode, render_human};
+use normfix_engine::{BackupPolicy, FixOptions, WriteApproval, run_fixes};
+use normfix_header::{IdentityResolution, RunClock, identity_from_email, resolve_identity};
+use normfix_project::{
+    GitScope, GitScopeOptions, ProjectFileKind, is_project_control_file, resolve_git_scope,
+};
+use normfix_report::{
+    FileReport, RenderOptions, ReportMode, RunReport, render_human, unified_diff,
+};
 
 // Clap represents independent switches as booleans; replacing them with one
 // state enum would incorrectly make compatible command-line flags exclusive.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Parser)]
-#[command(name = "norminette-fix")]
+#[command(name = "normfix")]
 #[command(version)]
 #[command(about = "Safe automatic fixes and actionable diagnostics for the 42 Norm v4.1")]
-#[command(after_help = "With no PATH, the current directory is processed recursively.")]
+#[command(subcommand_precedence_over_arg = true)]
+#[command(after_help = "With no COMMAND or PATH, the current directory is fixed recursively.")]
 struct Cli {
     /// Files or directories; accepts zero, one or many paths.
     paths: Vec<PathBuf>,
 
+    /// Focused workflows; the commandless interface remains backward compatible.
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Report changes without writing files.
-    #[arg(long, conflicts_with = "diff")]
+    #[arg(long, global = true, conflicts_with = "diff")]
     check: bool,
 
     /// Print unified diffs without writing files.
-    #[arg(long)]
+    #[arg(long, global = true)]
     diff: bool,
 
     /// Respect .gitignore while recursively discovering directory inputs.
-    #[arg(long)]
+    #[arg(long, global = true)]
     use_gitignore: bool,
 
     /// Verified 42 login; the email remains the source of truth.
-    #[arg(long)]
+    #[arg(long, global = true)]
     login: Option<String>,
 
     /// Verified 42 student email used by official headers.
-    #[arg(long)]
+    #[arg(long, global = true)]
     email: Option<String>,
 
     /// Do not retain external backups for ordinary formatting writes.
-    #[arg(long, conflicts_with = "backup_dir")]
+    #[arg(long, global = true, conflicts_with = "backup_dir")]
     no_backup: bool,
 
     /// External backup base directory.
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, global = true, value_name = "PATH")]
     backup_dir: Option<PathBuf>,
 
     /// Select polished terminal output or stable JSON.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+    #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Human)]
     format: OutputFormat,
 
     /// Disable ANSI colors even on an interactive terminal.
-    #[arg(long)]
+    #[arg(long, global = true)]
     no_color: bool,
 
     /// Show every accepted fix in human output.
-    #[arg(long, short)]
+    #[arg(long, short, global = true)]
     verbose: bool,
 
+    /// Preview and approve each changed file before a second validated run writes it.
+    #[arg(long, global = true)]
+    interactive: bool,
+
+    /// Process unstaged tracked changes and untracked, non-ignored files.
+    #[arg(long, global = true, conflicts_with = "staged")]
+    changed: bool,
+
+    /// Process only files currently recorded in the Git index.
+    #[arg(long, global = true)]
+    staged: bool,
+
     /// Per-file official Norminette timeout in seconds.
-    #[arg(long, default_value = "5", value_parser = parse_timeout)]
+    #[arg(long, global = true, default_value = "5", value_parser = parse_timeout)]
     timeout: Duration,
 
     /// Number of parallel workers; defaults to available hardware.
-    #[arg(long, value_parser = parse_worker_count)]
+    #[arg(long, global = true, value_parser = parse_worker_count)]
     threads: Option<usize>,
 
     /// Delete only comments rejected at exact official locations.
-    #[arg(long)]
+    #[arg(long, global = true)]
     remove_invalid_comments: bool,
 
     /// Remove only unreachable static functions proven in the complete project.
-    #[arg(long)]
+    #[arg(long, global = true)]
     remove_unused: bool,
 
     /// Move unexpected regular files to external recoverable quarantine.
-    #[arg(long)]
+    #[arg(long, global = true)]
     remove_unexpected: bool,
 
-    /// Enable comment removal, unused-static removal and file quarantine.
-    #[arg(long = "unsafe")]
+    /// Enable comment/NULL cleanup, stale Makefile cleanup, unused-static
+    /// removal, and unexpected-file quarantine.
+    #[arg(long = "unsafe", global = true)]
     unsafe_mode: bool,
 
     /// Confirm destructive operations non-interactively.
-    #[arg(long)]
+    #[arg(long, global = true)]
     force: bool,
 
-    /// Canonically format README documents through a `CommonMark` syntax tree.
-    #[arg(long)]
+    /// Legacy no-op: README formatting is enabled by default.
+    #[arg(long, global = true, hide = true)]
     format_markdown: bool,
 
+    /// Leave README documents unchanged.
+    #[arg(long, global = true, conflicts_with = "format_markdown")]
+    no_format_markdown: bool,
+
     /// Disable the external content-addressed analysis cache.
-    #[arg(long)]
+    #[arg(long, global = true)]
     no_cache: bool,
 
     /// Use this exact Norminette executable.
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, global = true, value_name = "PATH")]
     norminette: Option<PathBuf>,
 
+    /// Disable `cc -fsyntax-only -Wall -Wextra -Werror` diagnostics.
+    #[arg(long, global = true)]
+    no_compiler_preflight: bool,
+
+    /// Use this exact C compiler for strict preflight and optional analysis.
+    #[arg(long, global = true, value_name = "PATH")]
+    cc: Option<PathBuf>,
+
+    /// Run GCC `-fanalyzer` as a slower informational check.
+    #[arg(long, global = true)]
+    analyzer: bool,
+
     /// Maximum fixed-point passes for the native formatter.
-    #[arg(long, hide = true, default_value_t = 100, value_parser = parse_pass_count)]
+    #[arg(long, global = true, hide = true, default_value_t = 100, value_parser = parse_pass_count)]
     max_passes: usize,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Apply the canonical layout printer and proven safe fixes.
+    Format(PathArguments),
+    /// Report source and project problems without proposing edits.
+    Lint(PathArguments),
+    /// Preview formatting and lint together without writing files.
+    Check(PathArguments),
+    /// Show function line/variable/parameter headroom.
+    Budget(PathArguments),
+    /// Run the read-only checks useful immediately before a 42 evaluation.
+    Preflight(PathArguments),
+    /// Explain one Norm or native rule offline.
+    Explain(ExplainArguments),
+    /// Restore an intact backed-up run without overwriting later edits.
+    Undo(UndoArguments),
+}
+
+#[derive(Debug, Args)]
+struct PathArguments {
+    /// Files or directories; defaults to the current directory.
+    paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct ExplainArguments {
+    /// Rule identifier, for example `TOO_MANY_LINES`.
+    rule: String,
+}
+
+#[derive(Debug, Args)]
+struct UndoArguments {
+    /// List recovery points without restoring anything.
+    #[arg(long, conflicts_with = "run")]
+    list: bool,
+
+    /// Restore this exact run instead of the newest intact run.
+    #[arg(long, value_name = "RUN_ID", conflicts_with = "list")]
+    run: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -117,11 +201,54 @@ enum OutputFormat {
     Json,
 }
 
-fn main() -> ExitCode {
-    run(Cli::parse())
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Workflow {
+    Default,
+    Format,
+    Lint,
+    Check,
+    Budget,
+    Preflight,
 }
 
-fn run(cli: Cli) -> ExitCode {
+/// Recoverable removals requested for one run.
+#[derive(Clone, Copy, Debug)]
+struct DestructiveFlags {
+    remove_unused: bool,
+    remove_missing_makefile_sources: bool,
+    remove_unexpected: bool,
+}
+
+impl DestructiveFlags {
+    fn from_cli(cli: &Cli) -> Self {
+        Self {
+            remove_unused: cli.remove_unused || cli.unsafe_mode,
+            remove_missing_makefile_sources: cli.unsafe_mode,
+            remove_unexpected: cli.remove_unexpected || cli.unsafe_mode,
+        }
+    }
+
+    fn any(self) -> bool {
+        self.remove_unused || self.remove_missing_makefile_sources || self.remove_unexpected
+    }
+}
+
+/// Everything resolved before the engine options are assembled.
+struct OptionsInput {
+    workflow: Workflow,
+    git_scoped: bool,
+    scope_is_empty: bool,
+    git_unexpected: Vec<PathBuf>,
+    identity: IdentityResolution,
+    destructive: DestructiveFlags,
+    authorization: Option<DestructiveAuthorization>,
+}
+
+fn main() -> ExitCode {
+    run(&Cli::parse())
+}
+
+fn run(cli: &Cli) -> ExitCode {
     let cwd = match env::current_dir() {
         Ok(cwd) => cwd,
         Err(error) => {
@@ -132,90 +259,86 @@ fn run(cli: Cli) -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if cli.command.is_some() && !cli.paths.is_empty() {
+        print_run_error(
+            cli.format,
+            "paths before a subcommand are ambiguous; place every path after `format`, `lint`, `check`, `budget`, or `preflight`",
+        );
+        return ExitCode::from(2);
+    }
+    if let Some(Command::Explain(arguments)) = &cli.command {
+        return run_explain(cli.format, &arguments.rule);
+    }
+    if let Some(Command::Undo(arguments)) = &cli.command {
+        return run_undo(cli, arguments, &cwd);
+    }
+    let (mut paths, workflow) = selected_workflow(cli);
+    let mut git_unexpected = Vec::new();
+    let git_scoped = cli.changed || cli.staged;
+    if git_scoped {
+        if !paths.is_empty() {
+            print_run_error(
+                cli.format,
+                "--changed and --staged select paths themselves and cannot be combined with PATH arguments",
+            );
+            return ExitCode::from(2);
+        }
+        match git_scoped_paths(&cwd, cli.staged) {
+            Ok((selected, unexpected)) => {
+                paths.extend(selected);
+                git_unexpected = unexpected;
+            }
+            Err(message) => {
+                print_run_error(cli.format, &message);
+                return ExitCode::from(2);
+            }
+        }
+    }
+    let destructive = DestructiveFlags::from_cli(cli);
+    if let Some(message) = invalid_invocation(cli, workflow, destructive) {
+        print_run_error(cli.format, message);
+        return ExitCode::from(2);
+    }
     let mut identity = resolve_identity(cli.login.as_deref(), cli.email.as_deref(), &cwd);
     if identity.identity.is_none()
+        && scope_may_need_identity(&paths, git_scoped)
+        && !matches!(workflow, Workflow::Lint | Workflow::Budget)
         && cli.format == OutputFormat::Human
         && io::stdin().is_terminal()
         && io::stderr().is_terminal()
     {
         identity = prompt_for_identity(cli.login.as_deref(), identity);
     }
-    let remove_unused = cli.remove_unused || cli.unsafe_mode;
-    let remove_unexpected = cli.remove_unexpected || cli.unsafe_mode;
-    let destructive_authorization =
-        match authorize_destructive(remove_unused, remove_unexpected, cli.force, cli.format) {
-            Ok(authorization) => authorization,
-            Err(message) => {
-                print_run_error(cli.format, &message);
-                return ExitCode::from(2);
-            }
-        };
-    if cli.force && destructive_authorization.is_none() {
-        print_run_error(
-            cli.format,
-            "--force requires --unsafe, --remove-unused, or --remove-unexpected",
-        );
-        return ExitCode::from(2);
+    let authorization = match authorize_destructive(destructive, cli.force, cli.format) {
+        Ok(authorization) => authorization,
+        Err(message) => {
+            print_run_error(cli.format, &message);
+            return ExitCode::from(2);
+        }
+    };
+    let options = build_fix_options(
+        cli,
+        cwd,
+        OptionsInput {
+            workflow,
+            git_scoped,
+            scope_is_empty: paths.is_empty(),
+            git_unexpected,
+            identity,
+            destructive,
+            authorization,
+        },
+    );
+
+    if cli.interactive {
+        return run_interactive(cli, &paths, &options);
     }
 
-    let mut options = FixOptions::new(cwd);
-    options.mode = if cli.diff {
-        ReportMode::Diff
-    } else if cli.check {
-        ReportMode::Check
-    } else {
-        ReportMode::Fix
-    };
-    options.respect_gitignore = cli.use_gitignore;
-    options.threads = cli.threads;
-    options.identity_source = identity.source;
-    options.identity = identity.identity;
-    options.backup = if cli.no_backup {
-        BackupPolicy::Disabled
-    } else if let Some(directory) = cli.backup_dir {
-        BackupPolicy::Directory(directory)
-    } else {
-        BackupPolicy::Automatic
-    };
-    options.norminette_executable = cli.norminette;
-    options.timeout = cli.timeout;
-    options.cache = !cli.no_cache;
-    options.remove_invalid_comments = cli.remove_invalid_comments || cli.unsafe_mode;
-    options.remove_unused_static = remove_unused;
-    options.quarantine_unexpected = remove_unexpected;
-    options.destructive_authorization = destructive_authorization;
-    options.format_markdown = cli.format_markdown;
-    options.max_passes = cli.max_passes;
-
-    match run_fixes(&cli.paths, &options) {
+    match run_fixes(&paths, &options) {
         Ok(report) => {
-            match cli.format {
-                OutputFormat::Human => {
-                    let color = !cli.no_color
-                        && env::var_os("NO_COLOR").is_none()
-                        && io::stdout().is_terminal();
-                    print!(
-                        "{}",
-                        render_human(
-                            &report,
-                            RenderOptions {
-                                color,
-                                verbose: cli.verbose,
-                                show_diff: cli.diff,
-                            },
-                        )
-                    );
-                }
-                OutputFormat::Json => match report.to_pretty_json() {
-                    Ok(json) => print!("{json}"),
-                    Err(error) => {
-                        print_run_error(
-                            OutputFormat::Json,
-                            &format!("Could not serialize the run report: {error}"),
-                        );
-                        return ExitCode::from(2);
-                    }
-                },
+            if let Err(message) = render_report(cli, &report) {
+                print_run_error(cli.format, &message);
+                return ExitCode::from(2);
             }
             ExitCode::from(report.exit_code())
         }
@@ -226,17 +349,509 @@ fn run(cli: Cli) -> ExitCode {
     }
 }
 
+/// Splits a Git scope into processable project files and unexpected files.
+fn git_scoped_paths(
+    cwd: &std::path::Path,
+    staged: bool,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), String> {
+    let scope = if staged {
+        GitScope::Staged
+    } else {
+        GitScope::Changed
+    };
+    let scoped = resolve_git_scope(cwd, scope, &GitScopeOptions::default())
+        .map_err(|error| error.to_string())?;
+    let mut selected = Vec::new();
+    let mut unexpected = Vec::new();
+    for path in scoped {
+        if ProjectFileKind::from_path(&path).is_some() {
+            selected.push(path);
+        } else if !is_project_control_file(&path) {
+            unexpected.push(path);
+        }
+    }
+    Ok((selected, unexpected))
+}
+
+/// Returns the first invalid flag combination for this invocation.
+fn invalid_invocation(
+    cli: &Cli,
+    workflow: Workflow,
+    destructive: DestructiveFlags,
+) -> Option<&'static str> {
+    if workflow == Workflow::Preflight && cli.no_compiler_preflight {
+        return Some(
+            "preflight includes the strict compiler check; remove --no-compiler-preflight",
+        );
+    }
+    if cli.force && !destructive.any() {
+        return Some("--force requires --unsafe, --remove-unused, or --remove-unexpected");
+    }
+    if cli.interactive
+        && (cli.format != OutputFormat::Human
+            || cli.check
+            || cli.diff
+            || !matches!(workflow, Workflow::Default | Workflow::Format)
+            || cli.remove_invalid_comments
+            || destructive.any())
+    {
+        return Some(
+            "--interactive is limited to the default or `format` fixing workflow and cannot be combined with --check, --diff, --unsafe, or destructive removal flags",
+        );
+    }
+    None
+}
+
+fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions {
+    let mut options = FixOptions::new(cwd);
+    options.mode = if cli.diff {
+        ReportMode::Diff
+    } else if cli.check
+        || matches!(
+            input.workflow,
+            Workflow::Lint | Workflow::Check | Workflow::Budget | Workflow::Preflight
+        )
+    {
+        ReportMode::Check
+    } else {
+        ReportMode::Fix
+    };
+    options.respect_gitignore = cli.use_gitignore;
+    options.empty_input_is_empty = input.git_scoped && input.scope_is_empty;
+    options.additional_unexpected_files = input.git_unexpected;
+    options.lint_only = matches!(input.workflow, Workflow::Lint | Workflow::Budget);
+    options.emit_budget = input.workflow == Workflow::Budget;
+    options.preflight = input.workflow == Workflow::Preflight;
+    options.threads = cli.threads;
+    options.identity_source = input.identity.source;
+    options.identity = input.identity.identity;
+    options.backup = if cli.no_backup {
+        BackupPolicy::Disabled
+    } else if let Some(directory) = cli.backup_dir.clone() {
+        BackupPolicy::Directory(directory)
+    } else {
+        BackupPolicy::Automatic
+    };
+    options.norminette_executable.clone_from(&cli.norminette);
+    options.compiler_preflight = !cli.no_compiler_preflight;
+    options.compiler_executable.clone_from(&cli.cc);
+    options.analyzer = cli.analyzer;
+    options.timeout = cli.timeout;
+    options.cache = !cli.no_cache;
+    options.remove_invalid_comments = cli.remove_invalid_comments || cli.unsafe_mode;
+    options.compact_null_checks = cli.unsafe_mode;
+    options.remove_missing_makefile_sources = input.destructive.remove_missing_makefile_sources;
+    options.remove_unused_static = input.destructive.remove_unused;
+    options.quarantine_unexpected = input.destructive.remove_unexpected;
+    options.destructive_authorization = input.authorization;
+    options.format_markdown = !cli.no_format_markdown;
+    options.max_passes = cli.max_passes;
+    options
+}
+
+fn scope_may_need_identity(paths: &[PathBuf], git_scoped: bool) -> bool {
+    if paths.is_empty() {
+        return !git_scoped;
+    }
+    paths.iter().any(|path| {
+        if path.is_dir() {
+            return true;
+        }
+        matches!(
+            ProjectFileKind::from_path(path),
+            Some(ProjectFileKind::CSource | ProjectFileKind::CHeader | ProjectFileKind::Makefile)
+        )
+    })
+}
+
+fn render_report(cli: &Cli, report: &RunReport) -> Result<(), String> {
+    match cli.format {
+        OutputFormat::Human => {
+            let color =
+                !cli.no_color && env::var_os("NO_COLOR").is_none() && io::stdout().is_terminal();
+            print!(
+                "{}",
+                render_human(
+                    report,
+                    RenderOptions {
+                        color,
+                        verbose: cli.verbose,
+                        show_diff: cli.diff,
+                    },
+                )
+            );
+            Ok(())
+        }
+        OutputFormat::Json => report
+            .to_pretty_json()
+            .map(|json| print!("{json}"))
+            .map_err(|error| format!("Could not serialize the run report: {error}")),
+    }
+}
+
+fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCode {
+    if cli.format != OutputFormat::Human
+        || !io::stdin().is_terminal()
+        || !io::stdout().is_terminal()
+        || !io::stderr().is_terminal()
+    {
+        print_run_error(
+            cli.format,
+            "--interactive requires a human terminal on standard input, output, and error",
+        );
+        return ExitCode::from(2);
+    }
+    if options.mode != ReportMode::Fix || options.lint_only {
+        print_run_error(
+            cli.format,
+            "--interactive is available with the default or `format` workflow, without --check or --diff",
+        );
+        return ExitCode::from(2);
+    }
+    if options.remove_invalid_comments
+        || options.compact_null_checks
+        || options.remove_missing_makefile_sources
+        || options.remove_unused_static
+        || options.quarantine_unexpected
+    {
+        print_run_error(
+            cli.format,
+            "--interactive cannot be combined with destructive or --unsafe operations",
+        );
+        return ExitCode::from(2);
+    }
+
+    let mut preview_options = options.clone();
+    preview_options.mode = ReportMode::Check;
+    preview_options.write_approvals = None;
+    preview_options.run_clock = match RunClock::from_process_environment() {
+        Ok(clock) => Some(clock),
+        Err(error) => {
+            print_run_error(
+                cli.format,
+                &format!("Could not capture the interactive run clock: {error}"),
+            );
+            return ExitCode::from(2);
+        }
+    };
+    let preview = match run_fixes(paths, &preview_options) {
+        Ok(report) => report,
+        Err(error) => {
+            print_run_error(cli.format, &error.to_string());
+            return ExitCode::from(2);
+        }
+    };
+    if let Err(message) = render_report(cli, &preview) {
+        print_run_error(cli.format, &message);
+        return ExitCode::from(2);
+    }
+    let candidates = preview
+        .files
+        .iter()
+        .filter(|file| file.changed && file.failure.is_none() && unified_diff(file).is_some())
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return ExitCode::from(preview.exit_code());
+    }
+
+    let Some(selected) = prompt_for_approvals(&candidates, &options.cwd) else {
+        return ExitCode::from(130);
+    };
+    if selected.is_empty() {
+        eprintln!("No files were approved; no files were changed.");
+        return ExitCode::from(preview.exit_code().max(1));
+    }
+
+    let declined = selected.len() < candidates.len();
+    let mut final_options = options.clone();
+    final_options.write_approvals = Some(selected);
+    final_options.run_clock = preview_options.run_clock;
+    let report = match run_fixes(paths, &final_options) {
+        Ok(report) => report,
+        Err(error) => {
+            print_run_error(cli.format, &error.to_string());
+            return ExitCode::from(2);
+        }
+    };
+    if let Err(message) = render_report(cli, &report) {
+        print_run_error(cli.format, &message);
+        return ExitCode::from(2);
+    }
+    let code = report.exit_code();
+    ExitCode::from(if code == 0 && declined { 1 } else { code })
+}
+
+/// Collects per-file approvals, or `None` when the run was cancelled.
+fn prompt_for_approvals(
+    candidates: &[&FileReport],
+    cwd: &std::path::Path,
+) -> Option<BTreeMap<PathBuf, WriteApproval>> {
+    let mut selected = BTreeMap::new();
+    'files: for (index, file) in candidates.iter().enumerate() {
+        if let Some(diff) = unified_diff(file) {
+            println!("\n{diff}");
+        }
+        loop {
+            eprint!(
+                "Apply the validated change to {}? [y/N/a(all)/q(cancel)] ",
+                file.path
+            );
+            let _ = io::stderr().flush();
+            let mut answer = String::new();
+            if io::stdin().read_line(&mut answer).is_err() {
+                eprintln!("Interactive run cancelled; no files were changed.");
+                return None;
+            }
+            match answer.trim().to_ascii_lowercase().as_str() {
+                "y" | "yes" => {
+                    if let Some((path, approval)) = interactive_approval(cwd, file) {
+                        selected.insert(path, approval);
+                    }
+                    break;
+                }
+                "" | "n" | "no" => break,
+                "a" | "all" => {
+                    selected.extend(
+                        candidates[index..]
+                            .iter()
+                            .filter_map(|candidate| interactive_approval(cwd, candidate)),
+                    );
+                    break 'files;
+                }
+                "q" | "quit" | "cancel" => {
+                    eprintln!("Interactive run cancelled; no files were changed.");
+                    return None;
+                }
+                _ => eprintln!("Please enter y, n, a, or q."),
+            }
+        }
+    }
+    Some(selected)
+}
+
+fn interactive_absolute_path(cwd: &std::path::Path, path: &std::path::Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
+
+fn interactive_approval(
+    cwd: &std::path::Path,
+    file: &normfix_report::FileReport,
+) -> Option<(PathBuf, WriteApproval)> {
+    let original = file.original.as_deref()?;
+    let fixed = file.fixed.as_deref()?;
+    Some((
+        interactive_absolute_path(cwd, file.path.as_std_path()),
+        WriteApproval::new(original.as_bytes(), fixed.as_bytes()),
+    ))
+}
+
+fn selected_workflow(cli: &Cli) -> (Vec<PathBuf>, Workflow) {
+    match &cli.command {
+        Some(Command::Format(arguments)) => (arguments.paths.clone(), Workflow::Format),
+        Some(Command::Lint(arguments)) => (arguments.paths.clone(), Workflow::Lint),
+        Some(Command::Check(arguments)) => (arguments.paths.clone(), Workflow::Check),
+        Some(Command::Budget(arguments)) => (arguments.paths.clone(), Workflow::Budget),
+        Some(Command::Preflight(arguments)) => (arguments.paths.clone(), Workflow::Preflight),
+        Some(Command::Explain(_) | Command::Undo(_)) => (Vec::new(), Workflow::Default),
+        None => (cli.paths.clone(), Workflow::Default),
+    }
+}
+
+fn run_explain(format: OutputFormat, rule: &str) -> ExitCode {
+    let canonical = rule.trim().to_ascii_uppercase();
+    let Some(explanation) = rules::explain(&canonical) else {
+        print_run_error(
+            format,
+            &format!(
+                "No bundled explanation exists for `{canonical}`. The rule remains available in the normal diagnostic report."
+            ),
+        );
+        return ExitCode::from(2);
+    };
+    match format {
+        OutputFormat::Human => print!("{explanation}"),
+        OutputFormat::Json => {
+            let value = serde_json::json!({
+                "schema_version": normfix_report::REPORT_SCHEMA_VERSION,
+                "rule_id": canonical,
+                "explanation": explanation,
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&value).expect("explanation JSON is serializable")
+            );
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+fn run_undo(cli: &Cli, arguments: &UndoArguments, cwd: &std::path::Path) -> ExitCode {
+    let runs = match collect_undo_runs(cli.backup_dir.as_deref(), cwd) {
+        Ok(runs) => runs,
+        Err(message) => {
+            print_run_error(cli.format, &message);
+            return ExitCode::from(2);
+        }
+    };
+    if arguments.list {
+        render_undo_list(cli.format, &runs);
+        return ExitCode::SUCCESS;
+    }
+    let selected = arguments.run.as_ref().map_or_else(
+        || runs.last(),
+        |run_id| runs.iter().rev().find(|run| &run.run_id == run_id),
+    );
+    let Some(selected) = selected else {
+        let detail = arguments.run.as_ref().map_or_else(
+            || "No intact backup run exists for this project.".to_owned(),
+            |run_id| format!("No intact backup run named `{run_id}` exists for this project."),
+        );
+        print_run_error(cli.format, &detail);
+        return ExitCode::from(2);
+    };
+    if !cli.force {
+        if let Err(message) = confirm_undo(selected, cli.format) {
+            print_run_error(cli.format, &message);
+            return ExitCode::from(2);
+        }
+    }
+    let Some(backup_root) = selected.journal.parent().and_then(std::path::Path::parent) else {
+        print_run_error(
+            cli.format,
+            "The selected recovery journal has no backup root.",
+        );
+        return ExitCode::from(2);
+    };
+    match undo_run(selected, cwd, backup_root) {
+        Ok(report) => {
+            match cli.format {
+                OutputFormat::Human => {
+                    println!(
+                        "normfix undo\nRestored {} file(s) from {}.",
+                        report.files.len(),
+                        report.restored_run_id
+                    );
+                    for path in &report.files {
+                        println!("  {}", path.display());
+                    }
+                    if let Some(journal) = report.journal {
+                        println!(
+                            "The displaced bytes remain recoverable through {}.",
+                            journal.display()
+                        );
+                    }
+                }
+                OutputFormat::Json => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report)
+                        .expect("undo report JSON is serializable")
+                ),
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            print_run_error(cli.format, &error.to_string());
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn collect_undo_runs(
+    explicit: Option<&std::path::Path>,
+    project_root: &std::path::Path,
+) -> Result<Vec<UndoRun>, String> {
+    let mut runs = Vec::new();
+    for root in backup_roots(explicit) {
+        runs.extend(list_undo_runs(&root, project_root).map_err(|error| error.to_string())?);
+    }
+    runs.sort_by(|left, right| {
+        let left_time = std::fs::metadata(&left.journal)
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(std::time::UNIX_EPOCH);
+        let right_time = std::fs::metadata(&right.journal)
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(std::time::UNIX_EPOCH);
+        left_time
+            .cmp(&right_time)
+            .then_with(|| left.run_id.cmp(&right.run_id))
+    });
+    runs.dedup_by(|left, right| left.journal == right.journal);
+    Ok(runs)
+}
+
+fn backup_roots(explicit: Option<&std::path::Path>) -> Vec<PathBuf> {
+    if let Some(path) = explicit {
+        return vec![path.to_path_buf()];
+    }
+    let base = env::var_os("XDG_DATA_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var_os("HOME")
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+                .map(|home| home.join(".local/share"))
+        });
+    base.map_or_else(Vec::new, |base| {
+        vec![
+            base.join("normfix/backups"),
+            base.join("norminette-fix/backups"),
+        ]
+    })
+}
+
+fn render_undo_list(format: OutputFormat, runs: &[UndoRun]) {
+    match format {
+        OutputFormat::Human => {
+            println!("normfix undo — {} recovery point(s)", runs.len());
+            for run in runs.iter().rev() {
+                println!("  {}  {} file(s)", run.run_id, run.files.len());
+            }
+        }
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(runs).expect("undo list JSON is serializable")
+        ),
+    }
+}
+
+fn confirm_undo(run: &UndoRun, format: OutputFormat) -> Result<(), String> {
+    if format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+        return Err("undo requires an interactive y/N confirmation or --force".to_owned());
+    }
+    eprintln!(
+        "Restore {} file(s) from {}? Later edits are protected and will cause refusal.",
+        run.files.len(),
+        run.run_id
+    );
+    eprint!("Continue? [y/N] ");
+    let _ = io::stderr().flush();
+    let mut answer = String::new();
+    let confirmed = io::stdin()
+        .read_line(&mut answer)
+        .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
+    confirmed
+        .then_some(())
+        .ok_or_else(|| "undo was cancelled; no files were changed".to_owned())
+}
+
 fn authorize_destructive(
-    remove_unused: bool,
-    remove_unexpected: bool,
+    destructive: DestructiveFlags,
     force: bool,
     format: OutputFormat,
 ) -> Result<Option<DestructiveAuthorization>, String> {
     let mut capabilities = Vec::new();
-    if remove_unused {
+    if destructive.remove_unused {
         capabilities.push(DestructiveCapability::RemoveUnreferencedStaticFunctions);
     }
-    if remove_unexpected {
+    if destructive.remove_missing_makefile_sources {
+        capabilities.push(DestructiveCapability::RemoveMissingMakefileSources);
+    }
+    if destructive.remove_unexpected {
         capabilities.push(DestructiveCapability::QuarantineUnexpectedFiles);
     }
     if capabilities.is_empty() {
@@ -254,7 +869,9 @@ fn authorize_destructive(
             "destructive operations require an interactive y/N confirmation or --force".to_owned(),
         );
     }
-    eprintln!("WARNING: this run may delete unreachable static code and/or move unexpected files.");
+    eprintln!(
+        "WARNING: this run may remove proven-dead static code, remove proven-missing Makefile entries, and/or move unexpected files."
+    );
     eprint!("Continue with recoverable destructive operations? [y/N] ");
     let _ = io::stderr().flush();
     let mut answer = String::new();
@@ -333,7 +950,7 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
 fn print_run_error(format: OutputFormat, message: &str) {
     match format {
         OutputFormat::Human => {
-            eprintln!("norminette-fix");
+            eprintln!("normfix");
             eprintln!("error: {message}");
             eprintln!("No unvalidated changes were written.");
         }
@@ -357,19 +974,20 @@ fn print_run_error(format: OutputFormat, message: &str) {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::process::ExitCode;
     use std::time::Duration;
 
     use clap::Parser;
 
-    use super::{Cli, OutputFormat};
+    use super::{Cli, Command, OutputFormat, run};
 
     #[test]
     fn accepts_zero_one_or_many_paths_like_norminette() {
         for expected in 0..=2 {
             let arguments = match expected {
-                0 => vec!["norminette-fix"],
-                1 => vec!["norminette-fix", "main.c"],
-                _ => vec!["norminette-fix", "src", "include/demo.h"],
+                0 => vec!["normfix"],
+                1 => vec!["normfix", "main.c"],
+                _ => vec!["normfix", "src", "include/demo.h"],
             };
             let parsed = Cli::try_parse_from(arguments).expect("valid CLI");
             assert_eq!(parsed.paths.len(), expected);
@@ -379,7 +997,7 @@ mod tests {
     #[test]
     fn parses_preview_identity_performance_and_output_flags() {
         let parsed = Cli::try_parse_from([
-            "norminette-fix",
+            "normfix",
             "--diff",
             "--use-gitignore",
             "--login",
@@ -411,14 +1029,56 @@ mod tests {
         assert!(parsed.remove_unexpected);
         assert!(parsed.force);
         assert!(parsed.format_markdown);
+        assert!(!parsed.no_format_markdown);
         assert!(parsed.no_cache);
         assert_eq!(parsed.paths, vec![PathBuf::from("src")]);
     }
 
     #[test]
     fn rejects_conflicting_previews_and_invalid_limits() {
-        assert!(Cli::try_parse_from(["norminette-fix", "--check", "--diff"]).is_err());
-        assert!(Cli::try_parse_from(["norminette-fix", "--threads", "0"]).is_err());
-        assert!(Cli::try_parse_from(["norminette-fix", "--timeout", "nan"]).is_err());
+        assert!(Cli::try_parse_from(["normfix", "--check", "--diff"]).is_err());
+        assert!(Cli::try_parse_from(["normfix", "--changed", "--staged"]).is_err());
+        assert!(Cli::try_parse_from(["normfix", "--threads", "0"]).is_err());
+        assert!(Cli::try_parse_from(["normfix", "--timeout", "nan"]).is_err());
+        let ambiguous = Cli::try_parse_from(["normfix", "src", "format", "include"])
+            .expect("Clap parses before semantic validation");
+        assert_eq!(run(&ambiguous), ExitCode::from(2));
+        let explain = Cli::try_parse_from(["normfix", "ignored.c", "explain", "LINE_TOO_LONG"])
+            .expect("Clap parses before semantic validation");
+        assert_eq!(run(&explain), ExitCode::from(2));
+    }
+
+    #[test]
+    fn parses_workflow_subcommands_and_markdown_opt_out() {
+        let check = Cli::try_parse_from([
+            "normfix",
+            "check",
+            "src",
+            "include/project.h",
+            "--no-format-markdown",
+        ])
+        .expect("check workflow");
+        let Some(Command::Check(arguments)) = check.command else {
+            panic!("expected check workflow");
+        };
+        assert_eq!(
+            arguments.paths,
+            vec![PathBuf::from("src"), PathBuf::from("include/project.h")]
+        );
+        assert!(check.no_format_markdown);
+
+        let undo =
+            Cli::try_parse_from(["normfix", "undo", "--list", "--force"]).expect("undo workflow");
+        assert!(matches!(
+            undo.command,
+            Some(Command::Undo(arguments)) if arguments.list
+        ));
+        assert!(undo.force);
+
+        let preflight = Cli::try_parse_from(["normfix", "preflight", "--changed", "--interactive"])
+            .expect("preflight workflow flags parse before semantic validation");
+        assert!(matches!(preflight.command, Some(Command::Preflight(_))));
+        assert!(preflight.changed);
+        assert!(preflight.interactive);
     }
 }
