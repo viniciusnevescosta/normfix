@@ -10,18 +10,27 @@ updates:
       cargo:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      # Held below 0.4.30, which needs a newer compiler than the declared MSRV
+      # and publishes no rust-version for the resolver to honor. Raising it is a
+      # documented release decision, not an automated update.
+      - dependency-name: "ignore"
+      # The compatibility authority and the parser are pinned exactly so results
+      # stay reproducible. Moving them is a reviewed compatibility change.
+      - dependency-name: "tree-sitter"
+      - dependency-name: "tree-sitter-c"
 
+  # The playground and the documentation are one npm workspace rooted at the
+  # repository, with a single lockfile.
   - package-ecosystem: npm
-    directory: "/web"
+    directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
-
-  - package-ecosystem: npm
-    directory: "/docs"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
+    ignore:
+      # Pinned exactly and stated in the compatibility policy.
+      - dependency-name: "vite"
+      - dependency-name: "vitepress"
 
   - package-ecosystem: github-actions
     directory: "/"
