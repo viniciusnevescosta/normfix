@@ -380,16 +380,41 @@ mod tests {
         path
     }
 
+    /// Retries while the kernel still reports a freshly written script as busy.
+    ///
+    /// Tests run in threads, and a child forked by another test inherits the
+    /// write descriptor of a script this one just created until that child
+    /// reaches its own `exec`. During that window `execve` fails with ETXTBSY.
+    /// That is a harness race, not product behavior, so retry briefly rather
+    /// than let the suite flake.
     #[cfg(unix)]
-    fn compiler(script: PathBuf, timeout: Duration, cap: usize) -> CompilerValidator {
-        let mut compiler = CompilerValidator::locate(CompilerConfig {
-            executable: Some(script),
-            limits: ProcessLimits {
-                timeout: timeout.max(Duration::from_secs(2)),
-                output_bytes: cap,
-            },
-        })
-        .expect("verified fake compiler");
+    fn retry_while_text_file_busy<T, E: std::fmt::Debug + std::fmt::Display>(
+        what: &str,
+        mut attempt: impl FnMut() -> Result<T, E>,
+    ) -> T {
+        for _ in 0..100 {
+            match attempt() {
+                Ok(value) => return value,
+                Err(error) if error.to_string().contains("Text file busy") => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("{what}: {error:?}"),
+            }
+        }
+        panic!("{what}: still reported as busy after retrying");
+    }
+
+    #[cfg(unix)]
+    fn compiler(script: &Path, timeout: Duration, cap: usize) -> CompilerValidator {
+        let mut compiler = retry_while_text_file_busy("verified fake compiler", || {
+            CompilerValidator::locate(CompilerConfig {
+                executable: Some(script.to_path_buf()),
+                limits: ProcessLimits {
+                    timeout: timeout.max(Duration::from_secs(2)),
+                    output_bytes: cap,
+                },
+            })
+        });
         compiler.limits = ProcessLimits {
             timeout,
             output_bytes: cap,
@@ -411,7 +436,7 @@ test "$3" = "source.c"
 test "$(cat "$3")" = "int source(void);"
 "#,
         );
-        let compiler = compiler(script, Duration::from_secs(5), 16 * 1024);
+        let compiler = compiler(&script, Duration::from_secs(5), 16 * 1024);
 
         let report = compiler
             .validate(
@@ -456,7 +481,7 @@ test -f "include/project.h"
 grep 'project.h' "$6" >/dev/null
 "#,
         );
-        let compiler = compiler(script, Duration::from_secs(5), 16 * 1024);
+        let compiler = compiler(&script, Duration::from_secs(5), 16 * 1024);
 
         let report = compiler
             .validate_project_file(
@@ -486,7 +511,7 @@ grep 'project.h' "$6" >/dev/null
             &directory,
             "if [ \"$1\" = \"--version\" ]; then echo 'fake cc 1.0'; exit 0; fi",
         );
-        let compiler = compiler(script, Duration::from_secs(5), 16 * 1024);
+        let compiler = compiler(&script, Duration::from_secs(5), 16 * 1024);
 
         let error = compiler
             .validate_project_file(project.path(), &outside_source, &[])
@@ -510,7 +535,7 @@ grep 'project.h' "$6" >/dev/null
             &directory,
             "if [ \"$1\" = \"--version\" ]; then echo 'fake cc 1.0'; exit 0; fi",
         );
-        let compiler = compiler(script, Duration::from_secs(5), 16 * 1024);
+        let compiler = compiler(&script, Duration::from_secs(5), 16 * 1024);
 
         let error = compiler
             .validate_project_file(project.path(), &project.path().join("linked/source.c"), &[])
@@ -531,7 +556,7 @@ echo "source.c:1: error: expected declaration" >&2
 exit 2
 "#,
         );
-        let compiler = compiler(script, Duration::from_secs(5), 16 * 1024);
+        let compiler = compiler(&script, Duration::from_secs(5), 16 * 1024);
 
         let report = compiler
             .validate(Path::new("source.c"), "broken", &[])
@@ -553,7 +578,7 @@ if [ "$1" = "--version" ]; then echo "fake cc 1.0"; exit 0; fi
 sleep 5
 "#,
         );
-        let compiler = compiler(script, Duration::from_millis(40), 16 * 1024);
+        let compiler = compiler(&script, Duration::from_millis(40), 16 * 1024);
 
         let error = compiler
             .validate(Path::new("source.c"), "int source(void);\n", &[])
@@ -580,7 +605,7 @@ while [ "$i" -lt 1000 ]; do
 done
 "#,
         );
-        let compiler = compiler(script, Duration::from_secs(2), 512);
+        let compiler = compiler(&script, Duration::from_secs(2), 512);
 
         let error = compiler
             .validate(Path::new("source.c"), "int source(void);\n", &[])

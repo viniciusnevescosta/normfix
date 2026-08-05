@@ -472,19 +472,43 @@ mod tests {
         path
     }
 
+    /// Retries while the kernel still reports a freshly written script as busy.
+    ///
+    /// Tests run in threads, and a child forked by another test inherits the
+    /// write descriptor of a script this one just created until that child
+    /// reaches its own `exec`. During that window `execve` fails with ETXTBSY.
+    /// That is a harness race, not product behavior.
+    #[cfg(unix)]
+    fn retry_while_text_file_busy<T, E: std::fmt::Debug + std::fmt::Display>(
+        what: &str,
+        mut attempt: impl FnMut() -> Result<T, E>,
+    ) -> T {
+        for _ in 0..100 {
+            match attempt() {
+                Ok(value) => return value,
+                Err(error) if error.to_string().contains("Text file busy") => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("{what}: {error:?}"),
+            }
+        }
+        panic!("{what}: still reported as busy after retrying");
+    }
+
     #[cfg(unix)]
     fn oracle(script: &Path, timeout: Duration, output_bytes: usize) -> NorminetteOracle {
-        let mut oracle = NorminetteOracle::locate(NorminetteConfig {
-            executable: Some(script.to_path_buf()),
-            expected_version: SUPPORTED_NORMINETTE_VERSION.to_owned(),
-            limits: ProcessLimits {
-                // Version verification is setup, not the per-lint timeout
-                // exercised by these tests. Keep it robust under parallel CI.
-                timeout: timeout.max(Duration::from_secs(5)),
-                output_bytes,
-            },
-        })
-        .expect("verified fake oracle");
+        let mut oracle = retry_while_text_file_busy("verified fake oracle", || {
+            NorminetteOracle::locate(NorminetteConfig {
+                executable: Some(script.to_path_buf()),
+                expected_version: SUPPORTED_NORMINETTE_VERSION.to_owned(),
+                limits: ProcessLimits {
+                    // Version verification is setup, not the per-lint timeout
+                    // exercised by these tests. Keep it robust under parallel CI.
+                    timeout: timeout.max(Duration::from_secs(5)),
+                    output_bytes,
+                },
+            })
+        });
         oracle.limits = ProcessLimits {
             timeout,
             output_bytes,
