@@ -805,6 +805,7 @@ into authorization. See:
 
 - [Architecture: decisions, rationale, and invariants](docs/ARCHITECTURE.md)
 - [Compatibility and supported toolchain policy](docs/COMPATIBILITY.md)
+- [Release notes for every published version](CHANGELOG.md)
 - [Release process and binary artifacts](docs/RELEASING.md)
 
 The architecture document explains what each crate owns, why the project uses

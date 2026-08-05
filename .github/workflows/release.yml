@@ -146,4 +146,9 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --clobber
           else
             gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}" $prerelease
+            # Point every published release at its own curated notes.
+            notes_link="Full notes for this version: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"
+            gh release view "$GITHUB_REF_NAME" --json body -q .body > generated-notes.md
+            printf '%s\n\n---\n\n' "$notes_link" | cat - generated-notes.md > release-notes.md
+            gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md
           fi
