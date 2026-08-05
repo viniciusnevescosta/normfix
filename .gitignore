@@ -13,5 +13,8 @@ htmlcov/
 /web/pkg/
 /web/dist/
 /web/node_modules/
+/docs/node_modules/
+/docs/.vitepress/cache/
+/docs/.vitepress/dist/
 /.vercel-rust/
 /.vercel/
