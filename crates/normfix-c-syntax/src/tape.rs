@@ -516,6 +516,38 @@ mod tests {
             .collect()
     }
 
+    proptest::proptest! {
+        // The tape is the foundation every syntax-aware edit stands on: if it
+        // loses, reorders, or double-counts a byte, an edit computed from it
+        // corrupts the file. Assert that on generated input, not on examples.
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn any_source_reconstructs_exactly(
+            source in "[ -~\t\n\r\u{00e9}\u{03bb}\u{4e16}]{0,400}"
+        ) {
+            let mut parser = CParser::new().expect("embedded C grammar must load");
+            let parsed = parser.parse(&source).expect("parser must recover from any input");
+
+            proptest::prop_assert_eq!(parsed.tape().reconstruct(), source);
+        }
+
+        #[test]
+        fn tape_pieces_cover_the_input_without_gaps_or_overlap(
+            source in "[ -~\t\n]{0,300}"
+        ) {
+            let mut parser = CParser::new().expect("embedded C grammar must load");
+            let parsed = parser.parse(&source).expect("parser must recover from any input");
+            let mut cursor = 0usize;
+            for piece in parsed.tape().pieces() {
+                let range = piece.range();
+                proptest::prop_assert_eq!(range.start().get() as usize, cursor);
+                cursor = range.end().get() as usize;
+            }
+            proptest::prop_assert_eq!(cursor, source.len());
+        }
+    }
+
     #[test]
     fn valid_c_round_trips_losslessly() {
         let source = "int\tmain(void)\n{\n\treturn (0);\n}\n";

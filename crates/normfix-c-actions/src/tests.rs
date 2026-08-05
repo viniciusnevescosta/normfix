@@ -437,6 +437,68 @@ fn structural_analysis_reports_exact_limits_and_manual_guidance() {
     );
 }
 
+proptest::proptest! {
+    // Reordering moves whole lines, so the risk is losing, duplicating, or
+    // mangling one. Assert the invariants on generated blocks instead of a
+    // single example.
+    #![proptest_config(proptest::prelude::ProptestConfig::with_cases(192))]
+
+    #[test]
+    fn reordering_preserves_every_include_and_sorts_it(
+        includes in proptest::collection::vec(
+            (proptest::bool::ANY, "[a-z][a-z_0-9]{0,7}"),
+            1..8,
+        )
+    ) {
+        let block = includes
+            .iter()
+            .map(|(system, name)| {
+                if *system {
+                    format!("#include <{name}.h>\n")
+                } else {
+                    format!("#include \"{name}.h\"\n")
+                }
+            })
+            .collect::<Vec<_>>();
+        let source = format!(
+            "{}\nint\tmain(void)\n{{\n\treturn (0);\n}}\n",
+            block.concat()
+        );
+
+        let fixed = apply(&source, &[]);
+        let fixed_block = fixed
+            .lines()
+            .take_while(|line| line.starts_with("#include "))
+            .map(|line| format!("{line}\n"))
+            .collect::<Vec<_>>();
+
+        // Nothing is lost, duplicated, or rewritten: the same multiset returns.
+        let mut before = block.clone();
+        let mut after = fixed_block.clone();
+        before.sort();
+        after.sort();
+        proptest::prop_assert_eq!(&before, &after);
+
+        // System headers first, then alphabetically inside each category.
+        let keys = fixed_block
+            .iter()
+            .map(|line| {
+                let system = line.contains('<');
+                let name = line
+                    .trim_end()
+                    .trim_start_matches("#include ")
+                    .trim_matches(['<', '>', '"'])
+                    .to_ascii_lowercase();
+                (u8::from(!system), name)
+            })
+            .collect::<Vec<_>>();
+        proptest::prop_assert!(keys.windows(2).all(|pair| pair[0] <= pair[1]));
+
+        // A second run changes nothing.
+        proptest::prop_assert_eq!(apply(&fixed, &[]), fixed);
+    }
+}
+
 #[test]
 fn include_block_is_reordered_with_system_headers_first_then_alphabetically() {
     let source = concat!(

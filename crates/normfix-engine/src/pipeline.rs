@@ -3508,3 +3508,127 @@ fn explain_constant_array_false_positives(
     });
     advisories
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::{makefile_source_path, prepare_external_recovery_root, transaction_root};
+
+    #[test]
+    fn makefile_source_paths_stay_in_the_caller_path_vocabulary() {
+        let project = TempDir::new().expect("project");
+        let makefile = project.path().join("Makefile");
+        fs::write(&makefile, "SRC = main.c\n").expect("makefile");
+
+        let resolved = makefile_source_path(&makefile, project.path(), "main.c")
+            .expect("a literal source inside the project resolves");
+
+        // Returning the canonical form here mixed two path vocabularies, so the
+        // common transaction ancestor collapsed to `/` on macOS, where /var is
+        // a symbolic link, and the write was refused.
+        assert!(resolved.starts_with(project.path()), "{resolved:?}");
+        assert_eq!(resolved.file_name().expect("file name"), "main.c");
+    }
+
+    #[test]
+    fn makefile_source_paths_outside_the_project_are_refused() {
+        let project = TempDir::new().expect("project");
+        let makefile = project.path().join("Makefile");
+        fs::write(&makefile, "SRC = main.c\n").expect("makefile");
+
+        assert!(makefile_source_path(&makefile, project.path(), "../escape.c").is_none());
+        assert!(makefile_source_path(&makefile, project.path(), "/etc/passwd").is_none());
+        assert!(makefile_source_path(&makefile, project.path(), "nested/../../out.c").is_none());
+    }
+
+    #[test]
+    fn transaction_root_is_the_common_ancestor_and_falls_back_to_the_cwd() {
+        let cwd = std::path::Path::new("/project");
+        let inside = [
+            std::path::Path::new("/project/src/main.c"),
+            std::path::Path::new("/project/src/util.c"),
+        ];
+        assert_eq!(
+            transaction_root(inside.iter().copied(), cwd),
+            std::path::Path::new("/project/src")
+        );
+
+        let disjoint = [
+            std::path::Path::new("/project/main.c"),
+            std::path::Path::new("/elsewhere/main.c"),
+        ];
+        assert_eq!(
+            transaction_root(disjoint.iter().copied(), cwd),
+            std::path::Path::new("/")
+        );
+    }
+
+    #[test]
+    fn recovery_storage_refuses_any_overlap_with_the_project() {
+        let project = TempDir::new().expect("project");
+        let canonical = project.path().canonicalize().expect("canonical project");
+
+        // Inside the project.
+        assert!(
+            prepare_external_recovery_root(&project.path().join("quarantine"), &canonical).is_err()
+        );
+        // An ancestor of the project.
+        assert!(
+            prepare_external_recovery_root(project.path().parent().expect("parent"), &canonical)
+                .is_err()
+        );
+        // The project itself.
+        assert!(prepare_external_recovery_root(project.path(), &canonical).is_err());
+    }
+
+    #[test]
+    fn recovery_storage_creates_every_missing_level_and_is_repeatable() {
+        let project = TempDir::new().expect("project");
+        let storage = TempDir::new().expect("storage");
+        let canonical = project.path().canonicalize().expect("canonical project");
+        let requested = storage.path().join("normfix").join("quarantine");
+
+        let created = prepare_external_recovery_root(&requested, &canonical).expect("first");
+        assert!(created.is_dir());
+
+        let again = prepare_external_recovery_root(&requested, &canonical).expect("second");
+        assert_eq!(created, again);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_storage_refuses_a_symbolic_link_ancestor() {
+        use std::os::unix::fs::symlink;
+
+        let project = TempDir::new().expect("project");
+        let storage = TempDir::new().expect("storage");
+        let canonical = project.path().canonicalize().expect("canonical project");
+        let real = storage.path().join("real");
+        let link = storage.path().join("link");
+        fs::create_dir(&real).expect("real directory");
+        symlink(&real, &link).expect("symbolic link");
+
+        assert!(prepare_external_recovery_root(&link.join("quarantine"), &canonical).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_storage_refuses_a_link_that_redirects_into_the_project() {
+        use std::os::unix::fs::symlink;
+
+        let project = TempDir::new().expect("project");
+        let storage = TempDir::new().expect("storage");
+        let canonical = project.path().canonicalize().expect("canonical project");
+        let inside = project.path().join("backups");
+        let link = storage.path().join("link");
+        fs::create_dir(&inside).expect("directory inside the project");
+        symlink(&inside, &link).expect("symbolic link into the project");
+
+        // The lexical prefix check passes; only resolving the link exposes the
+        // overlap, which is why the check runs again after canonicalization.
+        assert!(prepare_external_recovery_root(&link, &canonical).is_err());
+    }
+}
