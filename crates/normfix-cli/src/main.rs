@@ -129,6 +129,10 @@ struct Cli {
     #[arg(long, global = true, conflicts_with = "format_markdown")]
     no_format_markdown: bool,
 
+    /// Leave contiguous include blocks in their current order.
+    #[arg(long, global = true)]
+    no_reorder_includes: bool,
+
     /// Disable the external content-addressed analysis cache.
     #[arg(long, global = true)]
     no_cache: bool,
@@ -444,6 +448,7 @@ fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions
     options.remove_unused_static = input.destructive.remove_unused;
     options.quarantine_unexpected = input.destructive.remove_unexpected;
     options.destructive_authorization = input.authorization;
+    options.reorder_includes = !cli.no_reorder_includes;
     options.format_markdown = !cli.no_format_markdown;
     options.max_passes = cli.max_passes;
     options

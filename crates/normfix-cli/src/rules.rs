@@ -95,6 +95,12 @@ fn structural_article(canonical: &str) -> Option<Article> {
             "Use one outer guard and check for project-wide macro references, #undef, X-macro use, and repeated-inclusion behavior.",
             "Guard edits are accepted only with a closed-project collision proof and final Norminette validation.",
         ),
+        "INCLUDE_ORDER" | "INCLUDE_ORDER_REVIEW" => (
+            "Include block order",
+            "The expected display order is <system headers> first, then \"project headers\", alphabetically inside each category.",
+            "Nothing to do when a fixing run reordered the block; reorder by hand when the report kept it, which happens with --no-reorder-includes or when a comment, conditional, or macro interrupts the run of directives.",
+            "A block is rewritten only when every one of its lines is exactly one include directive, so no directive is ever moved across a construct that could change what a header means.",
+        ),
         _ => return None,
     })
 }
