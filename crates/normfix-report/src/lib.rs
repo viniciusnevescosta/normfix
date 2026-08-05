@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
@@ -307,18 +307,31 @@ pub fn render_human(report: &RunReport, options: RenderOptions) -> String {
     let mut output = String::new();
     let _ = writeln!(
         output,
-        "{}norminette-fix{} {}",
+        "{}normfix{} {}",
         paint.bold_cyan, paint.reset, report.tool_version
     );
     output.push_str("Safe automatic fixes for the 42 Norm v4.1\n");
-    render_identity(&mut output, &paint, &report.identity);
+    if report.files.iter().any(|file| {
+        matches!(file.path.extension(), Some("c" | "h"))
+            || file
+                .path
+                .file_name()
+                .is_some_and(|name| name.eq_ignore_ascii_case("makefile"))
+    }) {
+        render_identity(&mut output, &paint, &report.identity);
+    }
+    let _ = writeln!(
+        output,
+        "\n{}Project reminder:{} keep submitted code and permitted comments in English (not a Norm rule).",
+        paint.bold_blue, paint.reset
+    );
     render_discovery(&mut output, &paint, report);
     render_quarantine(&mut output, &paint, report);
-    render_file_table(&mut output, &paint, &report.files);
+    render_file_table(&mut output, &paint, &report.files, options.verbose);
     if options.verbose {
         render_fixes(&mut output, &paint, &report.files);
     }
-    render_diagnostics(&mut output, &paint, &report.files);
+    render_diagnostics(&mut output, &paint, &report.files, options.verbose);
     render_failures(&mut output, &paint, &report.files);
     if options.show_diff {
         render_diffs(&mut output, &report.files);
@@ -335,13 +348,17 @@ fn render_identity(output: &mut String, paint: &Paint, identity: &ReportIdentity
             paint.bold_red, paint.reset
         );
         if !identity.source.is_empty() {
-            let _ = writeln!(output, "  {}", identity.source);
+            let _ = writeln!(output, "  {}", terminal_safe_inline(&identity.source));
         }
     } else if identity.inferred {
         let _ = writeln!(
             output,
             "\n{}Header identity inferred:{} {} <{}> ({})",
-            paint.yellow, paint.reset, identity.login, identity.email, identity.source
+            paint.yellow,
+            paint.reset,
+            terminal_safe_inline(&identity.login),
+            terminal_safe_inline(&identity.email),
+            terminal_safe_inline(&identity.source)
         );
     }
 }
@@ -350,8 +367,10 @@ fn render_discovery(output: &mut String, paint: &Paint, report: &RunReport) {
     for error in &report.discovery_errors {
         let _ = writeln!(
             output,
-            "\n{}Input error:{} {error}",
-            paint.bold_red, paint.reset
+            "\n{}Input error:{} {}",
+            paint.bold_red,
+            paint.reset,
+            terminal_safe_inline(error)
         );
     }
     if report.unexpected_files.is_empty() {
@@ -363,7 +382,7 @@ fn render_discovery(output: &mut String, paint: &Paint, report: &RunReport) {
         paint.bold_yellow, paint.reset
     );
     for path in &report.unexpected_files {
-        let _ = writeln!(output, "  {path}");
+        let _ = writeln!(output, "  {}", safe_path(path));
     }
     output.push_str("Only .c, .h, Makefile, and README files are expected.\n");
 }
@@ -376,7 +395,7 @@ fn render_quarantine(output: &mut String, paint: &Paint, report: &RunReport) {
             paint.bold_green, paint.reset
         );
         for path in &report.quarantined_files {
-            let _ = writeln!(output, "  {path}");
+            let _ = writeln!(output, "  {}", safe_path(path));
         }
     } else if !report.quarantine_candidates.is_empty() {
         let _ = writeln!(
@@ -385,23 +404,40 @@ fn render_quarantine(output: &mut String, paint: &Paint, report: &RunReport) {
             paint.bold_blue, paint.reset
         );
         for path in &report.quarantine_candidates {
-            let _ = writeln!(output, "  {path}");
+            let _ = writeln!(output, "  {}", safe_path(path));
         }
         output.push_str("  Preview mode did not move these files.\n");
     }
     for error in &report.quarantine_errors {
         let _ = writeln!(
             output,
-            "\n{}Quarantine failed:{} {error}",
-            paint.bold_red, paint.reset
+            "\n{}Quarantine failed:{} {}",
+            paint.bold_red,
+            paint.reset,
+            terminal_safe_inline(error)
         );
     }
 }
 
-fn render_file_table(output: &mut String, paint: &Paint, files: &[FileReport]) {
+fn render_file_table(output: &mut String, paint: &Paint, files: &[FileReport], verbose: bool) {
     output.push_str("\nFiles\n");
     output.push_str("STATUS      FIXES  REMAINING  INFO  FILE\n");
+    let clean_count = files
+        .iter()
+        .filter(|file| file.status() == FileStatus::Clean)
+        .count();
+    if !verbose && clean_count > 0 {
+        let noun = if clean_count == 1 { "file" } else { "files" };
+        let _ = writeln!(
+            output,
+            "{}CLEAN{}          0          0     0  {clean_count} {noun}",
+            paint.green, paint.reset
+        );
+    }
     for file in files {
+        if !verbose && file.status() == FileStatus::Clean {
+            continue;
+        }
         let (label, style) = match file.status() {
             FileStatus::Clean => ("CLEAN", paint.green),
             FileStatus::Advisory => ("INFO", paint.bold_blue),
@@ -428,7 +464,8 @@ fn render_file_table(output: &mut String, paint: &Paint, files: &[FileReport]) {
         let _ = writeln!(
             output,
             "{style}{label:<10}{}{fix_count:>5}  {remaining:>9}  {advisories:>4}  {}",
-            paint.reset, file.path
+            paint.reset,
+            safe_path(&file.path)
         );
     }
 }
@@ -438,10 +475,17 @@ fn render_fixes(output: &mut String, paint: &Paint, files: &[FileReport]) {
         if file.fixes.is_empty() {
             continue;
         }
+        let label = if file.written {
+            "Applied fixes"
+        } else {
+            "Proposed fixes"
+        };
         let _ = writeln!(
             output,
-            "\n{}Applied fixes — {}{}",
-            paint.bold_cyan, file.path, paint.reset
+            "\n{}{label} — {}{}",
+            paint.bold_cyan,
+            safe_path(&file.path),
+            paint.reset
         );
         for fix in &file.fixes {
             let location = fix
@@ -450,13 +494,127 @@ fn render_fixes(output: &mut String, paint: &Paint, files: &[FileReport]) {
             let _ = writeln!(
                 output,
                 "  {} ×{}{} — {}",
-                fix.rule_id, fix.count, location, fix.description
+                terminal_safe_inline(&fix.rule_id),
+                fix.count,
+                location,
+                terminal_safe_inline(&fix.description)
             );
         }
     }
 }
 
-fn render_diagnostics(output: &mut String, paint: &Paint, files: &[FileReport]) {
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct DiagnosticGroupKey {
+    severity: Severity,
+    rule_id: String,
+    source: DiagnosticSource,
+    help: Option<String>,
+}
+
+fn render_diagnostics(output: &mut String, paint: &Paint, files: &[FileReport], verbose: bool) {
+    if verbose {
+        render_diagnostics_expanded(output, paint, files);
+        return;
+    }
+    let diagnostic_count = files.iter().map(|file| file.after.len()).sum::<usize>();
+    if diagnostic_count == 0 {
+        return;
+    }
+
+    let mut groups = BTreeMap::<DiagnosticGroupKey, Vec<&Diagnostic>>::new();
+    for diagnostic in files.iter().flat_map(|file| &file.after) {
+        groups
+            .entry(DiagnosticGroupKey {
+                severity: diagnostic.severity,
+                rule_id: diagnostic.rule_id.clone(),
+                source: diagnostic.source.clone(),
+                help: diagnostic.help.clone(),
+            })
+            .or_default()
+            .push(diagnostic);
+    }
+
+    output.push_str("\nDiagnostics grouped by rule\n");
+    let sources = source_map(files);
+    for (group, mut diagnostics) in groups {
+        diagnostics.sort_by(|left, right| {
+            left.path
+                .cmp(&right.path)
+                .then_with(|| left.range.cmp(&right.range))
+                .then_with(|| left.message.cmp(&right.message))
+        });
+        let paths = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.path.as_path())
+            .collect::<BTreeSet<_>>();
+        let (level, style) = severity_label(group.severity, paint);
+        let occurrence_word = if diagnostics.len() == 1 {
+            "occurrence"
+        } else {
+            "occurrences"
+        };
+        let file_word = if paths.len() == 1 { "file" } else { "files" };
+        let _ = writeln!(
+            output,
+            "\n{style}{level}[{}]:{} {} {occurrence_word} in {} {file_word}",
+            terminal_safe_inline(&group.rule_id),
+            paint.reset,
+            diagnostics.len(),
+            paths.len()
+        );
+        for diagnostic in diagnostics {
+            let location = diagnostic_location(diagnostic, &sources);
+            let _ = writeln!(
+                output,
+                "  {location:<36} {}",
+                terminal_safe_inline(&diagnostic.message)
+            );
+            for note in &diagnostic.notes {
+                let _ = writeln!(output, "    note: {}", terminal_safe_inline(note));
+            }
+        }
+        if let Some(help) = &group.help {
+            let _ = writeln!(output, " = help: {}", terminal_safe_inline(help));
+        }
+        let _ = writeln!(
+            output,
+            " = source: {}",
+            terminal_safe_inline(&source_label(&group.source))
+        );
+        let _ = writeln!(
+            output,
+            " = explain: normfix explain {}",
+            terminal_safe_inline(&group.rule_id)
+        );
+    }
+}
+
+fn diagnostic_location(diagnostic: &Diagnostic, sources: &BTreeMap<&Utf8Path, &str>) -> String {
+    let Some(source) = sources.get(diagnostic.path.as_path()) else {
+        return format!(
+            "{}:{}..{}",
+            safe_path(&diagnostic.path),
+            diagnostic.range.start().get(),
+            diagnostic.range.end().get()
+        );
+    };
+    let Ok(index) = LineIndex::new(Arc::from(*source)) else {
+        return safe_path(&diagnostic.path);
+    };
+    index.line_column(diagnostic.range.start()).map_or_else(
+        || safe_path(&diagnostic.path),
+        |position| {
+            format!(
+                "{}:{}:{}",
+                safe_path(&diagnostic.path),
+                position.line,
+                position.visual_column
+            )
+        },
+    )
+}
+
+fn render_diagnostics_expanded(output: &mut String, paint: &Paint, files: &[FileReport]) {
     let mut emitted_header = false;
     for file in files {
         let Some(source) = file.fixed.as_ref().or(file.original.as_ref()) else {
@@ -489,12 +647,14 @@ fn render_diagnostic_without_source(output: &mut String, paint: &Paint, diagnost
     let _ = writeln!(
         output,
         "\n{style}{level}[{}]:{} {}",
-        diagnostic.rule_id, paint.reset, diagnostic.message
+        terminal_safe_inline(&diagnostic.rule_id),
+        paint.reset,
+        terminal_safe_inline(&diagnostic.message)
     );
     let _ = writeln!(
         output,
         " --> {}:{}..{}",
-        diagnostic.path,
+        safe_path(&diagnostic.path),
         diagnostic.range.start().get(),
         diagnostic.range.end().get()
     );
@@ -516,12 +676,18 @@ fn render_source_diagnostic(
     let _ = writeln!(
         output,
         "\n{style}{level}[{}]:{} {}",
-        diagnostic.rule_id, paint.reset, diagnostic.message
+        terminal_safe_inline(&diagnostic.rule_id),
+        paint.reset,
+        terminal_safe_inline(&diagnostic.message)
     );
     let _ = writeln!(
         output,
         " {}--> {}:{}:{}{}",
-        paint.blue, diagnostic.path, position.line, position.visual_column, paint.reset
+        paint.blue,
+        safe_path(&diagnostic.path),
+        position.line,
+        position.visual_column,
+        paint.reset
     );
     let Some(range) = line_index.line_range(position.line) else {
         render_diagnostic_footer(output, diagnostic);
@@ -560,12 +726,16 @@ fn render_source_diagnostic(
 
 fn render_diagnostic_footer(output: &mut String, diagnostic: &Diagnostic) {
     if let Some(help) = &diagnostic.help {
-        let _ = writeln!(output, " = help: {help}");
+        let _ = writeln!(output, " = help: {}", terminal_safe_inline(help));
     }
     for note in &diagnostic.notes {
-        let _ = writeln!(output, " = note: {note}");
+        let _ = writeln!(output, " = note: {}", terminal_safe_inline(note));
     }
-    let _ = writeln!(output, " = source: {}", source_label(&diagnostic.source));
+    let _ = writeln!(
+        output,
+        " = source: {}",
+        terminal_safe_inline(&source_label(&diagnostic.source))
+    );
 }
 
 fn diagnostic_caret_length(
@@ -605,6 +775,11 @@ fn expand_tabs(line: &str) -> String {
             let count = 4 - ((column - 1) % 4);
             output.push_str(&" ".repeat(count as usize));
             column += count;
+        } else if character.is_control() {
+            let escaped = format!("\\u{{{:x}}}", u32::from(character));
+            column =
+                column.saturating_add(u32::try_from(escaped.chars().count()).unwrap_or(u32::MAX));
+            output.push_str(&escaped);
         } else {
             output.push(character);
             column = column.saturating_add(1);
@@ -618,8 +793,11 @@ fn render_failures(output: &mut String, paint: &Paint, files: &[FileReport]) {
         if let Some(failure) = &file.failure {
             let _ = writeln!(
                 output,
-                "\n{}FAILED{} {}: {failure}",
-                paint.bold_red, paint.reset, file.path
+                "\n{}FAILED{} {}: {}",
+                paint.bold_red,
+                paint.reset,
+                safe_path(&file.path),
+                terminal_safe_inline(failure)
             );
         }
     }
@@ -627,34 +805,44 @@ fn render_failures(output: &mut String, paint: &Paint, files: &[FileReport]) {
 
 fn render_diffs(output: &mut String, files: &[FileReport]) {
     for file in files {
-        let (Some(original), Some(fixed)) = (&file.original, &file.fixed) else {
-            continue;
-        };
-        if original == fixed {
-            continue;
+        if let Some(diff) = unified_diff(file) {
+            let _ = writeln!(output, "\n{diff}");
         }
-        let diff = TextDiff::from_lines(original.as_ref(), fixed.as_ref())
-            .unified_diff()
-            .header(&format!("a/{}", file.path), &format!("b/{}", file.path))
-            .to_string();
-        let _ = writeln!(output, "\n{diff}");
     }
+}
+
+/// Builds the unified diff for one changed file report.
+///
+/// Returns `None` when source buffers are unavailable or byte-identical.
+#[must_use]
+pub fn unified_diff(file: &FileReport) -> Option<String> {
+    let (Some(original), Some(fixed)) = (&file.original, &file.fixed) else {
+        return None;
+    };
+    if original == fixed {
+        return None;
+    }
+    let diff = TextDiff::from_lines(original.as_ref(), fixed.as_ref())
+        .unified_diff()
+        .header(
+            &format!("a/{}", safe_path(&file.path)),
+            &format!("b/{}", safe_path(&file.path)),
+        )
+        .to_string();
+    Some(terminal_safe_multiline(&diff))
 }
 
 fn render_summary(output: &mut String, paint: &Paint, report: &RunReport) {
     let summary = &report.summary;
-    let action = if report.mode == ReportMode::Fix {
-        "changed"
-    } else {
-        "would change"
-    };
+    let written = report.files.iter().filter(|file| file.written).count();
     let _ = writeln!(
         output,
-        "\n{}Summary:{} {} files | {} {action} | {} fixes | {} remaining | {} info | {} failed | {} unexpected | {} quarantined",
+        "\n{}Summary:{} {} files | {} proposed | {} written | {} fixes | {} remaining | {} info | {} failed | {} unexpected | {} quarantined",
         paint.bold,
         paint.reset,
         summary.files,
         summary.changed,
+        written,
         summary.fixes,
         summary.remaining,
         summary.advisories,
@@ -687,7 +875,10 @@ fn source_label(source: &DiagnosticSource) -> String {
     match source {
         DiagnosticSource::NativeNorm41 => "Norm v4.1 native rule".to_owned(),
         DiagnosticSource::NorminetteCompat(version) => {
-            format!("official Norminette {version} compatibility")
+            format!(
+                "official Norminette {} compatibility",
+                terminal_safe_inline(version)
+            )
         }
         DiagnosticSource::Parser => "C parser".to_owned(),
         DiagnosticSource::Compiler => "C compiler".to_owned(),
@@ -695,6 +886,39 @@ fn source_label(source: &DiagnosticSource) -> String {
         DiagnosticSource::Makefile => "Makefile check".to_owned(),
         DiagnosticSource::Markdown => "Markdown check".to_owned(),
     }
+}
+
+fn safe_path(path: &Utf8Path) -> String {
+    terminal_safe_inline(path.as_str())
+}
+
+fn terminal_safe_inline(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    for character in input.chars() {
+        match character {
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            character if character.is_control() => {
+                let _ = write!(output, "\\u{{{:x}}}", u32::from(character));
+            }
+            character => output.push(character),
+        }
+    }
+    output
+}
+
+fn terminal_safe_multiline(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    for segment in input.split_inclusive('\n') {
+        if let Some(line) = segment.strip_suffix('\n') {
+            output.push_str(&terminal_safe_inline(line));
+            output.push('\n');
+        } else {
+            output.push_str(&terminal_safe_inline(segment));
+        }
+    }
+    output
 }
 
 fn format_duration(seconds: f64) -> String {
@@ -845,6 +1069,39 @@ mod tests {
     }
 
     #[test]
+    fn default_human_output_groups_the_same_rule_across_files() {
+        let mut second = file();
+        second.path = Utf8PathBuf::from("src/other.c");
+        second.after[0].path = second.path.clone();
+        second.after[0].message = "other() exceeds the 25-line limit".to_owned();
+        let report = RunReport::new(
+            "0.4.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![file(), second],
+            Duration::ZERO,
+        );
+
+        let rendered = render_human(
+            &report,
+            RenderOptions {
+                color: false,
+                verbose: false,
+                show_diff: false,
+            },
+        );
+
+        assert!(rendered.contains("warning[TOO_MANY_LINES]: 2 occurrences in 2 files"));
+        assert_eq!(rendered.matches("= help:").count(), 1);
+        assert_eq!(rendered.matches("= source:").count(), 1);
+        assert!(rendered.contains("src/main.c:1:6"));
+        assert!(rendered.contains("src/other.c:1:6"));
+        assert!(rendered.contains("= explain: normfix explain TOO_MANY_LINES"));
+    }
+
+    #[test]
     fn json_is_versioned_sorted_and_does_not_include_source_buffers() {
         let report = RunReport::new(
             "0.4.0",
@@ -863,5 +1120,41 @@ mod tests {
         assert!(!json.contains("\"fixed\""));
         assert!(json.find("\"a\"").expect("a") < json.find("\"z\"").expect("z"));
         assert_eq!(report.exit_code(), 2);
+    }
+
+    #[test]
+    fn human_output_escapes_untrusted_terminal_controls() {
+        let mut unsafe_file = file();
+        unsafe_file.path = Utf8PathBuf::from("src/\u{1b}[31m.c");
+        unsafe_file.after[0].path = unsafe_file.path.clone();
+        unsafe_file.after[0].message = "message\u{1b}[2J\nforged".to_owned();
+        unsafe_file.after[0].notes = vec!["note\r\u{7}".to_owned()];
+        unsafe_file.failure = Some("failure\u{1b}]0;owned\u{7}".to_owned());
+        unsafe_file.original = Some(Arc::from("int\tmain(void)\n{\n\treturn (0);\n}\n"));
+        unsafe_file.fixed = Some(Arc::from("int\tmain(void)\n{\n\treturn (0);\u{1b}[2J\n}\n"));
+        let report = RunReport::new(
+            "0.4.0",
+            ReportMode::Diff,
+            ReportIdentity::default(),
+            vec!["bad\u{1b}[2J".to_owned()],
+            vec![Utf8PathBuf::from("bad\u{1b}]0;x\u{7}.bin")],
+            vec![unsafe_file],
+            Duration::ZERO,
+        );
+
+        let rendered = render_human(
+            &report,
+            RenderOptions {
+                color: false,
+                verbose: true,
+                show_diff: true,
+            },
+        );
+
+        assert!(!rendered.contains('\u{1b}'));
+        assert!(!rendered.contains('\u{7}'));
+        assert!(rendered.contains("\\u{1b}"));
+        assert!(rendered.contains("message\\u{1b}[2J\\nforged"));
+        assert!(rendered.contains("note\\r\\u{7}"));
     }
 }
