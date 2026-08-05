@@ -96,6 +96,8 @@ jobs:
         uses: actions/checkout@v7
       - name: Run all tests
         run: cargo test --workspace --all-targets --locked
+      - name: Exercise the deep analyzer with the system compiler
+        run: cargo test --locked -p normfix-engine --test analyzer -- --ignored
 
   official-tools:
     name: Official Norminette and C compiler
@@ -116,3 +118,11 @@ jobs:
         run: cargo test --locked -p normfix-oracle installed_compiler_smoke_test -- --ignored
       - name: Prove a run never worsens the official result
         run: cargo test --locked -p normfix-engine --test differential -- --ignored
+      - name: Exercise the deep analyzer with GCC
+        env:
+          NORMFIX_TEST_CC: gcc
+        run: cargo test --locked -p normfix-engine --test analyzer -- --ignored
+      - name: Exercise the deep analyzer with Clang
+        env:
+          NORMFIX_TEST_CC: clang
+        run: cargo test --locked -p normfix-engine --test analyzer -- --ignored
