@@ -1,0 +1,22 @@
+{
+  "name": "normfix-site",
+  "version": "0.4.0-beta.1",
+  "private": true,
+  "type": "module",
+  "description": "The normfix browser playground and its documentation, built together.",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "workspaces": [
+    "web",
+    "docs"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace normfix-playground && npm run build --workspace normfix-docs",
+    "build:vercel": "npm run build:vercel --workspace normfix-playground && npm run build --workspace normfix-docs",
+    "dev": "npm run dev --workspace normfix-playground",
+    "docs:dev": "npm run dev --workspace normfix-docs",
+    "preview": "npm run preview --workspace normfix-playground",
+    "typecheck": "npm run typecheck --workspace normfix-playground"
+  }
+}

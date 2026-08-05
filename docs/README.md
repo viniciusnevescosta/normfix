@@ -24,13 +24,16 @@ directory, so they stay next to the code they describe.
 
 ## Running the site
 
+The playground and this documentation are one npm workspace rooted at the
+repository, so install once from there:
+
 ```sh
 npm ci
-npm run dev
+npm run docs:dev
 ```
 
-The development server prints a local URL. Use `npm run build` to produce the
-deployable bundle and `npm run preview` to serve it.
+`npm run build` from the repository root builds the playground and then this
+documentation into it. Run `npm run dev` for the playground instead.
 
 The site is published beneath the browser playground: the playground owns the
 site root and this documentation is served from `/docs/`, which is why

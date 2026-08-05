@@ -12,6 +12,7 @@ htmlcov/
 /target/
 /web/pkg/
 /web/dist/
+/node_modules/
 /web/node_modules/
 /docs/node_modules/
 /docs/.vitepress/cache/

@@ -85,8 +85,8 @@ than exposed as a usable partial edit.
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
-npm ci --prefix web
-npm run dev --prefix web
+npm ci
+npm run dev
 ```
 
 The dev command rebuilds the WebAssembly bindings before starting the site at

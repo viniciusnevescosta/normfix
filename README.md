@@ -790,12 +790,12 @@ one deployment serves the browser playground at `/` and the documentation at
 `/docs/`, on the same origin. Build both locally with:
 
 ```sh
-npm ci --prefix web && npm run build --prefix web
-npm ci --prefix docs && npm run build --prefix docs
+npm ci
+npm run build
 ```
 
 `web/dist/` then holds the playground and `web/dist/docs/` the rendered
-documentation. Use `npm run dev --prefix docs` for a live documentation server.
+documentation. Use `npm run docs:dev` for a live documentation server.
 
 ## Architecture
 

@@ -33,7 +33,7 @@ not a public normfix release archive name.
 Install the pinned frontend dependency from the lockfile:
 
 ```sh
-npm ci --prefix web
+npm ci
 ```
 
 ## Develop and build
@@ -41,7 +41,7 @@ npm ci --prefix web
 Start the local Vite server:
 
 ```sh
-npm run dev --prefix web
+npm run dev
 ```
 
 The command rebuilds the WASM bindings before starting the site at
@@ -50,8 +50,8 @@ The command rebuilds the WASM bindings before starting the site at
 Create and inspect the exact production bundle:
 
 ```sh
-npm run build --prefix web
-npm run preview --prefix web
+npm run build
+npm run preview
 ```
 
 Vite writes the deployable site to `web/dist/`. Both `web/pkg/` and `web/dist/`
