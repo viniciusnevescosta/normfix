@@ -1,0 +1,29 @@
+[package]
+name = "normfix-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+description = "Private, in-browser normfix formatter and diagnostic bridge"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+camino.workspace = true
+normfix-c-actions = { path = "../normfix-c-actions" }
+normfix-core = { path = "../normfix-core" }
+serde.workspace = true
+serde_json.workspace = true
+similar.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.126"
+
+[lints]
+workspace = true
