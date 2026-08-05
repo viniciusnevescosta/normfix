@@ -1,4 +1,4 @@
-//! Lossless C syntax support for `norminette-fix`.
+//! Lossless C syntax support for `normfix`.
 //!
 //! This crate deliberately keeps Tree-sitter behind a small, backend-neutral
 //! API. [`CParser`] exposes parse errors and a full-fidelity [`TokenTape`], but
@@ -11,7 +11,12 @@ mod facts;
 mod parser;
 mod tape;
 
-pub use facts::{ArrayDeclaratorFact, CFunctionFact, CFunctionKind, EnumConstantFact, SyntaxFacts};
+pub use facts::{
+    ArrayDeclaratorFact, CFunctionFact, CFunctionKind, CParameterFact, CStatementKind,
+    CTypeTagKind, CallFact, EnumConstantFact, InitialDeclarationBlockFact, LocalDeclarationFact,
+    LoopFact, MacroFact, NullCheckFact, RedundantElseFact, ReturnFact, SingleStatementBodyFact,
+    SyntaxFacts, TypeTagFact,
+};
 pub use parser::{CParser, ParseFailure, ParsedFile, SyntaxIssue, SyntaxIssueKind};
 pub use tape::{
     LineEnding, TapePiece, TokenPiece, TokenTape, TriviaKind, TriviaPiece, UnknownPiece,

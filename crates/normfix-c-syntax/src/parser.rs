@@ -388,8 +388,11 @@ mod tests {
         assert_eq!(facts.functions[0].kind, CFunctionKind::Prototype);
         assert_eq!(facts.functions[0].name, "declared");
         assert_eq!(facts.functions[0].parameter_count, 2);
+        assert_eq!(facts.functions[0].parameters.len(), 2);
+        assert_eq!(facts.functions[0].parameters[0].name, "text");
         assert_eq!(facts.functions[1].kind, CFunctionKind::Definition);
         assert!(facts.functions[1].is_static);
+        assert!(!facts.functions[1].returns_pointer);
         assert_eq!(facts.enum_constants.len(), 3);
         assert_eq!(
             facts.enum_constants[2].explicit_value.as_deref(),
@@ -399,5 +402,81 @@ mod tests {
         assert_eq!(facts.arrays[0].name.as_deref(), Some("count"));
         assert_eq!(facts.arrays[0].bound.as_deref(), Some("op_total"));
         assert!(!facts.preprocessor_ranges.is_empty());
+    }
+
+    #[test]
+    fn structural_facts_cover_controls_calls_returns_tags_and_null_checks() {
+        let mut parser = CParser::new().expect("embedded C grammar must load");
+        let source = concat!(
+            "#include <stddef.h>\n",
+            "struct context { int value; };\n",
+            "char\t*pick(char *value)\n",
+            "{\n",
+            "\tint\tseen;\n",
+            "\tif (value == NULL)\n",
+            "\t{\n",
+            "\t\treturn (0);\n",
+            "\t}\n",
+            "\telse\n",
+            "\t{\n",
+            "\t\treturn (value);\n",
+            "\t}\n",
+            "\tseen = helper();\n",
+            "\twhile (1)\n",
+            "\t\tseen++;\n",
+            "}\n",
+        );
+        let parsed = parser.parse(source).expect("valid translation unit");
+        let facts = parsed.facts();
+        assert!(facts.functions[0].returns_pointer);
+        assert_eq!(facts.control_compounds.len(), 2);
+        assert_eq!(facts.single_statement_bodies.len(), 2);
+        assert_eq!(facts.redundant_else_branches.len(), 1);
+        assert_eq!(facts.local_declarations.len(), 1);
+        assert_eq!(facts.initial_declaration_blocks.len(), 1);
+        assert_eq!(facts.returns.len(), 2);
+        assert_eq!(facts.null_checks.len(), 1);
+        assert_eq!(facts.null_providers.len(), 1);
+        assert!(facts.macros.is_empty());
+        assert_eq!(facts.type_tags.len(), 1);
+        assert!(facts.calls.iter().any(|call| call.name == "helper"));
+        assert!(facts.loops.iter().any(|loop_fact| loop_fact.unconditional));
+    }
+
+    #[test]
+    fn named_parameter_and_local_facts_recover_function_pointer_declarators() {
+        let mut parser = CParser::new().expect("embedded C grammar must load");
+        let source = concat!(
+            "void\trun(void (*callback)(int), int value)\n",
+            "{\n",
+            "\tint\t(*local_callback)(int);\n",
+            "\tcallback(value);\n",
+            "}\n",
+        );
+        let parsed = parser.parse(source).expect("valid translation unit");
+        let facts = parsed.facts();
+        assert_eq!(facts.functions[0].parameters.len(), 2);
+        assert_eq!(facts.functions[0].parameters[0].name, "callback");
+        assert_eq!(facts.functions[0].parameters[1].name, "value");
+        assert_eq!(
+            facts.local_declarations[0].name.as_deref(),
+            Some("local_callback")
+        );
+    }
+
+    #[test]
+    fn macro_facts_distinguish_function_like_and_object_like_names() {
+        let mut parser = CParser::new().expect("embedded C grammar must load");
+        let source = concat!(
+            "#define OBJECT target\n",
+            "#define FUNCTION(value) ((value) + 1)\n",
+        );
+        let parsed = parser.parse(source).expect("valid preprocessing source");
+        let facts = parsed.facts();
+        assert_eq!(facts.macros.len(), 2);
+        assert_eq!(facts.macros[0].name, "OBJECT");
+        assert!(!facts.macros[0].function_like);
+        assert_eq!(facts.macros[1].name, "FUNCTION");
+        assert!(facts.macros[1].function_like);
     }
 }
