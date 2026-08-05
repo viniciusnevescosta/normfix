@@ -1,4 +1,4 @@
-//! Read-only planners for explicitly destructive `norminette-fix` operations.
+//! Read-only planners for explicitly destructive `normfix` operations.
 //!
 //! This crate never changes the filesystem. It can propose removal of a
 //! conservatively proven dead `static` function or capture a recoverable
