@@ -386,7 +386,7 @@ fn diagnostic(
         column,
         suggestion: suggestion.to_owned(),
         detail: detail.to_owned(),
-        source: "norminette-fix Makefile check",
+        source: "normfix Makefile check",
     }
 }
 

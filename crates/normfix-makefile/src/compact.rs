@@ -211,7 +211,7 @@ fn compact_assignment_block(block: &[SourceLine<'_>]) -> Option<String> {
     Some(packed.join("\n") + newline)
 }
 
-fn pack_tokens(
+pub(crate) fn pack_tokens(
     tokens: &[&str],
     first_prefix: &str,
     continuation_prefix: &str,

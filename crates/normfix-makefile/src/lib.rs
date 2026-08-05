@@ -10,6 +10,7 @@
 mod analysis;
 mod compact;
 mod header;
+mod sources;
 
 use std::path::Path;
 
@@ -21,6 +22,9 @@ pub use header::{
     makefile_header_is_valid, makefile_header_span, update_makefile_header,
 };
 use normfix_header::{ByteRange, Fix, Identity42, Issue, RunClock};
+pub use sources::{
+    MakefileSourceReference, SourcePathStatus, SourceReconciliation, reconcile_source_references,
+};
 
 /// Result of the complete conservative Makefile formatting pass.
 #[derive(Clone, Debug, Eq, PartialEq)]
