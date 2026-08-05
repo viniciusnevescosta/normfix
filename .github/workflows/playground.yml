@@ -9,6 +9,7 @@ on:
       - "crates/normfix-core/**"
       - "crates/normfix-wasm/**"
       - "web/**"
+      - "docs/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
@@ -20,6 +21,7 @@ on:
       - "crates/normfix-core/**"
       - "crates/normfix-wasm/**"
       - "web/**"
+      - "docs/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
@@ -46,15 +48,21 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            docs/package-lock.json
       - name: Install browser compilation target
         run: rustup target add wasm32-unknown-unknown
       - name: Install matching JavaScript binding generator
         run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
       - name: Install locked frontend dependencies
         run: npm ci --prefix web
+      - name: Install locked documentation dependencies
+        run: npm ci --prefix docs
       - name: Build Vite playground
         run: npm run build --prefix web
+      - name: Build VitePress documentation
+        run: npm run build --prefix docs
       - name: Upload preview artifact
         uses: actions/upload-artifact@v4
         with:
