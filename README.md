@@ -758,6 +758,20 @@ workflow remains supported only through WSL.
   provide a single atomic rename spanning multiple files; rollback is the
   cross-file failure strategy.
 
+## Documentation site
+
+These documents are also published as a VitePress site next to the playground:
+one deployment serves the browser playground at `/` and the documentation at
+`/docs/`, on the same origin. Build both locally with:
+
+```sh
+npm ci --prefix web && npm run build --prefix web
+npm ci --prefix docs && npm run build --prefix docs
+```
+
+`web/dist/` then holds the playground and `web/dist/docs/` the rendered
+documentation. Use `npm run dev --prefix docs` for a live documentation server.
+
 ## Architecture
 
 The implementation separates syntax, semantic facts, actions, official-tool
