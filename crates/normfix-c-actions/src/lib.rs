@@ -1,4 +1,4 @@
-//! Native, conservative C actions for `norminette-fix`.
+//! Native, conservative C actions for `normfix`.
 //!
 //! This crate is intentionally independent from the command-line and write
 //! layers. It accepts an immutable UTF-8 buffer plus optional diagnostics from
@@ -21,7 +21,9 @@ use normfix_c_syntax::{CParser, ParseFailure};
 pub use normfix_core::{Applicability, Diagnostic, Severity, TextRange, TextSize};
 use thiserror::Error;
 
-pub use analysis::analyze_c;
+pub use analysis::{
+    ExternalCallCandidate, FunctionBudget, analyze_budget, analyze_c, analyze_external_calls,
+};
 pub use edit::{Edit, EditError, apply_edits};
 pub use source::{HygieneResult, normalize_hygiene, visual_width};
 
@@ -74,6 +76,9 @@ pub struct CActionOptions {
     /// Format unambiguously simple prototype and variable declaration groups
     /// even when an external checker did not report their location.
     pub format_proven_declarations: bool,
+    /// Explicit permission to compact standard `NULL` comparisons into unary
+    /// truth tests. This is opt-in because projects may redefine `NULL`.
+    pub compact_null_checks: bool,
 }
 
 impl Default for CActionOptions {
@@ -83,6 +88,7 @@ impl Default for CActionOptions {
             max_passes: 100,
             remove_invalid_comments: false,
             format_proven_declarations: true,
+            compact_null_checks: false,
         }
     }
 }

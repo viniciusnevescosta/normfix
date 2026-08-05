@@ -80,6 +80,33 @@ impl ParsedContext {
         &self.lexical
     }
 
+    pub(crate) fn null_is_proven_available_at(&self, offset: usize) -> bool {
+        let offset = u32::try_from(offset).unwrap_or(u32::MAX);
+        let provider = self
+            .facts()
+            .null_providers
+            .iter()
+            .filter(|provider| provider.start().get() < offset)
+            .filter(|provider| {
+                !self.facts().preprocessor_ranges.iter().any(|container| {
+                    container != *provider
+                        && container.start() <= provider.start()
+                        && container.end() >= provider.end()
+                })
+            })
+            .map(|provider| provider.start().get())
+            .max();
+        let invalidator = self
+            .facts()
+            .null_invalidators
+            .iter()
+            .filter(|invalidator| invalidator.start().get() < offset)
+            .map(|invalidator| invalidator.start().get())
+            .max();
+        provider
+            .is_some_and(|provider| invalidator.is_none_or(|invalidator| provider > invalidator))
+    }
+
     pub(crate) fn fingerprint(&self, mode: FingerprintMode) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         let mut previous_preprocessor: Option<String> = None;

@@ -55,10 +55,15 @@ pub(crate) enum Phase {
     CompactContinuations,
     BlankLines,
     BracesAndControls,
+    SingleStatementBlocks,
+    RedundantElse,
     FunctionLayout,
     Indentation,
+    InitialDeclarations,
     TokenSpacing,
     Declarations,
+    PointerNullReturns,
+    CompactNullChecks,
     ReturnParentheses,
     DefinitionVoid,
     LongLines,
@@ -73,10 +78,15 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
         Phase::CompactContinuations,
         Phase::BlankLines,
         Phase::BracesAndControls,
+        Phase::SingleStatementBlocks,
+        Phase::RedundantElse,
         Phase::FunctionLayout,
         Phase::Indentation,
+        Phase::InitialDeclarations,
         Phase::TokenSpacing,
         Phase::Declarations,
+        Phase::PointerNullReturns,
+        Phase::CompactNullChecks,
         Phase::ReturnParentheses,
         Phase::DefinitionVoid,
         Phase::LongLines,
@@ -116,6 +126,14 @@ impl Phase {
                 "BRACE_CONTROL_LAYOUT",
                 fix_braces_and_controls(context, diagnostics)?,
             )),
+            Self::SingleStatementBlocks => Ok(ActionBatch::semantic(
+                "REMOVE_SINGLE_STATEMENT_BRACES",
+                remove_single_statement_braces(context)?,
+            )),
+            Self::RedundantElse => Ok(ActionBatch::semantic(
+                "REMOVE_REDUNDANT_ELSE",
+                remove_redundant_else(context)?,
+            )),
             Self::FunctionLayout => Ok(ActionBatch::layout(
                 "FUNCTION_LAYOUT",
                 fix_function_layout(context, diagnostics, options)?,
@@ -123,6 +141,10 @@ impl Phase {
             Self::Indentation => Ok(ActionBatch::layout(
                 "INDENTATION",
                 fix_indentation(context, diagnostics)?,
+            )),
+            Self::InitialDeclarations => Ok(ActionBatch::layout(
+                "INITIAL_DECLARATION_LAYOUT",
+                format_initial_declarations(context)?,
             )),
             Self::TokenSpacing => Ok(ActionBatch::layout(
                 "TOKEN_SPACING",
@@ -132,6 +154,20 @@ impl Phase {
                 "DECLARATION_ALIGNMENT",
                 align_declarations(context, diagnostics, options)?,
             )),
+            Self::PointerNullReturns => Ok(ActionBatch::semantic(
+                "POINTER_NULL_RETURN",
+                replace_pointer_zero_returns(context)?,
+            )),
+            Self::CompactNullChecks => {
+                if options.compact_null_checks {
+                    Ok(ActionBatch::semantic(
+                        "COMPACT_NULL_CHECK",
+                        compact_null_checks(context)?,
+                    ))
+                } else {
+                    Ok(None)
+                }
+            }
             Self::ReturnParentheses => Ok(ActionBatch::semantic(
                 "RETURN_PARENTHESIS",
                 parenthesize_returns(context, diagnostics)?,
@@ -508,7 +544,7 @@ fn fix_braces_and_controls(
     let lines = context.lines();
     let blocked = preprocessor_line_set(context.source(), &lines);
     let lexical = context.lexical();
-    let mut edits = Vec::new();
+    let mut edits = format_control_layout(context)?;
     for diagnostic in diagnostics {
         if !matches!(
             diagnostic.code.as_str(),
@@ -580,6 +616,135 @@ fn fix_braces_and_controls(
             }
             _ => {}
         }
+    }
+    Ok(edits)
+}
+
+fn format_control_layout(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for token in context.tokens().iter().filter(|token| token.text == "else") {
+        let line_number = lines.line_number_at(token.start);
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let relative = token.start.saturating_sub(line.start);
+        if !text[..relative].trim().is_empty() {
+            let (start, _) = whitespace_before(text, relative);
+            let indent = &text[..leading_whitespace(text)];
+            edits.push(Edit::new(
+                line.start + start,
+                token.start,
+                format!("\n{indent}"),
+                "ELSE_NEWLINE",
+                "placed else on its own line",
+                Some(line_number),
+            )?);
+        }
+    }
+    for body in &context.facts().control_compounds {
+        let brace = body.start().get() as usize;
+        push_control_brace_newline(context, brace, &mut edits)?;
+    }
+    Ok(edits)
+}
+
+fn push_control_brace_newline(
+    context: &ParsedContext,
+    brace: usize,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    let lines = context.lines();
+    let line_number = lines.line_number_at(brace);
+    let Some(line) = lines.get(line_number) else {
+        return Ok(());
+    };
+    let text = lines.text(line);
+    let relative = brace.saturating_sub(line.start);
+    if relative >= text.len() || text[..relative].trim().is_empty() {
+        return Ok(());
+    }
+    let (start, _) = whitespace_before(text, relative);
+    if start == relative {
+        return Ok(());
+    }
+    let indent = &text[..leading_whitespace(text)];
+    edits.push(Edit::new(
+        line.start + start,
+        brace,
+        format!("\n{indent}"),
+        "CONTROL_BRACE_NEWLINE",
+        "placed a control block opening brace on its own line",
+        Some(line_number),
+    )?);
+    Ok(())
+}
+
+fn remove_single_statement_braces(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for body in &context.facts().single_statement_bodies {
+        let start = body.compound_range.start().get() as usize;
+        let end = body.compound_range.end().get() as usize;
+        let statement_start = body.statement_range.start().get() as usize;
+        let statement_end = body.statement_range.end().get() as usize;
+        let brace_line = lines.line_number_at(start);
+        let statement_line = lines.line_number_at(statement_start);
+        let Some(line) = lines.get(brace_line) else {
+            continue;
+        };
+        if !lines.text(line)[..start.saturating_sub(line.start)]
+            .trim()
+            .is_empty()
+            || statement_line == brace_line
+        {
+            continue;
+        }
+        let Some(statement) = source.get(statement_start..statement_end) else {
+            continue;
+        };
+        edits.push(Edit::new(
+            start,
+            end,
+            format!("\t{statement}"),
+            "REMOVE_SINGLE_STATEMENT_BRACES",
+            "removed a scope-free single-statement control block",
+            Some(brace_line),
+        )?);
+    }
+    Ok(edits)
+}
+
+fn remove_redundant_else(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for branch in &context.facts().redundant_else_branches {
+        let start = branch.else_keyword_range.start().get() as usize;
+        let end = branch.alternative_range.end().get() as usize;
+        let return_start = branch.return_range.start().get() as usize;
+        let return_end = branch.return_range.end().get() as usize;
+        let line_number = lines.line_number_at(start);
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let relative = start.saturating_sub(line.start);
+        if !lines.text(line)[..relative].trim().is_empty() {
+            continue;
+        }
+        let Some(return_statement) = source.get(return_start..return_end) else {
+            continue;
+        };
+        edits.push(Edit::new(
+            start,
+            end,
+            return_statement,
+            "REMOVE_REDUNDANT_ELSE",
+            "removed else after an unconditional return",
+            Some(line_number),
+        )?);
     }
     Ok(edits)
 }
@@ -1555,6 +1720,67 @@ fn inside_numeric_exponent(text: &str, operator: usize) -> bool {
     }
 }
 
+fn format_initial_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for declaration in context
+        .facts()
+        .local_declarations
+        .iter()
+        .filter(|declaration| declaration.initial)
+    {
+        let start = declaration.range.start().get() as usize;
+        let end = declaration.range.end().get() as usize;
+        let line_number = lines.line_number_at(start);
+        if lines.line_number_at(end.saturating_sub(1)) != line_number {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let leading_end = leading_whitespace(lines.text(line));
+        if line.start + leading_end != start {
+            continue;
+        }
+        let leading = &context.source()[line.start..start];
+        if leading != "\t" {
+            edits.push(Edit::new(
+                line.start,
+                start,
+                "\t",
+                "INITIAL_DECLARATION_INDENT",
+                "indented an initial local declaration with one tab",
+                Some(line_number),
+            )?);
+        }
+    }
+    for block in &context.facts().initial_declaration_blocks {
+        let Some(last) = block.declarations.last() else {
+            continue;
+        };
+        let Some(following) = block.following_item else {
+            continue;
+        };
+        let declaration_line = lines.line_number_at(last.end().get() as usize - 1);
+        let following_line = lines.line_number_at(following.start().get() as usize);
+        if following_line != declaration_line.saturating_add(1) {
+            continue;
+        }
+        let Some(line) = lines.get(following_line) else {
+            continue;
+        };
+        edits.push(Edit::new(
+            line.start,
+            line.start,
+            "\n",
+            "INITIAL_DECLARATION_BLANK_LINE",
+            "inserted one blank line after the initial declaration block",
+            Some(following_line),
+        )?);
+    }
+    Ok(edits)
+}
+
 fn decimal_mantissa_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
@@ -1598,7 +1824,7 @@ fn align_declarations(
     let groups = declaration_groups(context);
     let mut edits = Vec::new();
     for group in groups {
-        if group.len() < 2
+        if group.is_empty()
             || (!targets.is_empty()
                 && !options.format_proven_declarations
                 && group.iter().all(|item| !targets.contains(&item.line)))
@@ -1789,6 +2015,75 @@ fn is_declaration_word(word: &str) -> bool {
             | "void"
             | "volatile"
     )
+}
+
+fn replace_pointer_zero_returns(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let mut edits = Vec::new();
+    for returned in context
+        .facts()
+        .returns
+        .iter()
+        .filter(|returned| returned.function_returns_pointer)
+    {
+        let Some(expression) = returned.expression_range else {
+            continue;
+        };
+        let expression_start = expression.start().get() as usize;
+        if !context.null_is_proven_available_at(expression_start) {
+            continue;
+        }
+        let tokens = context
+            .tokens()
+            .iter()
+            .filter(|token| {
+                token.start >= expression_start && token.end <= expression.end().get() as usize
+            })
+            .collect::<Vec<_>>();
+        let zero = match tokens.as_slice() {
+            [zero] if zero.text == "0" => Some(*zero),
+            [open, zero, close] if open.text == "(" && zero.text == "0" && close.text == ")" => {
+                Some(*zero)
+            }
+            _ => None,
+        };
+        let Some(zero) = zero else {
+            continue;
+        };
+        edits.push(Edit::new(
+            zero.start,
+            zero.end,
+            "NULL",
+            "POINTER_NULL_RETURN",
+            "used NULL for a proven pointer return",
+            Some(context.lines().line_number_at(zero.start)),
+        )?);
+    }
+    Ok(edits)
+}
+
+fn compact_null_checks(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    context
+        .facts()
+        .null_checks
+        .iter()
+        .map(|check| {
+            let start = check.range.start().get() as usize;
+            let end = check.range.end().get() as usize;
+            Edit::new(
+                start,
+                end,
+                if check.equals {
+                    format!("!{}", check.operand)
+                } else {
+                    format!("!!{}", check.operand)
+                },
+                "COMPACT_NULL_CHECK",
+                "compacted an explicit NULL comparison after unsafe opt-in",
+                Some(context.lines().line_number_at(start)),
+            )
+            .map_err(CActionError::from)
+        })
+        .collect()
 }
 
 fn parenthesize_returns(
