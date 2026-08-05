@@ -97,7 +97,7 @@ jobs:
           cp README.md LICENSE "$stage/"
           tar -czf "dist/${{ matrix.archive }}" -C "$stage" normfix README.md LICENSE
       - name: Attest release archive
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*.tar.gz
       - name: Upload release archive
@@ -128,7 +128,7 @@ jobs:
         working-directory: dist
         run: shasum -a 256 *.tar.gz > SHA256SUMS
       - name: Attest checksum manifest
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/SHA256SUMS
       - name: Create or update release
