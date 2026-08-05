@@ -16,6 +16,12 @@ use crate::{ByteRange, Issue};
 
 const SETTINGS_SIZE_LIMIT: u64 = 1_000_000;
 const GIT_TIMEOUT: Duration = Duration::from_secs(2);
+const CONFIG_ENV: &str = "NORMFIX_CONFIG";
+const LOGIN_ENV: &str = "NORMFIX_LOGIN";
+const EMAIL_ENV: &str = "NORMFIX_EMAIL";
+const LEGACY_CONFIG_ENV: &str = "NORMINETTE_FIX_CONFIG";
+const LEGACY_LOGIN_ENV: &str = "NORMINETTE_FIX_LOGIN";
+const LEGACY_EMAIL_ENV: &str = "NORMINETTE_FIX_EMAIL";
 
 /// A validated 42 student identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -113,9 +119,12 @@ impl IdentityResolver {
             "HOME",
             "USERPROFILE",
             "XDG_CONFIG_HOME",
-            "NORMINETTE_FIX_CONFIG",
-            "NORMINETTE_FIX_LOGIN",
-            "NORMINETTE_FIX_EMAIL",
+            CONFIG_ENV,
+            LOGIN_ENV,
+            EMAIL_ENV,
+            LEGACY_CONFIG_ENV,
+            LEGACY_LOGIN_ENV,
+            LEGACY_EMAIL_ENV,
             "MAIL",
         ];
         let environment = relevant
@@ -173,8 +182,12 @@ impl IdentityResolver {
         cli_email: Option<&str>,
         cwd: &Path,
     ) -> IdentityResolution {
-        let env_login = self.environment_value("NORMINETTE_FIX_LOGIN");
-        let env_email = self.environment_value("NORMINETTE_FIX_EMAIL");
+        let env_login = self
+            .environment_value(LOGIN_ENV)
+            .or_else(|| self.environment_value(LEGACY_LOGIN_ENV));
+        let env_email = self
+            .environment_value(EMAIL_ENV)
+            .or_else(|| self.environment_value(LEGACY_EMAIL_ENV));
         let (config_login, config_email) = self.configured_identity();
 
         if let Some(email) = cli_email {
@@ -248,7 +261,10 @@ impl IdentityResolver {
     }
 
     fn configured_identity(&self) -> (Option<String>, Option<String>) {
-        let path = if let Some(configured) = self.environment_value("NORMINETTE_FIX_CONFIG") {
+        let path = if let Some(configured) = self
+            .environment_value(CONFIG_ENV)
+            .or_else(|| self.environment_value(LEGACY_CONFIG_ENV))
+        {
             expand_home(configured, self.home.as_deref())
         } else {
             let base = self
@@ -258,7 +274,13 @@ impl IdentityResolver {
             let Some(base) = base else {
                 return (None, None);
             };
-            base.join("norminette-fix").join("config.ini")
+            let canonical = base.join("normfix").join("config.ini");
+            let legacy = base.join("norminette-fix").join("config.ini");
+            if canonical.is_file() || !legacy.is_file() {
+                canonical
+            } else {
+                legacy
+            }
         };
         parse_header_ini(&path).unwrap_or((None, None))
     }
@@ -566,7 +588,7 @@ mod tests {
     fn explicit_email_has_precedence_and_must_match_explicit_login() {
         let temporary = TempDir::new().expect("temporary directory");
         let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMINETTE_FIX_EMAIL", "env@student.42.fr");
+            .with_environment("NORMFIX_EMAIL", "env@student.42.fr");
         let resolution = resolver.resolve(Some("cli"), Some("cli@student.42.fr"), temporary.path());
         let identity = resolution.identity.expect("valid identity");
         assert_eq!(identity.login, "cli");
@@ -577,7 +599,7 @@ mod tests {
     fn invalid_explicit_email_never_falls_through_to_a_lower_precedence_source() {
         let temporary = TempDir::new().expect("temporary directory");
         let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMINETTE_FIX_EMAIL", "valid@student.42.fr");
+            .with_environment("NORMFIX_EMAIL", "valid@student.42.fr");
         let resolution = resolver.resolve(None, Some("not-a-42-address"), temporary.path());
         assert!(!resolution.is_available());
         assert_eq!(
@@ -601,7 +623,7 @@ mod tests {
         )
         .expect("vimrc");
         let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMINETTE_FIX_CONFIG", config.to_string_lossy());
+            .with_environment("NORMFIX_CONFIG", config.to_string_lossy());
 
         let resolution = resolver.resolve(None, None, temporary.path());
 
@@ -630,7 +652,7 @@ mod tests {
         )
         .expect("vimrc");
         let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMINETTE_FIX_CONFIG", config.to_string_lossy());
+            .with_environment("NORMFIX_CONFIG", config.to_string_lossy());
 
         let resolution = resolver.resolve(None, None, temporary.path());
 
@@ -641,6 +663,73 @@ mod tests {
                 .email,
             "editor@student.42.fr"
         );
+    }
+
+    #[test]
+    fn canonical_environment_has_precedence_over_legacy_aliases() {
+        let temporary = TempDir::new().expect("temporary directory");
+        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
+            .with_environment("NORMFIX_LOGIN", "canonical")
+            .with_environment("NORMFIX_EMAIL", "canonical@student.42.fr")
+            .with_environment("NORMINETTE_FIX_LOGIN", "legacy")
+            .with_environment("NORMINETTE_FIX_EMAIL", "legacy@student.42.fr");
+
+        let resolution = resolver.resolve(None, None, temporary.path());
+
+        let identity = resolution.identity.expect("canonical environment");
+        assert_eq!(identity.login, "canonical");
+        assert_eq!(identity.email, "canonical@student.42.fr");
+    }
+
+    #[test]
+    fn legacy_environment_aliases_remain_supported() {
+        let temporary = TempDir::new().expect("temporary directory");
+        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
+            .with_environment("NORMINETTE_FIX_LOGIN", "legacy")
+            .with_environment("NORMINETTE_FIX_EMAIL", "legacy@student.42.fr");
+
+        let resolution = resolver.resolve(None, None, temporary.path());
+
+        let identity = resolution.identity.expect("legacy environment");
+        assert_eq!(identity.login, "legacy");
+        assert_eq!(identity.email, "legacy@student.42.fr");
+    }
+
+    #[test]
+    fn default_config_prefers_normfix_and_falls_back_to_the_legacy_directory() {
+        let temporary = TempDir::new().expect("temporary directory");
+        let config_base = temporary.path().join("config");
+        let legacy = config_base.join("norminette-fix/config.ini");
+        fs::create_dir_all(legacy.parent().expect("legacy config parent"))
+            .expect("legacy config directory");
+        fs::write(
+            &legacy,
+            "[header]\nlogin = legacy\nemail = legacy@student.42.fr\n",
+        )
+        .expect("legacy config");
+        let legacy_resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
+            .with_environment("XDG_CONFIG_HOME", config_base.to_string_lossy());
+
+        let legacy_identity = legacy_resolver
+            .resolve(None, None, temporary.path())
+            .identity
+            .expect("legacy default config");
+        assert_eq!(legacy_identity.login, "legacy");
+
+        let canonical = config_base.join("normfix/config.ini");
+        fs::create_dir_all(canonical.parent().expect("canonical config parent"))
+            .expect("canonical config directory");
+        fs::write(
+            canonical,
+            "[header]\nlogin = canonical\nemail = canonical@student.42.fr\n",
+        )
+        .expect("canonical config");
+
+        let canonical_identity = legacy_resolver
+            .resolve(None, None, temporary.path())
+            .identity
+            .expect("canonical default config");
+        assert_eq!(canonical_identity.login, "canonical");
     }
 
     #[test]
