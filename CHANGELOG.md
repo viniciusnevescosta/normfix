@@ -10,7 +10,11 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
-## Unreleased
+## [0.4.0-beta.3] / 2026-08-05
+
+The analyzer release. `--analyzer` now uses whatever deep analyzer the
+installed compiler ships, which on macOS means it runs at all for the first
+time.
 
 ### Added
 
@@ -204,5 +208,6 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[0.4.0-beta.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.3
 [0.4.0-beta.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.2
 [0.4.0-beta.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.1
