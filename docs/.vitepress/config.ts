@@ -74,6 +74,12 @@ export default defineConfig({
         text: "Reference",
         items: [
           { text: "Every flag", link: "/reference/flags" },
+          { text: "What is fixed", link: "/reference/fixes" },
+          { text: "Safety and recovery", link: "/reference/safety" },
+          { text: "Headers and identity", link: "/reference/headers" },
+          { text: "Makefiles and projects", link: "/reference/projects" },
+          { text: "Reporting", link: "/reference/reporting" },
+          { text: "Known boundaries", link: "/reference/boundaries" },
           { text: "Architecture", link: "/ARCHITECTURE" },
           { text: "Compatibility policy", link: "/COMPATIBILITY" },
           { text: "Release process", link: "/RELEASING" },
