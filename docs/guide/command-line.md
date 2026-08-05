@@ -55,6 +55,7 @@ confirmation; non-interactive restoration requires `--force`.
 | `--remove-unexpected` | Move unexpected regular files to recoverable external quarantine |
 | `--unsafe` | Enable the closed set of risky/destructive actions |
 | `--force` | Confirm destructive capabilities non-interactively |
+| `--no-reorder-includes` | Leave contiguous include blocks in their current order |
 | `--no-format-markdown` | Analyze README documents without canonical CommonMark reprinting |
 | `--no-cache` | Disable the external persistent analysis cache |
 | `--norminette PATH` | Use one exact Norminette executable |
@@ -68,6 +69,32 @@ confirmation; non-interactive restoration requires `--force`.
 mutually exclusive and cannot be combined with explicit path arguments.
 `--force` without `--unsafe`, `--remove-unused`, or `--remove-unexpected` is an
 error.
+
+## Include order
+
+A run of `#include` directives is reordered so system headers come first, then
+project headers, alphabetically inside each category:
+
+```c
+# include "libft.h"          # include <limits.h>
+# include "ft_printf.h"  ->  # include <stdlib.h>
+# include <stdlib.h>         # include "ft_printf.h"
+# include <limits.h>         # include "libft.h"
+```
+
+::: warning The block must be provably contiguous
+A run is rewritten only while **every** line in it is exactly one include
+directive. The first line that is anything else — a comment, a blank line, a
+conditional, a macro definition, or trailing text after the closing delimiter —
+ends the run, and each side is sorted independently. No directive crosses such a
+construct, because doing so can change declarations, feature macros, or
+conditional compilation.
+:::
+
+Names are compared case-insensitively and equal names keep their original
+relative order. `--no-reorder-includes` leaves every block untouched; the report
+then falls back to the `INCLUDE_ORDER_REVIEW` warning, which `normfix explain
+INCLUDE_ORDER_REVIEW` describes offline.
 
 ## Git scopes
 

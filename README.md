@@ -200,6 +200,7 @@ non-interactive restoration requires `--force`.
 | `--remove-unexpected` | Move unexpected regular files to recoverable external quarantine |
 | `--unsafe` | Enable the closed set of risky/destructive actions documented below |
 | `--force` | Confirm destructive capabilities non-interactively |
+| `--no-reorder-includes` | Leave contiguous include blocks in their current order |
 | `--no-format-markdown` | Analyze README documents without canonical CommonMark reprinting |
 | `--no-cache` | Disable the external persistent analysis cache |
 | `--norminette PATH` | Use one exact Norminette executable |
@@ -347,6 +348,8 @@ The native C formatter currently handles proven cases in these areas:
 - UTF-8 BOM removal, CRLF normalization, trailing whitespace, blank-line runs,
   file-start whitespace, and one final newline;
 - preprocessor indentation and spacing, excluding sensitive multiline forms;
+- include block order: system headers before project headers, alphabetically
+  inside each category;
 - required and forbidden blank lines around declarations, preprocessors, and
   functions;
 - braces and control bodies that need their own physical line;
@@ -370,6 +373,28 @@ The native C formatter currently handles proven cases in these areas:
 Long-line packing does not cross comments, preprocessing directives, line
 splices, or unrelated instructions. Strings and comments are not split.
 Preprocessor lines are not rewritten merely to satisfy width.
+
+### Include order
+
+A run of `#include` directives is reordered only while **every** line in it is
+exactly one include directive. The first line that is anything else — a comment,
+a blank line, a conditional, a macro definition, or trailing text after the
+closing delimiter — ends the run, and the directives on each side are sorted
+independently. No directive is ever moved across such a construct, because
+crossing one can change declarations, feature macros, or conditional
+compilation.
+
+```c
+# include "libft.h"          # include <limits.h>
+# include "ft_printf.h"  ->  # include <stdlib.h>
+# include <stdlib.h>         # include "ft_printf.h"
+# include <limits.h>         # include "libft.h"
+```
+
+Sorting is by category first (`<system>` before `"project"`), then by the
+header name, compared case-insensitively. Equal names keep their original
+relative order. Use `--no-reorder-includes` to leave every block untouched; the
+report then falls back to the `INCLUDE_ORDER_REVIEW` warning.
 
 The formatter measures terminal display cells: tabs use four-column stops,
 combining marks use zero cells, and wide Unicode characters use two.
