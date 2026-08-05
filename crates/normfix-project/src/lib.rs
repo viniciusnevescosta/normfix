@@ -11,12 +11,17 @@
 
 #![forbid(unsafe_code)]
 
+mod git_scope;
 mod guard;
+mod policy;
 
+pub use git_scope::{GitScope, GitScopeError, GitScopeOptions, resolve_git_scope};
 pub use guard::{
-    GuardApproval, GuardPlanError, GuardRename, ProjectSnapshot, guard_approval_is_current,
-    plan_guard_renames,
+    GuardApproval, GuardInsertion, GuardInsertionApproval, GuardPlanError, GuardRename,
+    ProjectSnapshot, guard_approval_is_current, guard_insertion_approval_is_current,
+    plan_guard_insertions, plan_guard_renames,
 };
+pub use policy::{PolicyError, ProjectPolicy, load_project_policy};
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
@@ -35,8 +40,8 @@ pub struct DiscoveryOptions {
     pub cwd: PathBuf,
     /// Whether directory walks should honor `.gitignore` files.
     pub respect_gitignore: bool,
-    /// Whether directory walks honor `.norminetteignore` files.
-    pub respect_norminetteignore: bool,
+    /// Whether directory walks honor `.normfixignore` and its legacy alias.
+    pub respect_normfixignore: bool,
 }
 
 impl DiscoveryOptions {
@@ -46,7 +51,7 @@ impl DiscoveryOptions {
         Self {
             cwd: cwd.into(),
             respect_gitignore: false,
-            respect_norminetteignore: true,
+            respect_normfixignore: true,
         }
     }
 
@@ -57,10 +62,13 @@ impl DiscoveryOptions {
         self
     }
 
-    /// Enables or disables project-local `.norminetteignore` handling.
+    /// Enables or disables project-local `.normfixignore` handling.
+    ///
+    /// The legacy `.norminetteignore` filename follows the same switch so a
+    /// closed-worktree proof can disable both sources of hidden inputs.
     #[must_use]
-    pub const fn with_respect_norminetteignore(mut self, respect_norminetteignore: bool) -> Self {
-        self.respect_norminetteignore = respect_norminetteignore;
+    pub const fn with_respect_normfixignore(mut self, respect_normfixignore: bool) -> Self {
+        self.respect_normfixignore = respect_normfixignore;
         self
     }
 }
@@ -342,7 +350,8 @@ fn walk_directory(
         .require_git(false)
         .sort_by_file_path(std::cmp::Ord::cmp)
         .filter_entry(walk_entry_is_allowed);
-    if options.respect_norminetteignore {
+    if options.respect_normfixignore {
+        builder.add_custom_ignore_filename(".normfixignore");
         builder.add_custom_ignore_filename(".norminetteignore");
     }
 
@@ -385,12 +394,34 @@ fn walk_directory(
     }
 }
 
-fn is_project_control_file(path: &Path) -> bool {
-    path.file_name() == Some(OsStr::new(".norminetteignore"))
+/// Returns whether `path` is normfix project metadata rather than a source or
+/// an unexpected deliverable.
+#[must_use]
+pub fn is_project_control_file(path: &Path) -> bool {
+    matches!(
+        path.file_name(),
+        Some(name) if name == OsStr::new(".normfixignore")
+            || name == OsStr::new(".norminetteignore")
+            || name == OsStr::new("normfix.toml")
+    )
 }
 
 fn walk_entry_is_allowed(entry: &ignore::DirEntry) -> bool {
-    !entry.path_is_symlink() && entry.file_name() != OsStr::new(".git")
+    if entry.path_is_symlink() || entry.file_name() == OsStr::new(".git") {
+        return false;
+    }
+    if entry.depth() > 0
+        && entry.file_type().is_some_and(|kind| kind.is_dir())
+        && (matches!(entry.file_name().to_str(), Some(".claude" | ".codex"))
+            || nested_git_repository(entry.path()))
+    {
+        return false;
+    }
+    true
+}
+
+fn nested_git_repository(path: &Path) -> bool {
+    fs::symlink_metadata(path.join(".git")).is_ok()
 }
 
 fn walk_error_path(error: &ignore::Error) -> Option<&Path> {
@@ -607,10 +638,28 @@ mod tests {
         let ignored = root.join("generated.c");
         fs::write(&kept, "").expect("kept source");
         fs::write(&ignored, "").expect("ignored source");
-        fs::write(root.join(".norminetteignore"), "generated.c\n").expect("project ignore");
+        fs::write(root.join(".normfixignore"), "generated.c\n").expect("project ignore");
 
         let normal = discover(&[], &options(root));
-        let closed = discover(&[], &options(root).with_respect_norminetteignore(false));
+        let closed = discover(&[], &options(root).with_respect_normfixignore(false));
+
+        assert_eq!(paths(&normal.processable_files), vec![kept.clone()]);
+        assert_eq!(paths(&closed.processable_files), vec![ignored, kept]);
+        assert!(normal.unexpected_files.is_empty());
+    }
+
+    #[test]
+    fn legacy_project_ignore_remains_supported_and_is_not_unexpected() {
+        let temporary = TempDir::new().expect("temporary directory");
+        let root = temporary.path();
+        let kept = root.join("kept.c");
+        let ignored = root.join("generated.c");
+        fs::write(&kept, "").expect("kept source");
+        fs::write(&ignored, "").expect("ignored source");
+        fs::write(root.join(".norminetteignore"), "generated.c\n").expect("legacy ignore");
+
+        let normal = discover(&[], &options(root));
+        let closed = discover(&[], &options(root).with_respect_normfixignore(false));
 
         assert_eq!(paths(&normal.processable_files), vec![kept.clone()]);
         assert_eq!(paths(&closed.processable_files), vec![ignored, kept]);
@@ -657,6 +706,35 @@ mod tests {
                 path: root.join("visible.c"),
                 kind: ProjectFileKind::CSource,
             }]
+        );
+        assert!(result.unexpected_files.is_empty());
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn never_enters_nested_tool_or_git_worktrees() {
+        let temporary = TempDir::new().expect("temporary directory");
+        let root = temporary.path();
+        let claude = root.join(".claude/worktrees/review");
+        let codex = root.join(".codex/worktrees/review");
+        let nested = root.join("vendor/nested-repository");
+        let clone = root.join("vendor/nested-clone");
+        fs::create_dir_all(&claude).expect("Claude worktree");
+        fs::create_dir_all(&codex).expect("Codex worktree");
+        fs::create_dir_all(&nested).expect("nested repository");
+        fs::create_dir_all(clone.join(".git")).expect("nested Git metadata");
+        fs::write(claude.join("copy.c"), "").expect("Claude source copy");
+        fs::write(codex.join("copy.c"), "").expect("Codex source copy");
+        fs::write(nested.join(".git"), "gitdir: elsewhere\n").expect("worktree marker");
+        fs::write(nested.join("copy.c"), "").expect("nested source copy");
+        fs::write(clone.join("copy.c"), "").expect("nested clone source copy");
+        fs::write(root.join("visible.c"), "").expect("visible source");
+
+        let result = discover(&[], &options(root));
+
+        assert_eq!(
+            paths(&result.processable_files),
+            vec![root.join("visible.c")]
         );
         assert!(result.unexpected_files.is_empty());
         assert!(result.errors.is_empty());

@@ -18,6 +18,8 @@ pub struct GuardRename {
     pub path: PathBuf,
     /// Existing macro.
     pub current: String,
+    /// Existing macro in `#define`; differs when the guard pair is mismatched.
+    pub define_current: String,
     /// Filename-derived replacement.
     pub expected: String,
     /// UTF-8 byte start/end of the `#ifndef` macro.
@@ -42,6 +44,26 @@ pub struct ProjectSnapshot {
 pub struct GuardApproval {
     /// Approved local replacement.
     pub rename: GuardRename,
+    /// Whole-project content snapshot.
+    pub snapshot: ProjectSnapshot,
+}
+
+/// Snapshot-bound plan for adding a missing whole-file inclusion guard.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GuardInsertion {
+    /// Header path.
+    pub path: PathBuf,
+    /// Filename-derived macro used by both opening directives.
+    pub expected: String,
+    /// BLAKE3 digest of the exact unguarded header.
+    pub header_digest: [u8; 32],
+}
+
+/// One missing-guard insertion and the closed-world state that proved it safe.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GuardInsertionApproval {
+    /// Approved insertion.
+    pub insertion: GuardInsertion,
     /// Whole-project content snapshot.
     pub snapshot: ProjectSnapshot,
 }
@@ -104,12 +126,24 @@ pub fn plan_guard_renames(
                 continue;
             }
             let current_occurrences = project_identifier_occurrences(&contents, &rename.current);
+            let define_occurrences = if rename.define_current == rename.current {
+                current_occurrences.clone()
+            } else {
+                project_identifier_occurrences(&contents, &rename.define_current)
+            };
             let expected_occurrences = project_identifier_occurrences(&contents, &rename.expected);
             let target = canonical_or_lexical(&rename.path);
-            if !expected_occurrences.is_empty()
-                || current_occurrences.len() != 2
-                || current_occurrences.iter().any(|path| path != &target)
-            {
+            let expected_local_count = usize::from(rename.current == rename.expected)
+                + usize::from(rename.define_current == rename.expected);
+            let expected_is_private = expected_occurrences.len() == expected_local_count
+                && expected_occurrences.iter().all(|path| path == &target);
+            let opening_is_private = current_occurrences.len()
+                == usize::from(rename.define_current == rename.current) + 1
+                && current_occurrences.iter().all(|path| path == &target);
+            let define_is_private = define_occurrences.len()
+                == usize::from(rename.define_current == rename.current) + 1
+                && define_occurrences.iter().all(|path| path == &target);
+            if !expected_is_private || !opening_is_private || !define_is_private {
                 continue;
             }
             approvals.insert(
@@ -124,12 +158,119 @@ pub fn plan_guard_renames(
     Ok(approvals)
 }
 
+/// Plans whole-file guards for structurally ordinary unguarded headers.
+///
+/// Headers containing conditional preprocessing, `#pragma once`, `#undef`,
+/// duplicate filename-derived guards, dynamic build definitions, or a macro
+/// collision are omitted. The returned approval is bound to every project
+/// byte and must be rechecked immediately before applying it.
+///
+/// # Errors
+///
+/// Returns [`GuardPlanError`] when a candidate project cannot be snapshotted
+/// completely.
+pub fn plan_guard_insertions(
+    selected_headers: &[PathBuf],
+) -> Result<BTreeMap<PathBuf, GuardInsertionApproval>, GuardPlanError> {
+    if selected_headers.len() > 256 {
+        return Err(GuardPlanError::ProjectScan(
+            "more than 256 header-guard candidates were requested".to_owned(),
+        ));
+    }
+    let mut candidates_by_root: BTreeMap<PathBuf, Vec<GuardInsertion>> = BTreeMap::new();
+    for path in selected_headers {
+        if path.extension() != Some(OsStr::new("h")) {
+            continue;
+        }
+        let Ok(source) = fs::read_to_string(path) else {
+            continue;
+        };
+        let Some(insertion) = guard_insertion_candidate(path, &source) else {
+            continue;
+        };
+        let root = find_git_root(path.parent().unwrap_or(Path::new(".")))
+            .ok_or_else(|| GuardPlanError::NoProjectRoot(path.clone()))?;
+        candidates_by_root.entry(root).or_default().push(insertion);
+    }
+
+    let mut approvals = BTreeMap::new();
+    for (root, candidates) in candidates_by_root {
+        let snapshot = scan_project(&root)?;
+        let contents = read_snapshot_contents(&snapshot)?;
+        let duplicate_guards = duplicate_filename_guards(contents.keys());
+        let build_is_dynamic = contents
+            .iter()
+            .any(|(path, bytes)| is_build_file(path) && has_dynamic_build_definitions(bytes));
+        for insertion in candidates {
+            if build_is_dynamic
+                || duplicate_guards.contains(&insertion.expected)
+                || !project_identifier_occurrences(&contents, &insertion.expected).is_empty()
+            {
+                continue;
+            }
+            approvals.insert(
+                canonical_or_lexical(&insertion.path),
+                GuardInsertionApproval {
+                    insertion,
+                    snapshot: snapshot.clone(),
+                },
+            );
+        }
+    }
+    Ok(approvals)
+}
+
 /// Recomputes every project content hash before a guard rename is committed.
 #[must_use]
 pub fn guard_approval_is_current(approval: &GuardApproval) -> bool {
     scan_project(&approval.snapshot.root).is_ok_and(|current| current == approval.snapshot)
         && fs::read(&approval.rename.path)
             .is_ok_and(|bytes| *blake3::hash(&bytes).as_bytes() == approval.rename.header_digest)
+}
+
+/// Rechecks every project hash and the exact unguarded header bytes.
+#[must_use]
+pub fn guard_insertion_approval_is_current(approval: &GuardInsertionApproval) -> bool {
+    scan_project(&approval.snapshot.root).is_ok_and(|current| current == approval.snapshot)
+        && fs::read(&approval.insertion.path)
+            .is_ok_and(|bytes| *blake3::hash(&bytes).as_bytes() == approval.insertion.header_digest)
+}
+
+fn guard_insertion_candidate(path: &Path, source: &str) -> Option<GuardInsertion> {
+    let expected = expected_guard(path.file_name()?.to_str()?);
+    if !is_identifier(&expected) || guard_candidate(path, source).is_some() {
+        return None;
+    }
+    let code = normalized_code(source.as_bytes());
+    for line in String::from_utf8_lossy(&code).lines() {
+        let directive = line.trim_start().strip_prefix('#').map(str::trim_start);
+        if directive.is_some_and(|directive| {
+            [
+                "if",
+                "ifdef",
+                "ifndef",
+                "elif",
+                "else",
+                "endif",
+                "undef",
+                "pragma once",
+            ]
+            .iter()
+            .any(|keyword| {
+                directive == *keyword
+                    || directive
+                        .strip_prefix(keyword)
+                        .is_some_and(|tail| tail.chars().next().is_some_and(char::is_whitespace))
+            })
+        }) {
+            return None;
+        }
+    }
+    Some(GuardInsertion {
+        path: canonical_or_lexical(path),
+        expected,
+        header_digest: *blake3::hash(source.as_bytes()).as_bytes(),
+    })
 }
 
 fn guard_candidate(path: &Path, source: &str) -> Option<GuardRename> {
@@ -152,17 +293,23 @@ fn guard_candidate(path: &Path, source: &str) -> Option<GuardRename> {
     }
     let ifndef = directives.iter().find(|(kind, _, _)| *kind == "ifndef")?;
     let define = directives.iter().find(|(kind, _, _)| *kind == "define")?;
-    if ifndef.1 != define.1 || ifndef.1 == expected {
+    if ifndef.1 == expected && define.1 == expected {
         return None;
     }
-    if !canonical_guard_layout(source, &ifndef.1) {
+    if !whole_file_guard_layout(source, &ifndef.1, &define.1) {
         return None;
     }
+    let expected_opening_occurrences = usize::from(ifndef.1 == define.1) + 1;
     if directives
         .iter()
         .filter(|(_, name, _)| name == &ifndef.1)
         .count()
-        != 2
+        != expected_opening_occurrences
+        || directives
+            .iter()
+            .filter(|(_, name, _)| name == &define.1)
+            .count()
+            != expected_opening_occurrences
     {
         return None;
     }
@@ -181,6 +328,7 @@ fn guard_candidate(path: &Path, source: &str) -> Option<GuardRename> {
     Some(GuardRename {
         path: canonical_or_lexical(path),
         current: ifndef.1.clone(),
+        define_current: define.1.clone(),
         expected,
         ifndef_range: ifndef.2.clone(),
         define_range: define.2.clone(),
@@ -215,7 +363,7 @@ fn parse_guard_directive(line: &str) -> Option<(&str, &str, usize)> {
     Some((kind, name, name_start))
 }
 
-fn canonical_guard_layout(source: &str, guard: &str) -> bool {
+fn whole_file_guard_layout(source: &str, ifndef_guard: &str, define_guard: &str) -> bool {
     let code = normalized_code(source.as_bytes());
     let significant = String::from_utf8_lossy(&code)
         .lines()
@@ -232,8 +380,8 @@ fn canonical_guard_layout(source: &str, guard: &str) -> bool {
     let Some(last) = significant.last() else {
         return false;
     };
-    parse_directive_name(first, "ifndef") == Some(guard)
-        && parse_directive_name(second, "define") == Some(guard)
+    parse_directive_name(first, "ifndef") == Some(ifndef_guard)
+        && parse_directive_name(second, "define") == Some(define_guard)
         && last
             .strip_prefix('#')
             .map(str::trim_start)
@@ -370,13 +518,27 @@ fn read_snapshot_contents(
 ) -> Result<BTreeMap<PathBuf, Vec<u8>>, GuardPlanError> {
     snapshot
         .files
-        .keys()
-        .map(|path| {
-            fs::read(path)
-                .map(|bytes| (path.clone(), bytes))
-                .map_err(|error| {
-                    GuardPlanError::ProjectScan(format!("{}: {error}", path.display()))
-                })
+        .iter()
+        .map(|(path, expected_digest)| {
+            let metadata = fs::symlink_metadata(path).map_err(|error| {
+                GuardPlanError::ProjectScan(format!("{}: {error}", path.display()))
+            })?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(GuardPlanError::ProjectScan(format!(
+                    "snapshot path changed type at `{}`",
+                    path.display()
+                )));
+            }
+            let bytes = fs::read(path).map_err(|error| {
+                GuardPlanError::ProjectScan(format!("{}: {error}", path.display()))
+            })?;
+            if blake3::hash(&bytes).as_bytes() != expected_digest {
+                return Err(GuardPlanError::ProjectScan(format!(
+                    "snapshot contents changed while planning at `{}`",
+                    path.display()
+                )));
+            }
+            Ok((path.clone(), bytes))
         })
         .collect()
 }
@@ -559,7 +721,10 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::{guard_approval_is_current, plan_guard_renames};
+    use super::{
+        guard_approval_is_current, guard_insertion_approval_is_current, plan_guard_insertions,
+        plan_guard_renames,
+    };
 
     fn git_project() -> TempDir {
         let project = TempDir::new().expect("project");
@@ -613,6 +778,26 @@ mod tests {
     }
 
     #[test]
+    fn mismatched_ifndef_and_define_are_approved_only_as_one_atomic_pair() {
+        let project = git_project();
+        let header = project.path().join("get_next_line.h");
+        fs::write(
+            &header,
+            "#ifndef GET_NEXT_LINE_H\n# define GET_NEXT_LINE\n\nint\tgnl(void);\n\n#endif\n",
+        )
+        .expect("header");
+
+        let approvals = plan_guard_renames(std::slice::from_ref(&header)).expect("complete scan");
+        let approval = approvals
+            .get(&header.canonicalize().expect("canonical"))
+            .expect("approval");
+        assert_eq!(approval.rename.current, "GET_NEXT_LINE_H");
+        assert_eq!(approval.rename.define_current, "GET_NEXT_LINE");
+        assert_eq!(approval.rename.expected, "GET_NEXT_LINE_H");
+        assert!(guard_approval_is_current(approval));
+    }
+
+    #[test]
     fn token_pasting_build_configuration_fails_closed() {
         let project = git_project();
         let header = project.path().join("sample.h");
@@ -621,5 +806,23 @@ mod tests {
 
         let result = plan_guard_renames(&[header]).expect("scan");
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn ordinary_unguarded_header_gets_a_snapshot_bound_insertion_plan() {
+        let project = git_project();
+        let header = project.path().join("sample.h");
+        fs::write(&header, "int\tsample(void);\n").expect("header");
+
+        let plans = plan_guard_insertions(std::slice::from_ref(&header)).expect("scan");
+        let approval = plans
+            .get(&header.canonicalize().expect("canonical"))
+            .expect("insertion approval");
+        assert_eq!(approval.insertion.expected, "SAMPLE_H");
+        assert!(guard_insertion_approval_is_current(approval));
+
+        fs::write(&header, "#pragma once\nint\tsample(void);\n").expect("change");
+        assert!(!guard_insertion_approval_is_current(approval));
+        assert!(plan_guard_insertions(&[header]).expect("scan").is_empty());
     }
 }
