@@ -16,6 +16,9 @@ htmlcov/
 /web/node_modules/
 /docs/node_modules/
 /docs/.vitepress/cache/
+/docs/changelog.md
+/docs/contributing.md
+/docs/security.md
 /docs/.vitepress/dist/
 /.vercel-rust/
 /.vercel/

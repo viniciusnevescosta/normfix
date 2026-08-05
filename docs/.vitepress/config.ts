@@ -33,8 +33,17 @@ export default withMermaid(defineConfig({
     siteTitle: "normfix",
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
+      { text: "Commands", link: "/commands/" },
       { text: "Architecture", link: "/ARCHITECTURE" },
-      { text: "Compatibility", link: "/COMPATIBILITY" },
+      {
+        text: "More",
+        items: [
+          { text: "Changelog", link: "/changelog" },
+          { text: "Compatibility", link: "/COMPATIBILITY" },
+          { text: "Contributing", link: "/contributing" },
+          { text: "Security", link: "/security" },
+        ],
+      },
     ],
     sidebar: [
       {
@@ -46,11 +55,32 @@ export default withMermaid(defineConfig({
         ],
       },
       {
+        text: "Commands",
+        items: [
+          { text: "Overview", link: "/commands/" },
+          { text: "format", link: "/commands/format" },
+          { text: "lint", link: "/commands/lint" },
+          { text: "check", link: "/commands/check" },
+          { text: "budget", link: "/commands/budget" },
+          { text: "preflight", link: "/commands/preflight" },
+          { text: "explain", link: "/commands/explain" },
+          { text: "undo", link: "/commands/undo" },
+        ],
+      },
+      {
         text: "Reference",
         items: [
           { text: "Architecture", link: "/ARCHITECTURE" },
           { text: "Compatibility policy", link: "/COMPATIBILITY" },
           { text: "Release process", link: "/RELEASING" },
+        ],
+      },
+      {
+        text: "Project",
+        items: [
+          { text: "Changelog", link: "/changelog" },
+          { text: "Contributing", link: "/contributing" },
+          { text: "Security policy", link: "/security" },
         ],
       },
     ],

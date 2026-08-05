@@ -94,6 +94,32 @@ transactions, or official-header identity logic.
 ## Report compatibility
 
 The human interface groups diagnostics for readability and may improve between
-alpha releases. Automation should use `--format json` and check
-`schema_version`; JSON retains individual findings. An incompatible JSON
-structure requires a schema-version increment and compatibility notes.
+releases. Automation should use `--format json` and check `schema_version`;
+JSON retains individual findings. An incompatible JSON structure requires a
+schema-version increment and compatibility notes.
+
+## What versioning covers
+
+`normfix` follows Semantic Versioning. The version number describes the
+following surfaces, and only these:
+
+| Surface | Covered | What a breaking change means |
+|---|---|---|
+| Command-line flags and subcommands | yes | Removing or renaming one, or changing what an existing one does |
+| Exit codes | yes | Changing the meaning of `0`, `1`, `2`, or `130` |
+| JSON report structure | yes, through `schema_version` | Removing or retyping a field |
+| Configuration files (`normfix.toml`, `.normfixignore`) | yes | Changing how an existing key or pattern is interpreted |
+| Backup, journal, and quarantine layout | yes | Making an older recovery point unreadable by `undo` |
+| Which sources are edited automatically | no | New proven edits arrive in minor releases |
+| Diagnostic wording, grouping, and help text | no | Improved continuously |
+| Rust crate APIs | no | Every crate sets `publish = false` and is internal |
+| The supported Norminette version | separate | Changing it is a documented release change, never incidental |
+
+A new automatic edit is a minor release, because a formatter whose output never
+changed would not be worth running. A run that produces a *worse* official
+result is a bug in any version, and the differential test exists to catch
+exactly that.
+
+The minimum supported Rust version is a release decision, not a build detail.
+Raising it requires a documented change; a dependency that needs a newer
+compiler is held back instead.
