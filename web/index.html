@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta
+      name="description"
+      content="A private, in-browser playground for safe normfix C formatting and diagnostics."
+    >
+    <title>normfix playground</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#editor">Skip to editor</a>
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="normfix playground home">
+        <span class="brand-mark" aria-hidden="true">nf</span>
+        <span>
+          <strong>normfix</strong>
+          <small>browser playground</small>
+        </span>
+      </a>
+      <div class="runtime-status" id="runtime-status" data-state="loading" role="status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="runtime-label">Loading formatter…</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Browser playground</h1>
+        <p>
+          Safe C formatting and diagnostics in this tab. No upload, account,
+          analytics, or backend.
+        </p>
+      </section>
+
+      <section class="workbench" aria-label="normfix workbench">
+        <aside class="files-panel" aria-label="Source files">
+          <div class="panel-heading">
+            <div>
+              <span class="section-label">Project</span>
+              <strong>Source files</strong>
+            </div>
+            <button class="icon-button" id="add-file" type="button" title="Add a source file" aria-label="Add a source file">+</button>
+          </div>
+          <div class="file-list" id="file-list" role="listbox" aria-label="Loaded source files"></div>
+          <div class="file-actions">
+            <label class="button secondary file-picker">
+              <input id="file-picker" type="file" accept=".c,.h,text/x-c,text/x-chdr" multiple>
+              <span>Choose files</span>
+            </label>
+            <button class="text-button danger" id="remove-file" type="button">Remove selected</button>
+          </div>
+        </aside>
+
+        <section class="editor-panel" aria-labelledby="editor-title">
+          <div class="panel-heading editor-heading">
+            <div>
+              <span class="section-label">Input</span>
+              <strong id="editor-title">main.c</strong>
+            </div>
+            <span class="editor-meta" id="editor-meta">0 lines · 0 bytes</span>
+          </div>
+          <textarea
+            id="editor"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+            aria-label="C source editor"
+          ></textarea>
+          <div class="runbar">
+            <p>
+              Safe mode only. No destructive comment removal or semantic rewrite.
+            </p>
+            <button class="button primary" id="run" type="button" disabled>
+              Run normfix
+              <kbd>⌘↵</kbd>
+            </button>
+          </div>
+        </section>
+      </section>
+
+      <section class="results" id="results" aria-labelledby="results-title" hidden>
+        <div class="results-heading">
+          <div>
+            <span class="section-label">In-memory result</span>
+            <h2 id="results-title">Review output</h2>
+          </div>
+          <div class="summary" id="summary" aria-label="Run summary"></div>
+        </div>
+
+        <div class="result-toolbar">
+          <label>
+            <span>Result file</span>
+            <select id="result-file"></select>
+          </label>
+          <div class="toolbar-actions">
+            <button class="button secondary" id="apply-result" type="button">Use as new input</button>
+            <button class="button secondary" id="download-current" type="button">Download file</button>
+            <button class="button secondary" id="download-all" type="button">Download all (.tar)</button>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Result views">
+          <button role="tab" aria-selected="true" aria-controls="formatted-view" id="formatted-tab" data-view="formatted">Formatted</button>
+          <button role="tab" aria-selected="false" aria-controls="diagnostics-view" id="diagnostics-tab" data-view="diagnostics">Diagnostics <span id="diagnostic-count">0</span></button>
+          <button role="tab" aria-selected="false" aria-controls="diff-view" id="diff-tab" data-view="diff">Diff</button>
+        </div>
+
+        <div class="result-view code-view" id="formatted-view" role="tabpanel" aria-labelledby="formatted-tab">
+          <pre><code id="formatted-output"></code></pre>
+        </div>
+        <div class="result-view diagnostics-view" id="diagnostics-view" role="tabpanel" aria-labelledby="diagnostics-tab" hidden></div>
+        <div class="result-view code-view diff-view" id="diff-view" role="tabpanel" aria-labelledby="diff-tab" hidden>
+          <pre><code id="diff-output"></code></pre>
+        </div>
+      </section>
+
+      <section class="scope-note" aria-labelledby="scope-title">
+        <div>
+          <span class="section-label">Scope</span>
+          <h2 id="scope-title">Browser preview</h2>
+        </div>
+        <p>
+          This playground runs the native parser, safe C actions, structural diagnostics,
+          and function-budget analysis. The desktop CLI remains the authority for official
+          42 headers, project-wide header guards, Norminette compatibility, compiler checks,
+          Makefiles, Git scope, backups, and undo.
+        </p>
+      </section>
+    </main>
+
+    <dialog id="new-file-dialog">
+      <form method="dialog" id="new-file-form">
+        <div>
+          <p class="eyebrow">Add source</p>
+          <h2>Choose a relative filename</h2>
+        </div>
+        <label>
+          Filename
+          <input id="new-file-name" name="filename" value="new_file.c" required pattern=".+\.(c|h)">
+        </label>
+        <p class="form-error" id="new-file-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="button secondary" value="cancel" formnovalidate>Cancel</button>
+          <button class="button primary" value="create">Create file</button>
+        </div>
+      </form>
+    </dialog>
+
+    <template id="diagnostic-template">
+      <article class="diagnostic-card">
+        <div class="diagnostic-head">
+          <span class="severity"></span>
+          <code class="rule"></code>
+          <span class="location"></span>
+        </div>
+        <p class="diagnostic-message"></p>
+        <p class="diagnostic-help"></p>
+      </article>
+    </template>
+
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>
