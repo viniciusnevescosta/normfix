@@ -44,7 +44,7 @@ administrative rights.
 Two environment variables change what it does:
 
 ```sh
-NORMFIX_VERSION=v0.4.0-beta.1 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+NORMFIX_VERSION=v0.4.0-beta.2 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
 
@@ -75,10 +75,10 @@ verify it against `SHA256SUMS`, and place `normfix` on `PATH`.
 | macOS Intel | `normfix-x86_64-macos.tar.gz` |
 | macOS Apple Silicon | `normfix-aarch64-macos.tar.gz` |
 
-For example, on Apple Silicon with release `0.4.0-beta.1`:
+For example, on Apple Silicon with release `0.4.0-beta.2`:
 
 ```sh
-version=0.4.0-beta.1
+version=0.4.0-beta.2
 archive="normfix-aarch64-macos.tar.gz"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/${archive}"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/SHA256SUMS"

@@ -10,6 +10,71 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [0.4.0-beta.2] / 2026-08-05
+
+The release that prepares 1.0.0. No new formatting behavior beyond the
+convergence fix: this version exists to close the quality gaps that stood
+between the project and a stable promise, and to exercise the release pipeline
+itself before it carries a 1.0 tag.
+
+### Fixed
+
+- **A single run now converges.** Several actions are driven by diagnostics the
+  official checker reports, and the checker only sees the bytes in front of it,
+  so correcting indentation exposed an alignment rule that had been masked. One
+  pass converged the native actions but not the file. The pipeline now
+  re-consults the checker within one invocation, bounded at three rounds. Found
+  by running the tool over four real 42 projects, where a second run was still
+  applying between 2 and 24 fixes; it now applies none.
+- The Vercel install command no longer relies on `npm ci --prefix`, which does
+  not reliably honor the flag and looks for a lockfile in the current directory.
+
+### Added
+
+- **A verified one-line installer.**
+  `curl -fsSL https://normfix.vercel.app/install.sh | sh` detects the platform,
+  verifies the download against the published `SHA256SUMS`, and installs into
+  `~/.local/bin`. No `sudo`, no system path, no toolchain, so it works where a
+  student has no administrative rights. A checksum mismatch aborts and prints
+  both digests.
+- **A Homebrew tap.** `brew install viniciusnevescosta/normfix/normfix`
+  installs the same verified prebuilt binary.
+- **A copy button** in the playground's review output, falling back to
+  selecting the text when a browser refuses clipboard access.
+- **Generated property tests**: the token tape reconstructs any input exactly
+  and its pieces tile the source without a gap or overlap; include reordering
+  preserves the multiset of directives, sorts it, and settles.
+- **Differential tests against the real Norminette 3.3.59**, asserting the three
+  claims the product is stated in terms of: official diagnostics never rise, a
+  second run changes nothing, and a file that compiled still compiles.
+- **Unit tests for the pipeline orchestration**, which previously had none,
+  covering the transaction root, Makefile source resolution, and every refusal
+  path of the quarantine recovery root.
+- **Supply-chain gates**: `cargo-deny` for advisories, licences, and sources,
+  plus Dependabot for cargo, npm, and the actions.
+- **A documentation site** with a page per command, a reference for every flag,
+  a purpose page, and the project policies published from their repository-root
+  files.
+
+### Changed
+
+- The README is 143 lines instead of 843. Nothing was removed: the reference
+  material became site pages.
+- The playground and the documentation are one npm workspace with one lockfile.
+- A documentation page loads about 155 KB of JavaScript instead of about 4 MB;
+  the diagram renderer is fetched only by a page that renders one.
+- Dependency updates reviewed individually: `similar` 3.1, `redb` 2.6.3, `nix`
+  0.31.3, `comrak` 0.54, `clap` 4.6.5, and four GitHub Actions majors. A bump
+  that rewrote the MSRV guard on `ignore` was rejected, and that crate is now
+  excluded from automated updates.
+
+### Known gaps
+
+- The Homebrew formula is updated by hand after a release rather than by the
+  release workflow.
+- Field testing covers four 42 projects on macOS. A wider corpus, and Linux
+  field data, would strengthen the case for 1.0.0.
+
 ## [0.4.0-beta.1] / 2026-08-05
 
 First published release, and the first release of the native Rust
@@ -121,4 +186,5 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[0.4.0-beta.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.2
 [0.4.0-beta.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.1
