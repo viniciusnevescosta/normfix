@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use normfix_engine::{BackupPolicy, FixOptions, run_fixes};
+use normfix_header::Identity42;
 use normfix_report::ReportMode;
 use tempfile::TempDir;
 
@@ -32,8 +33,31 @@ const LEAKY: &str = concat!(
     "}\n",
 );
 
+/// Resolves the compiler under test to an absolute path.
+///
+/// `NORMFIX_TEST_CC` is written as a command name in CI, and the engine expects
+/// a path rather than something to look up, so resolve it here.
 fn compiler() -> Option<PathBuf> {
-    std::env::var_os("NORMFIX_TEST_CC").map(PathBuf::from)
+    let requested = PathBuf::from(std::env::var_os("NORMFIX_TEST_CC")?);
+    if requested.components().count() > 1 {
+        return Some(requested);
+    }
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|directory| directory.join(&requested))
+        .find(|candidate| candidate.is_file())
+}
+
+/// A resolved identity, because a run without one fails before the compiler
+/// stage and would report a header problem instead of an analyzer result.
+fn identity() -> Identity42 {
+    Identity42 {
+        login: "student".to_owned(),
+        email: "student@student.42.fr".to_owned(),
+        source: "analyzer test fixture".to_owned(),
+        inferred_login: false,
+        inferred_email: false,
+    }
 }
 
 fn version_banner() -> String {
@@ -53,6 +77,7 @@ fn analyzer_run(project: &TempDir) -> Vec<String> {
     options.threads = Some(1);
     options.compiler_preflight = true;
     options.analyzer = true;
+    options.identity = Some(identity());
     options.compiler_executable = compiler();
 
     let report = run_fixes(&[], &options).expect("the pipeline must complete");
@@ -79,6 +104,10 @@ fn the_installed_compiler_analyzer_actually_runs() {
     let rules = analyzer_run(&project);
 
     assert!(
+        !rules.iter().any(|rule| rule == "CC_PREFLIGHT_UNAVAILABLE"),
+        "no compiler was reachable, so this proves nothing. rules: {rules:?}"
+    );
+    assert!(
         !rules.iter().any(|rule| rule == "CC_ANALYZER_UNAVAILABLE"),
         "a real GCC or Clang reported no analyzer support; flags were chosen for the wrong family. rules: {rules:?}"
     );
@@ -101,6 +130,7 @@ fn a_leak_is_reported_and_never_changes_the_exit_status() {
     options.threads = Some(1);
     options.compiler_preflight = true;
     options.analyzer = true;
+    options.identity = Some(identity());
     options.compiler_executable = compiler();
 
     let report = run_fixes(&[], &options).expect("the pipeline must complete");
