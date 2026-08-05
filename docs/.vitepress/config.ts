@@ -16,6 +16,9 @@ export default withMermaid(defineConfig({
   outDir: "../web/dist/docs",
   cleanUrls: true,
   lastUpdated: false,
+  // README.md documents this directory for people reading the repository; it is
+  // not a page of the published site.
+  srcExclude: ["README.md"],
   // The reference documents are also read on GitHub, where a repository-relative
   // link to the playground README resolves correctly. Only that link is exempt.
   ignoreDeadLinks: [/\/web\/README$/],
