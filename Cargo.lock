@@ -181,6 +181,7 @@ checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
  "num-traits",
+ "serde",
  "windows-link",
 ]
 
@@ -564,6 +565,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "normfix"
+version = "0.4.0-alpha.1"
+dependencies = [
+ "clap",
+ "normfix-actions",
+ "normfix-destructive",
+ "normfix-engine",
+ "normfix-header",
+ "normfix-project",
+ "normfix-report",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "normfix-actions"
 version = "0.4.0-alpha.1"
 dependencies = [
@@ -619,20 +636,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "normfix-cli"
-version = "0.4.0-alpha.1"
-dependencies = [
- "clap",
- "normfix-destructive",
- "normfix-engine",
- "normfix-header",
- "normfix-report",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "normfix-core"
 version = "0.4.0-alpha.1"
 dependencies = [
@@ -675,6 +678,7 @@ dependencies = [
  "normfix-project",
  "normfix-report",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",
@@ -746,6 +750,20 @@ dependencies = [
  "serde_json",
  "similar",
  "tempfile",
+]
+
+[[package]]
+name = "normfix-wasm"
+version = "0.4.0-alpha.1"
+dependencies = [
+ "camino",
+ "normfix-c-actions",
+ "normfix-core",
+ "serde",
+ "serde_json",
+ "similar",
+ "thiserror",
+ "wasm-bindgen",
 ]
 
 [[package]]

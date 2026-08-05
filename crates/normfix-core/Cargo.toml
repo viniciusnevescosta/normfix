@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Shared deterministic data types for norminette-fix"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish.workspace = true
+description = "Shared deterministic data types for normfix"
 
 [dependencies]
 blake3.workspace = true

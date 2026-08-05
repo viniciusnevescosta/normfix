@@ -1,25 +1,25 @@
 [package]
 name = "normfix-header"
-version = "0.4.0-alpha.1"
-edition = "2024"
-rust-version = "1.85"
-license = "MIT"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish.workspace = true
+description = "Official 42 header, identity, and header-guard support for normfix"
 
 [dependencies]
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-regex = "1.12"
-sha2 = "0.10"
-thiserror = "2.0"
-wait-timeout = "0.2"
+chrono.workspace = true
+regex.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+wait-timeout.workspace = true
 
 [dev-dependencies]
-tempfile = "3.20"
+tempfile.workspace = true
 
-[lints.rust]
-unsafe_code = "forbid"
-missing_docs = "warn"
-
-[lints.clippy]
-all = "warn"
-pedantic = "warn"
+[lints]
+workspace = true

@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Lossless C syntax foundation for norminette-fix"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish.workspace = true
+description = "Lossless C syntax foundation for normfix"
 
 [dependencies]
 normfix-core = { path = "../normfix-core" }
