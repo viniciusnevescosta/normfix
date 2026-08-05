@@ -43,7 +43,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 clap = { version = "4.5", features = ["derive"] }
 comrak = { version = "0.52", default-features = false }
 filetime = "0.2"
-ignore = "0.4"
+# 0.4.30 uses `let` chains, which need a newer compiler than the declared MSRV,
+# and the crate publishes no `rust-version` for the resolver to honor. Raise this
+# bound only together with a documented MSRV change.
+ignore = ">=0.4.29, <0.4.30"
 once_cell = "1.21"
 rayon = "1.11"
 redb = "=2.6.0"
