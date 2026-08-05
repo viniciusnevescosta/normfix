@@ -1,7 +1,7 @@
 # Architecture
 
 This document describes the native Rust architecture implemented by
-`norminette-fix` `0.4.0-alpha.1`. It records both what the system does and why
+`normfix` `0.4.0-alpha.1`. It records both what the system does and why
 the boundaries exist. Where a useful library exists but is not part of the
 default CLI pipeline, that distinction is explicit.
 
@@ -12,7 +12,7 @@ The governing rule is:
 
 ## Product constraints
 
-`norminette-fix` is not a general C rewriter. It operates under a combination
+`normfix` is not a general C rewriter. It operates under a combination
 of unusually strict constraints:
 
 - the 42 Norm defines physical layout, including real tabs and an 80-column
@@ -34,6 +34,8 @@ single parser/formatter pass.
 | Choice | What | Why | Principal tradeoff |
 |---|---|---|---|
 | Native Rust workspace | Small crates with explicit ownership | Strong types, predictable performance, one deployable binary, and enforceable boundaries | More integration code than a monolithic script |
+| Prebuilt Unix release archives | Publish one checked binary for Linux x86-64/ARM64 and macOS Intel/Apple Silicon | Students can install without compiling the workspace | Each target needs a trusted native release runner; Norminette remains an external dependency |
+| Windows through WSL or the browser | Keep the full CLI on its tested Unix process/filesystem boundary; offer the WASM preview in any modern browser | Avoids claiming native Windows safety before subprocess termination and transaction proofs exist there | Windows users need WSL for the full Norminette-backed workflow |
 | Immutable shadow buffers | Analyze and edit strings in memory before any write | Failed proofs cannot partially mutate a source file | Temporary memory scales with selected source size |
 | Tree-sitter behind an adapter | `tree-sitter-c` provides resilient C structure | Fast parsing and useful ranges without coupling every crate to one backend | Tree-sitter is not a compiler and can recover around valid macro-heavy C |
 | Lossless token tape | Every byte is classified as token, trivia, or unknown | Structural parsing must not discard whitespace/comments required by the Norm | A second lexical representation must be maintained |
@@ -45,15 +47,19 @@ single parser/formatter pass.
 | Parallel files, sorted effects | Rayon processes independent files; results and writes are sorted | Uses available cores without making output nondeterministic | Cross-file proof phases still need serial/global snapshots |
 | External content-addressed cache | redb database keyed by all relevant deterministic inputs | Avoids repeated official checker calls without dirtying projects | Cache invalidation inputs must remain complete |
 | Dedicated Makefile and Markdown paths | GNU Make and CommonMark are not treated as C | Each language gets an appropriate safety policy | Behavior differs by file kind |
+| Diagnostics-only compiler preflight | Run `cc -fsyntax-only -Wall -Wextra -Werror` by default, independently of edit approval | Finds build-relevant mistakes without letting an incomplete guessed build context authorize formatting | Project-specific defines, language mode, generation, linking, and runtime tests remain external |
+| Explicit Git scopes | Resolve `--changed`/`--staged` through bounded NUL-delimited Git subprocesses | Review can target the same version-control state the student intends | Git state is a selection mechanism, not a completeness proof |
+| Narrow project policy with a closed proof | Parse only an allowed-function list, then resolve definitions from a complete C/header snapshot | Subject rules become machine-checkable without embedding every 42 subject or trusting a partial Git/path scope | One unreadable, recovered, or changed project source disables all allowlist findings for the run |
 | Capability-scoped destructive grants | Authorization names a closed operation set | `--unsafe` cannot become an open “do anything” switch | Confirmation occurs before candidate planning |
 | Recoverable transaction boundary | Preflight, backup, stage, journal, ordered commit, rollback | Filesystem changes have one auditable owner | Multiple files cannot be made truly atomic by a single cross-file rename |
 | One reporting layer | Human UI and stable JSON derive from the same report model | Terminal and automation consumers see the same facts | Report schema evolution must be deliberate |
+| Browser-only WASM subset | Reuse native parser/actions in memory behind a small old-school Vite 8.1.5 workbench | A local or Vercel-hosted playground can preview code privately without installing the CLI | It cannot claim official Norminette, compiler, Git, header, or transaction results |
 
 ## System shape
 
 ```mermaid
 flowchart TD
-    CLI["normfix-cli<br/>arguments, prompts, exit"] --> Engine["normfix-engine<br/>orchestration"]
+    CLI["normfix<br/>arguments, prompts, exit"] --> Engine["normfix-engine<br/>orchestration"]
     CLI --> Authorization["normfix-destructive<br/>capability authorization"]
     Engine --> Project["normfix-project<br/>discovery and guard proof"]
     Engine --> Header["normfix-header<br/>identity, clock, official header"]
@@ -71,6 +77,9 @@ flowchart TD
     Syntax --> Core["normfix-core<br/>ranges, snapshots, diagnostics"]
     Transaction --> Core
     Report --> Core
+    Web["local web playground"] --> WASM["normfix-wasm<br/>in-memory subset"]
+    WASM --> CActions
+    WASM --> Core
 ```
 
 The engine is the only layer that composes every subsystem. Rule and parser
@@ -113,14 +122,24 @@ What it owns:
 - deterministic sorting and deduplication;
 - `.c`, `.h`, case-insensitive `Makefile`, and README classification;
 - unexpected-file reporting;
-- `.norminetteignore`, optional `.gitignore`, `.git`, and symbolic-link policy;
-- closed-worktree inclusion-guard approvals.
+- `.normfixignore`, its legacy `.norminetteignore` alias, optional `.gitignore`,
+  `.git`, and symbolic-link policy;
+- bounded Git-state path resolution for `--changed` and `--staged`;
+- strict parsing of the optional `normfix.toml` allowed-function policy;
+- closed-worktree inclusion-guard insertion and rename approvals.
 
 Why:
 
 Path traversal is a security and correctness boundary. A formatting rule
 should never decide whether a symlink escape, ignored file, or `.git` path
 belongs to the project.
+
+Git scope selection and complete-project proof discovery intentionally use
+different policies. Git scopes omit symbolic-link and non-file candidates and
+fail on unsafe names or metadata errors; they are a convenient subset for
+review. Guard, static-removal, and function-policy proofs rescan the project
+under their stricter closed-world rules instead of treating that subset as
+complete evidence.
 
 ### `normfix-c-syntax`
 
@@ -129,7 +148,8 @@ What it owns:
 - the `tree-sitter-c` adapter;
 - parser recovery regions;
 - a full-fidelity token/trivia tape;
-- backend-neutral facts for functions, arrays, enums, and preprocessors.
+- backend-neutral facts for functions, calls, parameters, local declarations,
+  macros, arrays, enums, controls, and preprocessors.
 
 Why:
 
@@ -189,6 +209,7 @@ What it owns:
 
 - exact `#`-style official headers;
 - source-assignment compaction;
+- literal source-reference reconciliation;
 - conservative Makefile diagnostics.
 
 Why:
@@ -202,12 +223,14 @@ What it owns:
 
 - Comrak parsing;
 - lightweight README diagnostics;
-- explicit canonical CommonMark reprinting.
+- canonical CommonMark reprinting, enabled by default and explicitly
+  suppressible.
 
 Why:
 
-README files are expected project content, but canonical Markdown output can
-produce a broad semantic-equivalent diff. It therefore remains opt-in.
+README files are expected project content. Canonical Markdown output is
+deterministic and enabled by default, but can produce a broad first-run diff;
+`--no-format-markdown` preserves the original bytes while retaining analysis.
 
 ### `normfix-oracle`
 
@@ -219,7 +242,7 @@ What it owns:
 - strict parsing of official output;
 - in-memory report caching;
 - significant-token proof helpers;
-- an optional C compiler adapter.
+- the strict C compiler adapter and optional GCC analyzer backend.
 
 Why:
 
@@ -227,10 +250,11 @@ External tools are operational dependencies, not rule implementations. Their
 timeouts, output protocols, versions, and failures need a boundary separate
 from source diagnostics.
 
-The compiler adapter is a library capability, not part of the default fixing
-pipeline. Running a compiler correctly requires project-specific language
-mode, include paths, defines, target, and build flags; guessing them would make
-validation weaker, not stronger.
+The strict compiler adapter is invoked by default for C sources, with stable
+include directories inferred from discovered headers. It is diagnostics-only
+and fail-open because project-specific language modes, defines, generated
+headers, target flags, and build commands cannot be inferred safely. Optional
+GCC `-fanalyzer` output follows the same boundary and never becomes leak proof.
 
 ### `normfix-cache`
 
@@ -268,7 +292,8 @@ What it owns:
 - external backups and transaction journals;
 - preflight/concurrent-modification checks;
 - same-directory staging;
-- stable-order commit and rollback.
+- stable-order commit and rollback;
+- hash-checked listing and restoration of completed runs for `normfix undo`.
 
 Why:
 
@@ -282,6 +307,8 @@ What it owns:
 - the versioned run-report schema;
 - file status and summary calculation;
 - source-aware human diagnostics;
+- default grouping by rule, severity, and producer while retaining every
+  location;
 - ANSI policy, unified diffs, and duration rendering;
 - deterministic pretty JSON.
 
@@ -298,6 +325,7 @@ What it owns:
 - cross-crate shadow-buffer validation;
 - thread-pool selection and deterministic aggregation;
 - transaction scheduling;
+- allowed-function and compiler diagnostic composition;
 - per-file failure isolation and run-level report construction.
 
 Why:
@@ -305,12 +333,20 @@ Why:
 No leaf crate has enough context to decide that a proposal is ready to commit.
 The engine is the policy composition point.
 
-### `normfix-cli`
+### `normfix` CLI package
+
+The package lives in `crates/normfix-cli`; the directory retains the
+responsibility-oriented workspace layout while the published executable and
+Cargo package use the product name.
 
 What it owns:
 
 - Clap argument validation;
-- interactive identity and destructive-capability prompts;
+- command workflows (`format`, `lint`, `check`, `budget`, `preflight`,
+  `explain`, and `undo`);
+- interactive identity, per-file review, undo, and destructive-capability
+  prompts;
+- Git scope selection before normal discovery;
 - conversion to `FixOptions`;
 - color/TTY selection;
 - final exit code.
@@ -319,6 +355,29 @@ Why:
 
 TTY interaction and command-line convenience should not be required by the
 engine API or rule tests.
+
+### `normfix-wasm`
+
+What it owns:
+
+- a bounded JSON-compatible request/response model for in-memory `.c` and `.h`
+  files;
+- reuse of native C formatting, diagnostics, function budgets, and unified
+  diff generation;
+- the `wasm-bindgen` entry point used by the local static playground.
+
+Why:
+
+The browser is useful for low-friction experimentation, but it is a different
+trust environment. This crate has no filesystem, process, Git, compiler,
+identity, header, backup, or network-upload capability. The separation makes
+those absent capabilities visible in the response instead of silently
+pretending a native preview is an official evaluation. Build and serving
+instructions live in [`web/README.md`](../web/README.md). The frontend is a
+plain HTML/CSS/TypeScript workbench built with pinned Vite 8.1.5; Vercel serves
+only its static output. Keeping the UI old-school and dependency-light reduces
+the browser supply-chain and runtime surface, at the cost of editor features
+provided by larger web IDE frameworks.
 
 ## Core source model
 
@@ -416,32 +475,86 @@ constant. This is how `count[op_total]` can be explained correctly when
 `op_total` resolves in the same translation unit, without making claims about
 arbitrary macros, typedef environments, or linker behavior.
 
+## Selection and project policy
+
+Normal path discovery accepts zero, one, or many explicit inputs. Git scopes
+are resolved before discovery and cannot be mixed with explicit paths:
+
+- `--changed` combines the unstaged working-tree diff with untracked,
+  non-ignored files;
+- `--staged` reads only the index diff to choose names, then processes their
+  current working-tree bytes without modifying or staging the index.
+
+Git output is NUL-delimited so unusual names remain unambiguous. The subprocess
+has a wall-clock timeout and combined-output cap and uses no shell. Absolute,
+empty, or parent-traversing names reject the whole requested scope. Candidate
+symbolic links and non-files are deliberately omitted; failure to inspect a
+candidate is reported as a scope error, and a symbolic-link scope root is
+rejected explicitly. This prevents traversal while making the tradeoff
+explicit: Git scope is a review subset, never a completeness proof. An empty
+result is a successful no-op and is represented explicitly so the engine
+cannot reinterpret it as the usual empty-argument “scan cwd” input.
+
+`normfix.toml` is a deliberately narrow subject-policy surface:
+
+```toml
+[project]
+name = "push_swap"
+allowed = ["read", "write", "malloc", "free"]
+```
+
+The dependency-free bounded parser interprets quoted values for only the
+relevant keys and refuses a symlinked, oversized, changing, or non-UTF-8
+policy. For every selected C/header workflow, the engine separately discovers
+the complete eligible regular-file project C/header set without following
+symbolic links and with `.gitignore`, `.normfixignore`, and `.norminetteignore`
+filtering disabled. It reads and losslessly parses every member, records
+content digests, and revalidates both the file set and policy snapshot before
+emitting findings.
+
+Only non-`static` project definitions authorize a call from another
+translation unit. Same-file definitions are removed while analyzing that
+file; a `static` function elsewhere cannot create a false exemption. Candidate
+calls are computed from each final shadow buffer, after header and formatter
+changes, so diagnostic ranges address the source shown in the report.
+Function-pointer parameters, local callable variables, macro-like identifiers,
+and preprocessor ambiguity remain excluded conservatively. Any incomplete
+discovery, read, UTF-8 decode, parse, lossless tape, or snapshot check disables
+all `FUNCTION_NOT_ALLOWED` findings and emits
+`FUNCTION_POLICY_PROOF_INCOMPLETE`. This biases toward a missed warning instead
+of accusing permitted code without complete evidence.
+
 ## End-to-end pipeline
 
 One CLI run follows this sequence:
 
 ```mermaid
 flowchart TD
-    A["Parse CLI and resolve cwd"] --> B["Resolve identity"]
-    B --> C["Authorize requested destructive capabilities"]
-    C --> D["Capture one run clock"]
-    D --> E["Discover and classify inputs"]
-    E --> F["Locate and verify Norminette 3.3.59"]
-    F --> G["Build global guard/static proof context"]
-    G --> H["Process files in parallel"]
-    H --> I["Sort results by path"]
-    I --> J{"fix mode?"}
-    J -- "no: check/diff" --> M["Build report"]
-    J -- "yes" --> K["Commit validated source transaction"]
-    K --> L["Execute recoverable quarantine if authorized"]
-    L --> M
-    M --> N["Render human or JSON; set exit code"]
+    A["Parse command and resolve cwd"] --> B{"Git scope requested?"}
+    B -- "yes" --> C["Resolve bounded changed/staged path set"]
+    B -- "no" --> D["Use explicit paths or cwd"]
+    C --> E["Resolve identity and capabilities"]
+    D --> E
+    E --> F["Capture one run clock; discover files"]
+    F --> G["Verify Norminette; resolve compiler"]
+    G --> H["Build guard, policy, and optional static proof context"]
+    H --> I["Process shadow files in parallel"]
+    I --> J["Sort results and group diagnostics"]
+    J --> K{"write workflow?"}
+    K -- "no: lint/check/budget/preflight/diff" --> N["Build report"]
+    K -- "yes" --> L["Commit validated source transaction"]
+    L --> M["Execute recoverable quarantine if authorized"]
+    M --> N
+    N --> O["Render human or JSON; show duration; set exit code"]
 ```
 
 ### Run-wide prerequisites
 
 The clock, worker pool, and verified official checker are run-wide
-prerequisites. Failure here returns exit code 2 before source commit.
+prerequisites. Failure here returns exit code 2 before source commit. The
+compiler is deliberately different: inability to construct a reliable
+compiler invocation is a visible advisory and cannot prevent independently
+proven formatting.
 
 The official version is exact, not a minimum: `3.3.59`. A different release
 may change rule names, columns, or output grammar, which would invalidate
@@ -451,7 +564,11 @@ compatibility proofs and persistent-cache keys.
 
 Before per-file formatting, the engine prepares:
 
-- candidate header-guard approvals bound to complete Git-worktree snapshots;
+- candidate header-guard insertion/rename approvals bound to complete
+  Git-worktree snapshots;
+- a complete-project C/header snapshot for non-static function definitions and
+  the optional allowed-function policy;
+- a compiler-project fingerprint plus stable header include directories;
 - an optional closed-set static-function analysis when requested.
 
 Header-guard scans ignore Git ignore rules on purpose. They are bounded to
@@ -459,8 +576,16 @@ Header-guard scans ignore Git ignore rules on purpose. They are bounded to
 worktree metadata, and fail closed on incomplete traversal.
 
 Unused-static analysis also rescans the complete C/header set with
-`.gitignore` and `.norminetteignore` disabled, then requires it to equal the
+`.gitignore`, `.normfixignore`, and legacy `.norminetteignore` handling
+disabled, then requires it to equal the
 selected set. Partial path runs therefore cannot delete code.
+
+Allowed-function analysis uses the same ignore-disabled completeness
+principle, but does not require the formatting selection itself to be the
+whole project. This distinction lets `--changed`, `--staged`, or an explicit
+file receive correct cross-file exemptions without granting destructive
+authority. If the complete policy snapshot cannot be proven, findings are
+disabled rather than derived from the partial selection.
 
 ### Per-C-file shadow pipeline
 
@@ -470,14 +595,16 @@ For each C source or header:
 2. reject NUL or invalid UTF-8;
 3. run official Norminette on the original;
 4. apply an already-proven destructive prelude, if any, to the shadow buffer;
-5. apply a current header-guard approval, if still hash-valid;
+5. apply a current header-guard insertion or rename approval, if still
+   hash-valid;
 6. ensure the official header;
 7. run Norminette again to establish the post-header baseline;
 8. run native C actions to a fixed point;
 9. update header filename/`Updated` metadata only if another edit justifies it;
 10. run final Norminette;
 11. revert the native action batch if any official rule count increased;
-12. produce native, official, parser, project, and semantic diagnostics;
+12. produce native, official, parser, policy, project, semantic, and (for `.c`
+    files) compiler diagnostics;
 13. emit a `PlannedFile` only when bytes changed and validation succeeded.
 
 The baseline after header/guard work is deliberate. Header insertion is a
@@ -488,6 +615,29 @@ Per-file operational failures are isolated: the failed file receives no write
 plan, while other independently validated files can continue. The final run
 still exits 2. The subsequent filesystem transaction covers the complete set
 of plans that survived per-file validation.
+
+`lint` takes a shorter per-file branch after the original Norminette run. Its
+observable contract is read-only analysis of the original bytes: it emits no
+replacement, fix plan, header update, Makefile rewrite, or Markdown reprint.
+Run-wide discovery and proof preparation may still occur because project and
+compiler diagnostics need context. `budget` adds one informational
+function-budget diagnostic to that branch. `check` and `preflight` execute the
+normal shadow proposal path but never commit it. `preflight` requires the
+strict compiler option to remain enabled. It emits
+`FUNCTION_POLICY_NOT_CONFIGURED` when the optional policy is absent and
+`PREFLIGHT_MANUAL_STEPS` to make the residual manual work explicit: it does not
+execute Make recipes, link or inspect a binary, run tests/the program, or
+invoke runtime leak tools. GCC analysis remains opt-in through `--analyzer`.
+
+Interactive formatting is also two-pass by design. The first check-mode report
+supplies a per-file diff. For each accepted file, the CLI creates a
+`WriteApproval` containing hashes of the exact original and replacement bytes
+shown to the user. The selected scope is analyzed again with the same run
+clock. Normal formatting context still sees that whole selected scope, while
+proofs that require a complete project rescan it independently. The
+transaction can contain only plans whose second-pass original and replacement
+hashes match an approval. A changed source or changed proposal cannot reuse a
+stale first-pass decision.
 
 ## C action scheduler
 
@@ -514,13 +664,18 @@ The native C action order is:
 3. continuation compaction;
 4. blank-line layout;
 5. braces and controls;
-6. function layout;
-7. indentation;
-8. token spacing;
-9. declaration alignment;
-10. return parentheses;
-11. `(void)` for empty definitions;
-12. long-line wrapping.
+6. conservative single-statement block removal;
+7. narrow redundant-`else` removal;
+8. function layout;
+9. indentation;
+10. initial-declaration layout;
+11. token spacing;
+12. declaration/prototype alignment;
+13. proven pointer-zero return conversion to `NULL`;
+14. explicitly requested compact `NULL` comparisons;
+15. return parentheses;
+16. `(void)` for empty definitions;
+17. long-line wrapping.
 
 The order reduces conflicts. For example, indentation should see braces on
 their final lines, and line wrapping should see final token spacing.
@@ -563,6 +718,12 @@ For narrow semantic actions, safety comes from construction:
   expression;
 - an empty parameter list is changed only in a function definition, not an
   old-style prototype where `f()` and `f(void)` have different type meaning.
+- a pointer-zero return becomes `NULL` only when the function has a proven
+  pointer return type and the translation unit visibly provides `NULL`.
+
+Compact `NULL` comparisons are outside the default semantic set and are
+reachable only through the closed `--unsafe` mode. The dedicated shape and
+reparse proof still apply; authorization is not a substitute for validation.
 
 There is no generic “semantic edit accepted” route exposed by the CLI.
 
@@ -638,6 +799,28 @@ The comparison is count-based rather than exact-location-based because
 formatting legitimately moves lines and columns. The tradeoff is that moving
 one instance while adding another of the same rule is not distinguished; native
 token/reparse proofs provide the additional safety boundary.
+
+## Compiler and analyzer boundary
+
+The compiler adapter runs against the real project path, not the isolated
+Norminette temporary file, because quoted includes need their normal relative
+context. Calls are still shell-free, bounded, and read-only. The strict pass
+uses `-fsyntax-only -Wall -Wextra -Werror` plus sorted `-I` directories derived
+from discovered headers. Its cache fingerprint includes the compiler binary,
+arguments, relevant project files, and inferred include context.
+
+Compiler results never participate in the before/after Norminette regression
+gate or the transaction plan. This asymmetry is intentional: a diagnostic can
+be useful when the inferred context is incomplete, but it must not approve or
+veto an otherwise proven formatter edit. Missing includes or unsupported
+options that indicate an incomplete configuration become one explicit
+advisory rather than a misleading cascade.
+
+`--analyzer` adds GCC `-fanalyzer` and maps path findings to informational
+diagnostics. The tool may find a leak path or invalid access, but cannot prove
+absence of leaks across all paths, translation units, external calls, or
+ownership stored in aggregate state. Unsupported analyzer options fail open
+with a visible explanation.
 
 ## Persistent cache
 
@@ -733,8 +916,11 @@ Existing valid headers do not churn merely because the command ran:
 
 ### Inclusion guards
 
-Guard renames are project semantics, not local formatting. A rename is approved
-only when:
+Guard insertion and renaming are project semantics, not local formatting. An
+ordinary unguarded header may receive its expected whole-file guard only when
+it contains no conditional directive, `#pragma once`, or `#undef`, and the
+expected macro has no project collision. A rename or mismatched
+`#ifndef`/`#define` repair is approved only when:
 
 - the file is in a discoverable Git worktree;
 - the guard is a canonical whole-file pair;
@@ -747,6 +933,13 @@ only when:
 Any uncertainty leaves the guard in place. This protects X-macro, repeat
 include, external define, and hidden build behaviors that a filename rule alone
 cannot understand.
+
+Why require a Git worktree even for insertion:
+
+The absence of a macro in the selected header is not evidence that another
+ignored source, build file, or generated convention does not use it. The
+closed, bounded worktree snapshot supplies that evidence and is hash-checked
+again before the edit.
 
 ## Makefile architecture
 
@@ -773,15 +966,27 @@ the artifact or link duplicate symbols.
 The separate analyzer checks expected 42 Makefile structure and reports
 ambiguous long lines without rewriting recipes.
 
+The same closed assignment shape supports literal-source reconciliation.
+`normfix` resolves every literal token from the directory containing its
+Makefile, so nested Makefiles describe their own local source trees naturally.
+The Makefile directory must canonicalize below the project root; absolute,
+dot/parent, escaping, or symbolic-link paths are never classified as missing.
+A proven missing token is a diagnostic by default. Removal requires the named
+destructive capability and preserves token order; an unknown filesystem
+result is always retained. Resolving relative to each Makefile matches GNU
+Make authors' usual intent without executing Make, while root confinement
+prevents a stale-list cleanup from inspecting or changing outside files.
+
 ## Markdown architecture
 
 README analysis uses a Comrak AST for structural heading checks and a simple
 line pass for whitespace/final-newline checks.
 
-Canonical reprinting is opt-in because Comrak is semantically oriented, not a
-byte-preserving Markdown editor. The reprint is deterministic and idempotent,
-but it may normalize layout beyond the specific warning. This is appropriate
-only when the user asks with `--format-markdown`.
+Canonical reprinting is enabled by default. Comrak is semantically oriented,
+not a byte-preserving Markdown editor, so the first run may normalize layout
+beyond a specific warning. The reprint is deterministic and idempotent;
+`--no-format-markdown` selects analysis without replacement when byte-level
+preservation is preferred.
 
 Markdown diagnostics are informational. README style alone does not fail a
 source-fixing run.
@@ -806,7 +1011,7 @@ Producers are explicit:
 - native Norm v4.1 rule;
 - official Norminette compatibility;
 - C parser;
-- optional compiler;
+- strict compiler and optional GCC analyzer;
 - project safety;
 - Makefile;
 - Markdown.
@@ -817,12 +1022,23 @@ An official `VLA_FORBIDDEN`, a native semantic explanation, and a compiler
 result answer different questions. Merging them into an unattributed string
 would hide disagreement.
 
+Native structural analysis also feeds two focused views. `budget` emits the
+current and remaining line, local-variable, and parameter allowance for every
+parsed function. A function over the body-line limit receives an extraction
+suggestion, but no edit: choosing a cohesive region, helper name, parameters,
+return protocol, and visibility requires human intent. `explain RULE` reads a
+bundled offline explanation database and does not need a project scan.
+
 ### Human rendering
 
-The terminal renderer derives line and visual column from the final shadow
-source, expands tabs, prints one source line and an exact caret span, then adds
-help, notes, and source attribution. Operational failures are separate from
-code diagnostics.
+Default terminal output groups repeated findings by rule, severity, and
+producer. Every location and message remains listed, while common help/source
+text and the `normfix explain RULE` hint appear once. This keeps a project-wide
+run readable without collapsing distinct occurrences. `--verbose` expands
+source-aware snippets: it derives line and visual column from the final shadow
+source, expands tabs, prints the affected source line and exact caret span, and
+lists every accepted fix. Operational failures remain separate from code
+diagnostics.
 
 Color is a presentation capability:
 
@@ -838,7 +1054,9 @@ serialization. Original and fixed source buffers are deliberately excluded to
 avoid leaking whole projects or producing enormous automation payloads.
 
 The model includes before/after diagnostics, accepted fixes, backup paths,
-quarantine outcomes, identity provenance, summary counts, and duration.
+quarantine outcomes, identity provenance, summary counts, and
+`duration_seconds`. JSON retains individual diagnostics rather than copying the
+human grouping presentation into the machine contract.
 
 ### Status and exit semantics
 
@@ -906,6 +1124,18 @@ single operation that swaps arbitrary files across directories. The
 architecture promises staged per-file replacement plus cross-file rollback,
 not an impossible global atomicity guarantee.
 
+### Undo
+
+Every retained completed transaction has a journal plus exact original and
+replacement hashes. `normfix undo` lists only intact recovery points for the
+current project. Before restoration it verifies that every current target still
+matches the bytes written by that run; a later user edit refuses the complete
+undo instead of being overwritten. Restoration itself uses the transaction
+machinery, so undo receives concurrent-write checks and its own recovery point.
+
+This is intentionally safer than an inverse formatter: restoration uses
+captured bytes instead of guessing reverse edits.
+
 ## Destructive safety model
 
 ### Closed capabilities
@@ -913,11 +1143,13 @@ not an impossible global atomicity guarantee.
 The CLI can grant only:
 
 - remove unreachable `static` functions;
+- remove proven-missing source tokens from closed-shape Makefile lists;
 - quarantine unexpected regular files.
 
 Invalid-comment deletion has its own explicit narrow flag and proof path.
-`--unsafe` combines these known operations; it does not grant a generic
-destructive capability.
+Compact `NULL` comparison rewriting is a separately proven semantic action.
+`--unsafe` enables those two plus the three named destructive capabilities; it
+does not grant a generic operation or weaken any planner proof.
 
 Both invalid-comment and unreachable-static source deletions force an external
 transaction backup. `--no-backup` can opt out only for ordinary formatting.
@@ -1039,13 +1271,20 @@ The workspace tests layers independently and then composes them.
 - fixed clock and `SOURCE_DATE_EPOCH`;
 - symlink refusal, ignore behavior, and multiple inputs;
 - guard references, duplicate filenames, dynamic build definitions, and stale
-  snapshot invalidation.
+  snapshot invalidation;
+- Git changed/staged NUL parsing, empty no-op scope, index selection versus
+  working-tree bytes, candidate-symlink omission, confinement, timeouts, and
+  output caps;
+- strict project-policy parsing, complete-project definitions under partial
+  selection, cross-file `static` exclusion, final-buffer diagnostic ranges,
+  and incomplete-proof suppression.
 
 ### Makefile and Markdown fixtures
 
 - recipe preservation and source assignment eligibility;
-- mandatory target diagnostics and wildcard reports;
-- canonical Markdown idempotence and default read-only behavior.
+- mandatory target diagnostics, wildcard reports, and proven-missing literal
+  source reconciliation relative to root and nested Makefile directories;
+- canonical Markdown idempotence and explicit read-only opt-out behavior.
 
 ### Oracle and cache fixtures
 
@@ -1053,7 +1292,9 @@ The workspace tests layers independently and then composes them.
 - two successful official statuses and malformed protocol;
 - cache hit/miss/bypass/corruption recovery;
 - key invalidation by path, content, configuration, and executable
-  fingerprint.
+  fingerprint;
+- strict compiler include context, fail-open configuration advisories, and
+  optional analyzer diagnostics.
 
 ### Destructive and transaction fixtures
 
@@ -1062,11 +1303,21 @@ The workspace tests layers independently and then composes them.
 - preprocessor, token-paste, string, and attribute ambiguity;
 - hash/type/path changes between plan and execution;
 - external recovery-path enforcement;
-- mid-commit and quarantine rollback behavior.
+- mid-commit and quarantine rollback behavior;
+- hash-checked undo success and refusal after later edits.
+
+### WebAssembly fixtures
+
+- bounded file count, per-file bytes, aggregate bytes, and confined relative
+  `.c`/`.h` paths;
+- stable in-memory formatting, diagnostics, budgets, and unified diffs;
+- an explicit capability response showing that official tools, headers, and
+  filesystem operations are unavailable in the browser build.
 
 ### Integration and release checks
 
-The standard validation commands are:
+`.github/workflows/ci.yml` runs the standard validation commands on every pull
+request and push:
 
 ```sh
 cargo fmt --all --check
@@ -1075,15 +1326,46 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked
 ```
 
-End-to-end fixtures should additionally verify:
+CI separately exercises the declared Rust 1.85 MSRV, Linux and macOS hosts, a
+system C compiler, and the exact official Norminette 3.3.59 package. Fake-tool
+fixtures remain in the normal suite so timeout and malformed-output behavior
+does not depend on network services.
+
+`.github/workflows/release.yml` is tag-gated. It repeats the quality gate,
+checks that a `vX.Y.Z` tag matches the workspace version, builds on four native
+GitHub-hosted architectures, verifies each produced command, creates archives
+with README and license material, emits `SHA256SUMS`, and attaches build
+provenance before publishing the GitHub release.
+
+Public archive names are deliberately product-facing rather than raw Rust
+target identifiers:
+
+- `normfix-x86_64-linux-gnu.tar.gz`;
+- `normfix-aarch64-linux-gnu.tar.gz`;
+- `normfix-x86_64-macos.tar.gz`;
+- `normfix-aarch64-macos.tar.gz`.
+
+Vendor placeholders and machine-vendor labels remain build-system details and
+never appear in public archive names. There is no native Windows artifact; WSL
+uses the Linux CLI, while the static WASM playground covers browser-only
+preview on Windows.
+
+GitHub archives are the current binary distribution boundary. Publishing only
+the CLI on crates.io would be misleading: it has a transitive dependency on
+the complete internal workspace, including deliberately unpublished policy
+crates. All workspace packages currently inherit `publish = false`, preventing
+an accidental partial upload. Publishing the graph would create a public semver
+commitment for APIs that are still alpha. The current distribution policy is
+therefore GitHub release archives, not a broken path-only crates.io package.
+
+The end-to-end contract verifies:
 
 - check/diff never write;
 - fix creates external recovery;
 - a second run proposes no changes;
 - one and many workers produce equivalent reports aside from duration;
 - official diagnostics do not regress;
-- transaction failure restores original bytes;
-- real 42 projects remain build- and Git-reviewable after a run.
+- transaction failure restores original bytes.
 
 ## Architecture influences
 
@@ -1108,17 +1390,20 @@ The current architecture does not claim:
 
 - complete C semantic analysis;
 - inference of all build configurations;
-- automatic extraction of long functions;
+- automatic extraction of long functions (the tool provides a diagnostic
+  suggestion only);
+- proof of leak freedom (GCC analyzer output is an optional advisory);
+- execution of Make recipes, linking, project tests, or runtime leak tools;
 - arbitrary identifier/API renames;
 - repair of malformed syntax by guessing;
 - synchronization of all discovered sources into Make targets;
-- lossless canonical Markdown reprinting;
+- byte-preserving canonical Markdown reprinting;
 - global cross-file atomicity supplied by the filesystem;
 - permanent deletion of unexpected files;
 - compatibility with unspecified Norminette versions.
 
-These are boundaries, not missing error handling. A future feature must add the
-evidence needed to cross one of them.
+These are boundaries, not missing error handling. Any added capability must
+provide the evidence needed to cross one of them.
 
 ## Evolution rules
 
