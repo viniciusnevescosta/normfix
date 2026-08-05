@@ -40,6 +40,23 @@ const CORPUS: &[(&str, &str)] = &[
         "int\tcount(void)\n{\n\tint a;\n\tchar\t*text;\n\ta = 0;\n\ttext = 0;\n\treturn (a);\n}\n",
     ),
     ("returns.c", "int\tanswer(void)\n{\n\treturn 42;\n}\n"),
+    // Prototype alignment is only reported once the surrounding layout is
+    // correct, so this file needed a second run before the pipeline learned to
+    // re-consult the official checker within one invocation.
+    (
+        "masked.h",
+        concat!(
+            "#ifndef MASKED_H\n",
+            "# define MASKED_H\n",
+            "\n",
+            "int ft_isalpha(int c);\n",
+            "int ft_isdigit(int c);\n",
+            "char *ft_strdup(const char *s);\n",
+            "size_t ft_strlen(const char *s);\n",
+            "\n",
+            "#endif\n",
+        ),
+    ),
 ];
 
 fn identity() -> Identity42 {

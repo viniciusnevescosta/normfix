@@ -65,6 +65,12 @@ single native binary and the command is `normfix`, not `norminette-fix`.
 
 ### Fixed
 
+- A single run now converges. Several actions are driven by official
+  diagnostics, and the oracle only sees the bytes in front of it: correcting
+  indentation exposes an alignment rule that was masked before. The pipeline
+  re-consults the official checker within one invocation instead of leaving
+  those fixes for a second run. Found by running the tool over four real 42
+  projects, where the second run was still applying between 2 and 24 fixes.
 - Makefile source preconditions are expressed under the caller's project root.
   Canonicalizing them collapsed the transaction root to `/` on macOS, where
   `/var` is a symbolic link, and the write was then refused.

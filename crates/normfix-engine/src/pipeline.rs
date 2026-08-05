@@ -1451,6 +1451,30 @@ fn failed_file(file: &DiscoveredFile, path: Utf8PathBuf, failure: String) -> Fil
     }
 }
 
+/// Bounded number of official-checker rounds for one file.
+///
+/// One round converges the native actions; a second exposes the rules that only
+/// become visible once layout is correct. A third has never been needed in
+/// practice and exists so a pathological file cannot spend checker calls
+/// forever.
+const MAX_ORACLE_ROUNDS: usize = 3;
+
+/// Converts one official report into the diagnostics the action crate consumes.
+fn reported_diagnostics(report: &normfix_oracle::NorminetteReport) -> Vec<ReportedDiagnostic> {
+    report
+        .diagnostics
+        .iter()
+        .map(|item| {
+            ReportedDiagnostic::new(
+                item.rule_id.clone(),
+                item.line,
+                item.column,
+                item.message.clone(),
+            )
+        })
+        .collect()
+}
+
 // Keeping the C stages in one straight-line function makes the shadow-buffer
 // proof boundary and each official-oracle checkpoint visible during review.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -1611,18 +1635,7 @@ fn process_c(
     };
     let action_fix_start = fixes.len();
     let baseline = current.clone();
-    let reported = baseline_report
-        .diagnostics
-        .iter()
-        .map(|item| {
-            ReportedDiagnostic::new(
-                item.rule_id.clone(),
-                item.line,
-                item.column,
-                item.message.clone(),
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut reported = reported_diagnostics(&baseline_report);
     let action_options = CActionOptions {
         max_columns: options.max_columns,
         max_passes: options.max_passes,
@@ -1632,33 +1645,53 @@ fn process_c(
         reorder_includes: options.reorder_includes,
     };
     let mut action_changed = false;
-    match apply_c_actions(path.as_path(), &current, &reported, &action_options) {
-        Ok(result) => {
-            action_changed = result.source != current;
-            current = result.source;
-            fixes.extend(result.fixes.into_iter().map(|item| FixRecord {
-                rule_id: item.rule_id,
-                description: item.description,
-                line: item.line,
-                count: 1,
-            }));
+    // Several actions are driven by official diagnostics, and the oracle only
+    // ever sees the bytes in front of it. Correcting indentation can expose an
+    // alignment rule that was masked before, so a single pass converges the
+    // native actions but not the file. Re-lint and run again until nothing
+    // changes, bounded because a round that never settles is a defect rather
+    // than a reason to keep spending official checker calls.
+    for round in 0..MAX_ORACLE_ROUNDS {
+        let changed_this_round;
+        match apply_c_actions(path.as_path(), &current, &reported, &action_options) {
+            Ok(result) => {
+                changed_this_round = result.source != current;
+                current = result.source;
+                fixes.extend(result.fixes.into_iter().map(|item| FixRecord {
+                    rule_id: item.rule_id,
+                    description: item.description,
+                    line: item.line,
+                    count: 1,
+                }));
+            }
+            Err(CActionError::UnsafeSyntax) => {
+                local_diagnostics.extend(parser_diagnostics(&path, &current));
+                break;
+            }
+            Err(error) => {
+                local_diagnostics.push(point_diagnostic(
+                    &path,
+                    "FIX_PROOF_REJECTED",
+                    Severity::Warning,
+                    format!("A native edit batch was rejected: {error}"),
+                    DiagnosticSource::NativeNorm41,
+                    Some(
+                        "Review the reported source issue; the rejected batch was not written."
+                            .to_owned(),
+                    ),
+                ));
+                break;
+            }
         }
-        Err(CActionError::UnsafeSyntax) => {
-            local_diagnostics.extend(parser_diagnostics(&path, &current));
+        action_changed |= changed_this_round;
+        if !changed_this_round || round + 1 == MAX_ORACLE_ROUNDS {
+            break;
         }
-        Err(error) => {
-            local_diagnostics.push(point_diagnostic(
-                &path,
-                "FIX_PROOF_REJECTED",
-                Severity::Warning,
-                format!("A native edit batch was rejected: {error}"),
-                DiagnosticSource::NativeNorm41,
-                Some(
-                    "Review the reported source issue; the rejected batch was not written."
-                        .to_owned(),
-                ),
-            ));
-        }
+        // A failure here is reported by the final validation below.
+        let Ok(report) = oracle.lint(&file.path, &current) else {
+            break;
+        };
+        reported = reported_diagnostics(&report);
     }
 
     let should_update_header = !header_inserted
