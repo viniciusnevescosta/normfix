@@ -136,8 +136,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
+          # A SemVer pre-release carries a hyphen after the version core, and
+          # must not be published as the latest stable download.
+          prerelease=""
+          case "${GITHUB_REF_NAME#v}" in
+            *-*) prerelease="--prerelease" ;;
+          esac
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}"
+            gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}" $prerelease
           fi
