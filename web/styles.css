@@ -104,6 +104,26 @@ code {
   text-transform: uppercase;
 }
 
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.topbar-link {
+  padding: 3px 10px;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.topbar-link:hover,
+.topbar-link:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .runtime-status {
   display: flex;
   align-items: center;
