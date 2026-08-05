@@ -1,4 +1,4 @@
-//! Persistent, content-addressed cache for `norminette-fix`.
+//! Persistent, content-addressed cache for `normfix`.
 //!
 //! Cache storage is deliberately outside the analyzed project. Every lookup
 //! fails open: lock contention, I/O failures, invalid records and database
@@ -83,6 +83,7 @@ pub fn fingerprint_serde<T: Serialize>(value: &T) -> Result<[u8; 32], CacheEncod
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CachePaths {
     database: PathBuf,
+    project_root: PathBuf,
 }
 
 impl CachePaths {
@@ -102,7 +103,7 @@ impl CachePaths {
                 message: error.to_string(),
             })?;
         let base = platform_cache_base().ok_or(CachePathError::NoCacheDirectory)?;
-        Ok(Self::with_base(base, &canonical))
+        secure_cache_paths(&Self::with_base(base, &canonical))
     }
 
     /// Derives a project cache below an explicit external base.
@@ -117,9 +118,10 @@ impl CachePaths {
         Self {
             database: base
                 .into()
-                .join("norminette-fix")
+                .join("normfix")
                 .join(project_id)
                 .join(format!("cache-v{CACHE_SCHEMA_VERSION}.redb")),
+            project_root: canonical_project_root.to_path_buf(),
         }
     }
 
@@ -142,6 +144,13 @@ pub enum CachePathError {
     },
     /// No XDG/platform cache base was available.
     NoCacheDirectory,
+    /// The resolved cache path overlaps the analyzed project or is unsafe.
+    UnsafeCacheDirectory {
+        /// Rejected cache path.
+        path: PathBuf,
+        /// Resolution or overlap detail.
+        message: String,
+    },
 }
 
 impl std::fmt::Display for CachePathError {
@@ -157,6 +166,11 @@ impl std::fmt::Display for CachePathError {
             Self::NoCacheDirectory => {
                 formatter.write_str("no external user cache directory is available")
             }
+            Self::UnsafeCacheDirectory { path, message } => write!(
+                formatter,
+                "cache directory `{}` is not safely external: {message}",
+                path.display()
+            ),
         }
     }
 }
@@ -315,7 +329,20 @@ impl PersistentCache {
     /// analysis; failures are represented by [`CacheOpenStatus::Disabled`].
     #[must_use]
     pub fn open(paths: CachePaths) -> Self {
-        let (database, status) = open_or_recover(&paths);
+        let secured = secure_cache_paths(&paths);
+        let (paths, database, status) = match secured {
+            Ok(paths) => {
+                let (database, status) = open_or_recover(&paths);
+                (paths, database, status)
+            }
+            Err(error) => (
+                paths,
+                None,
+                CacheOpenStatus::Disabled {
+                    reason: error.to_string(),
+                },
+            ),
+        };
         Self {
             paths,
             state: Mutex::new(CacheState { database, status }),
@@ -479,6 +506,83 @@ impl PersistentCache {
         }
         transaction.commit().expect("commit corrupt value");
     }
+}
+
+fn secure_cache_paths(paths: &CachePaths) -> Result<CachePaths, CachePathError> {
+    let project_root =
+        fs::canonicalize(&paths.project_root).map_err(|error| CachePathError::ProjectRoot {
+            path: paths.project_root.clone(),
+            message: error.to_string(),
+        })?;
+    let Some(parent) = paths.database.parent() else {
+        return Err(CachePathError::UnsafeCacheDirectory {
+            path: paths.database.clone(),
+            message: "database path has no parent directory".to_owned(),
+        });
+    };
+    let resolved_parent = resolve_path_for_creation(parent).map_err(|message| {
+        CachePathError::UnsafeCacheDirectory {
+            path: parent.to_path_buf(),
+            message,
+        }
+    })?;
+    if resolved_parent.starts_with(&project_root) || project_root.starts_with(&resolved_parent) {
+        return Err(CachePathError::UnsafeCacheDirectory {
+            path: resolved_parent,
+            message: format!("it overlaps project root `{}`", project_root.display()),
+        });
+    }
+    let Some(file_name) = paths.database.file_name() else {
+        return Err(CachePathError::UnsafeCacheDirectory {
+            path: paths.database.clone(),
+            message: "database path has no filename".to_owned(),
+        });
+    };
+    Ok(CachePaths {
+        database: resolved_parent.join(file_name),
+        project_root,
+    })
+}
+
+fn resolve_path_for_creation(path: &Path) -> Result<PathBuf, String> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| format!("could not resolve the current directory: {error}"))?
+            .join(path)
+    };
+    let mut existing = absolute.as_path();
+    let mut suffix = Vec::new();
+    loop {
+        match fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let Some(name) = existing.file_name() else {
+                    return Err(format!("no existing ancestor for `{}`", absolute.display()));
+                };
+                suffix.push(name.to_os_string());
+                existing = existing
+                    .parent()
+                    .ok_or_else(|| format!("no existing ancestor for `{}`", absolute.display()))?;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "could not inspect `{}`: {error}",
+                    existing.display()
+                ));
+            }
+        }
+    }
+    let mut resolved = fs::canonicalize(existing)
+        .map_err(|error| format!("could not canonicalize `{}`: {error}", existing.display()))?;
+    for component in suffix.into_iter().rev() {
+        if component == "." || component == ".." {
+            return Err("cache paths cannot contain dot components".to_owned());
+        }
+        resolved.push(component);
+    }
+    Ok(resolved)
 }
 
 fn open_or_recover(paths: &CachePaths) -> (Option<Database>, CacheOpenStatus) {
@@ -866,6 +970,19 @@ mod tests {
         let base = directory.path().join("external-cache");
         std::fs::create_dir(&project).expect("project directory");
         PersistentCache::open(CachePaths::with_base(base, &project))
+    }
+
+    #[test]
+    fn external_cache_uses_the_normfix_namespace() {
+        let directory = TempDir::new().expect("temporary directory");
+        let project = directory.path().join("project");
+        let base = directory.path().join("external-cache");
+        std::fs::create_dir(&project).expect("project directory");
+
+        let paths = CachePaths::with_base(&base, &project);
+
+        assert!(paths.database().starts_with(base.join("normfix")));
+        assert!(!paths.database().starts_with(base.join("norminette-fix")));
     }
 
     #[test]
