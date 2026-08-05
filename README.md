@@ -24,7 +24,7 @@ normfix src includes
 normfix src/parser.c src/lexer.c includes/minishell.h
 ```
 
-The current package version is `0.4.0-alpha.1`.
+The current package version is `0.4.0-beta.1`.
 
 ## What it does
 
@@ -91,10 +91,10 @@ Norminette dependency inside WSL, or use the browser playground for the
 in-memory formatter preview. Native PowerShell and Windows process behavior
 are not part of the supported CLI contract yet.
 
-For example, on Apple Silicon with release `0.4.0-alpha.1`:
+For example, on Apple Silicon with release `0.4.0-beta.1`:
 
 ```sh
-version=0.4.0-alpha.1
+version=0.4.0-beta.1
 archive="normfix-aarch64-macos.tar.gz"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/${archive}"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/SHA256SUMS"
