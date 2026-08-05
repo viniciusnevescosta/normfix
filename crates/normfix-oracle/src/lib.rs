@@ -1,4 +1,4 @@
-//! Bounded, deterministic external-tool adapters for `norminette-fix`.
+//! Bounded, deterministic external-tool adapters for `normfix`.
 //!
 //! This crate never invokes a shell. It verifies the official Norminette
 //! release, materializes in-memory sources in isolated temporary directories,

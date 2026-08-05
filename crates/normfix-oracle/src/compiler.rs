@@ -7,6 +7,7 @@ use tempfile::TempDir;
 use thiserror::Error;
 
 use crate::executable::resolve_executable;
+use crate::norminette::strip_terminal_sequences;
 use crate::process::{BoundedOutput, ProcessError, ProcessLimits, run_bounded};
 
 /// Configuration for an optional `cc -fsyntax-only` validator.
@@ -69,6 +70,9 @@ pub enum CompilerError {
     /// The requested source basename was invalid.
     #[error("invalid in-memory compiler source name: {0}")]
     InvalidFileName(String),
+    /// A real project source escaped the explicitly supplied project root.
+    #[error("invalid project compiler source: {0}")]
+    InvalidProjectSource(String),
     /// The temporary source could not be written.
     #[error("could not prepare the in-memory source for the compiler: {0}")]
     TemporarySource(String),
@@ -177,10 +181,127 @@ impl CompilerValidator {
         Ok(CompilerReport {
             accepted: exit_code == 0,
             exit_code,
-            stdout: output.stdout,
-            stderr: output.stderr,
+            stdout: strip_terminal_sequences(&output.stdout),
+            stderr: strip_terminal_sequences(&output.stderr),
         })
     }
+
+    /// Runs a syntax-only compiler preflight against one real project source.
+    ///
+    /// Unlike [`Self::validate`], this method intentionally keeps the project
+    /// directory as the compiler working directory. Relative quoted includes
+    /// therefore resolve exactly as they do for a normal project invocation.
+    /// The source and every path component are canonicalized first, and the
+    /// source must remain a regular file inside `project_root`.
+    ///
+    /// `argv` is caller-authorized compiler configuration and is passed without
+    /// a shell. This adapter never reads or executes Makefile recipes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CompilerError`] for invalid paths or operational failures. A
+    /// normal compiler rejection is returned as a report with `accepted=false`.
+    pub fn validate_project_file(
+        &self,
+        project_root: &Path,
+        source_path: &Path,
+        argv: &[OsString],
+    ) -> Result<CompilerReport, CompilerError> {
+        let requested = if source_path.is_absolute() {
+            source_path.to_path_buf()
+        } else {
+            project_root.join(source_path)
+        };
+        reject_project_symlink_components(project_root, &requested)?;
+        let root = project_root.canonicalize().map_err(|error| {
+            CompilerError::InvalidProjectSource(format!(
+                "could not canonicalize project root `{}`: {error}",
+                project_root.display()
+            ))
+        })?;
+        let source = requested.canonicalize().map_err(|error| {
+            CompilerError::InvalidProjectSource(format!(
+                "could not canonicalize source `{}`: {error}",
+                requested.display()
+            ))
+        })?;
+        if !source.starts_with(&root) {
+            return Err(CompilerError::InvalidProjectSource(format!(
+                "source `{}` is outside `{}`",
+                source.display(),
+                root.display()
+            )));
+        }
+        let metadata = std::fs::symlink_metadata(&source).map_err(|error| {
+            CompilerError::InvalidProjectSource(format!(
+                "could not inspect source `{}`: {error}",
+                source.display()
+            ))
+        })?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(CompilerError::InvalidProjectSource(format!(
+                "source `{}` is not a regular non-symbolic file",
+                source.display()
+            )));
+        }
+        let relative = source.strip_prefix(&root).map_err(|error| {
+            CompilerError::InvalidProjectSource(format!(
+                "could not derive the project-relative source path: {error}"
+            ))
+        })?;
+        let mut command = Command::new(&self.executable);
+        command
+            .current_dir(&root)
+            .args(argv)
+            .arg("--")
+            .arg(relative);
+        configure_environment(&mut command);
+        let output = run_bounded(&mut command, self.limits)?;
+        let exit_code = output.exit_code.ok_or_else(|| {
+            CompilerError::AbnormalExit(
+                "the process was terminated without an exit code".to_owned(),
+            )
+        })?;
+        Ok(CompilerReport {
+            accepted: exit_code == 0,
+            exit_code,
+            stdout: strip_terminal_sequences(&output.stdout),
+            stderr: strip_terminal_sequences(&output.stderr),
+        })
+    }
+}
+
+fn reject_project_symlink_components(root: &Path, source: &Path) -> Result<(), CompilerError> {
+    let relative = source.strip_prefix(root).map_err(|error| {
+        CompilerError::InvalidProjectSource(format!(
+            "source `{}` is not lexically below `{}`: {error}",
+            source.display(),
+            root.display()
+        ))
+    })?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        if !matches!(component, std::path::Component::Normal(_)) {
+            return Err(CompilerError::InvalidProjectSource(format!(
+                "source `{}` contains a non-normal path component",
+                source.display()
+            )));
+        }
+        current.push(component.as_os_str());
+        let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
+            CompilerError::InvalidProjectSource(format!(
+                "could not inspect source component `{}`: {error}",
+                current.display()
+            ))
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(CompilerError::InvalidProjectSource(format!(
+                "source component `{}` is a symbolic link",
+                current.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validated_basename(requested: &Path) -> Result<String, CompilerError> {
@@ -216,14 +337,18 @@ fn configure_environment(command: &mut Command) {
         .env("LC_ALL", "C")
         .env("LANG", "C")
         .env("LANGUAGE", "en")
+        .env("GCC_COLORS", "")
+        .env("CLICOLOR", "0")
+        .env("CLICOLOR_FORCE", "0")
         .env("NO_COLOR", "1");
 }
 
 fn combined_output(output: &BoundedOutput) -> String {
-    output
-        .stdout
+    let stdout = strip_terminal_sequences(&output.stdout);
+    let stderr = strip_terminal_sequences(&output.stderr);
+    stdout
         .lines()
-        .chain(output.stderr.lines())
+        .chain(stderr.lines())
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
@@ -298,6 +423,100 @@ test "$(cat "$3")" = "int source(void);"
 
         assert!(report.accepted);
         assert_eq!(report.exit_code, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_preflight_preserves_the_real_include_context() {
+        let directory = TempDir::new().expect("temporary script directory");
+        let project = TempDir::new().expect("temporary project");
+        std::fs::create_dir(project.path().join("include")).expect("include directory");
+        std::fs::create_dir(project.path().join("src")).expect("source directory");
+        std::fs::write(
+            project.path().join("include/project.h"),
+            "#define VALUE 42\n",
+        )
+        .expect("header");
+        std::fs::write(
+            project.path().join("src/main.c"),
+            "#include \"../include/project.h\"\nint value(void) { return (VALUE); }\n",
+        )
+        .expect("source");
+        let script = executable_script(
+            &directory,
+            r#"
+if [ "$1" = "--version" ]; then echo "fake cc 1.0"; exit 0; fi
+test "$1" = "-Wall"
+test "$2" = "-Wextra"
+test "$3" = "-Werror"
+test "$4" = "-fsyntax-only"
+test "$5" = "--"
+test "$6" = "src/main.c"
+test -f "include/project.h"
+grep 'project.h' "$6" >/dev/null
+"#,
+        );
+        let compiler = compiler(script, Duration::from_secs(5), 16 * 1024);
+
+        let report = compiler
+            .validate_project_file(
+                project.path(),
+                &project.path().join("src/main.c"),
+                &[
+                    OsString::from("-Wall"),
+                    OsString::from("-Wextra"),
+                    OsString::from("-Werror"),
+                    OsString::from("-fsyntax-only"),
+                ],
+            )
+            .expect("project preflight");
+
+        assert!(report.accepted);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_preflight_rejects_a_source_outside_the_root() {
+        let directory = TempDir::new().expect("temporary script directory");
+        let project = TempDir::new().expect("temporary project");
+        let outside = TempDir::new().expect("outside directory");
+        let outside_source = outside.path().join("outside.c");
+        std::fs::write(&outside_source, "int outside(void);\n").expect("outside source");
+        let script = executable_script(
+            &directory,
+            "if [ \"$1\" = \"--version\" ]; then echo 'fake cc 1.0'; exit 0; fi",
+        );
+        let compiler = compiler(script, Duration::from_secs(5), 16 * 1024);
+
+        let error = compiler
+            .validate_project_file(project.path(), &outside_source, &[])
+            .expect_err("outside source must fail closed");
+
+        assert!(matches!(error, CompilerError::InvalidProjectSource(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_preflight_rejects_a_symlink_component() {
+        use std::os::unix::fs::symlink;
+
+        let directory = TempDir::new().expect("temporary script directory");
+        let project = TempDir::new().expect("temporary project");
+        let real = project.path().join("real");
+        std::fs::create_dir(&real).expect("real directory");
+        std::fs::write(real.join("source.c"), "int source(void);\n").expect("source");
+        symlink(&real, project.path().join("linked")).expect("directory symlink");
+        let script = executable_script(
+            &directory,
+            "if [ \"$1\" = \"--version\" ]; then echo 'fake cc 1.0'; exit 0; fi",
+        );
+        let compiler = compiler(script, Duration::from_secs(5), 16 * 1024);
+
+        let error = compiler
+            .validate_project_file(project.path(), &project.path().join("linked/source.c"), &[])
+            .expect_err("symlink traversal must fail closed");
+
+        assert!(matches!(error, CompilerError::InvalidProjectSource(_)));
     }
 
     #[cfg(unix)]

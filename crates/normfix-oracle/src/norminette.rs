@@ -271,14 +271,63 @@ fn configure_english_environment(command: &mut Command) {
 }
 
 fn normalized_output(output: &BoundedOutput) -> String {
-    output
-        .stdout
+    let stdout = strip_terminal_sequences(&output.stdout);
+    let stderr = strip_terminal_sequences(&output.stderr);
+    stdout
         .lines()
-        .chain(output.stderr.lines())
+        .chain(stderr.lines())
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with("Setting locale to "))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub(crate) fn strip_terminal_sequences(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == 0x1b {
+            index += 1;
+            match bytes.get(index).copied() {
+                Some(b'[') => {
+                    index += 1;
+                    while index < bytes.len() {
+                        let byte = bytes[index];
+                        index += 1;
+                        if (0x40..=0x7e).contains(&byte) {
+                            break;
+                        }
+                    }
+                }
+                Some(b']') => {
+                    index += 1;
+                    while index < bytes.len() {
+                        if bytes[index] == 0x07 {
+                            index += 1;
+                            break;
+                        }
+                        if bytes[index] == 0x1b && bytes.get(index + 1) == Some(&b'\\') {
+                            index += 2;
+                            break;
+                        }
+                        index += 1;
+                    }
+                }
+                Some(_) => index += 1,
+                None => {}
+            }
+            continue;
+        }
+        let byte = bytes[index];
+        if byte.is_ascii_control() && !matches!(byte, b'\n' | b'\r' | b'\t') {
+            index += 1;
+            continue;
+        }
+        output.push(byte);
+        index += 1;
+    }
+    String::from_utf8(output).expect("removing ASCII control bytes preserves UTF-8")
 }
 
 fn parse_version(output: &str) -> Result<String, NorminetteError> {
@@ -381,7 +430,7 @@ fn parse_diagnostic(line: &str) -> Option<NorminetteDiagnostic> {
         line: line_text.trim().parse().ok()?,
         column: column_text.trim().parse().ok()?,
         rule_id: rule_id.to_owned(),
-        message: message.trim().to_owned(),
+        message: strip_terminal_sequences(message).trim().to_owned(),
     })
 }
 
@@ -651,6 +700,17 @@ echo "unexpected protocol text"
         assert!(matches!(error, NorminetteError::InvalidFileName(_)));
         let error = super::validated_basename(Path::new("-option.c")).expect_err("must reject");
         assert!(matches!(error, NorminetteError::InvalidFileName(_)));
+    }
+
+    #[test]
+    fn terminal_escape_sequences_never_reach_diagnostic_messages() {
+        let diagnostic = super::parse_diagnostic(
+            "Error: MISSING_TAB_VAR (line: 3, col: 2):\t\x1b[97mMissing tab before variable name\x1b[0m",
+        )
+        .expect("diagnostic");
+
+        assert_eq!(diagnostic.message, "Missing tab before variable name");
+        assert!(!diagnostic.message.chars().any(char::is_control));
     }
 
     #[test]
