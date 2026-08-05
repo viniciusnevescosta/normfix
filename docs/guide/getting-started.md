@@ -29,6 +29,38 @@ authorize an edit under rules the formatter has never tested. See the
 
 ## Install
 
+### The one-line installer
+
+```sh
+curl -fsSL https://normfix.vercel.app/install.sh | sh
+```
+
+It detects your platform, downloads the matching release archive, verifies it
+against the published `SHA256SUMS`, and installs the binary into
+`~/.local/bin`. It never uses `sudo`, never writes to a system directory, and
+never installs a toolchain, so it works on a 42 workstation where you have no
+administrative rights.
+
+Two environment variables change what it does:
+
+```sh
+NORMFIX_VERSION=v0.4.0-beta.1 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+```
+
+A checksum mismatch aborts the install and prints both digests. Read the script
+before piping it to a shell if you would rather see what it does:
+<https://normfix.vercel.app/install.sh>
+
+### Homebrew
+
+```sh
+brew install viniciusnevescosta/normfix/normfix
+```
+
+The formula installs the same verified prebuilt binary; it does not build from
+source. Available for macOS and Linuxbrew.
+
 ### Prebuilt binaries
 
 Tagged releases provide native archives for Linux x86-64 and ARM64, plus macOS

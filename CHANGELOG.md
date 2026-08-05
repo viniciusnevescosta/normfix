@@ -60,6 +60,12 @@ single native binary and the command is `normfix`, not `norminette-fix`.
 - **Release pipeline.** Four prebuilt archives (Linux x86-64/ARM64, macOS
   Intel/Apple Silicon) with build provenance attestation and a `SHA256SUMS`
   manifest.
+- **One-line installer.** `curl -fsSL https://normfix.vercel.app/install.sh | sh`
+  detects the platform, verifies the download against the published
+  `SHA256SUMS`, and installs into `~/.local/bin`. No `sudo`, no system path, no
+  toolchain, so it works where a student has no administrative rights.
+- **Homebrew tap.** `brew install viniciusnevescosta/normfix/normfix` installs
+  the same verified prebuilt binary.
 - **Offline rule explanations.** `normfix explain RULE_ID` prints a bundled
   article without scanning a project or using the network.
 

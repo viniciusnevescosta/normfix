@@ -34,26 +34,28 @@ pipx install norminette==3.3.59
 
 ## Install
 
-Download the archive for your machine from the
-[latest release](https://github.com/viniciusnevescosta/normfix/releases/latest),
-verify it against `SHA256SUMS`, and put `normfix` on `PATH`.
+```sh
+curl -fsSL https://normfix.vercel.app/install.sh | sh
+```
 
-| Platform | Archive |
-|---|---|
-| Linux x86-64 | `normfix-x86_64-linux-gnu.tar.gz` |
-| Linux ARM64 | `normfix-aarch64-linux-gnu.tar.gz` |
-| macOS Intel | `normfix-x86_64-macos.tar.gz` |
-| macOS Apple Silicon | `normfix-aarch64-macos.tar.gz` |
+Downloads the archive for your machine, verifies it against the published
+`SHA256SUMS`, and installs into `~/.local/bin`. No sudo, no system path, no
+toolchain, which is what makes it work on a locked-down 42 workstation.
 
-Or build it from a checkout:
+With Homebrew:
 
 ```sh
-cargo install --path crates/normfix-cli --locked
+brew install viniciusnevescosta/normfix/normfix
 ```
+
+Or download the archive for your platform from the
+[releases page](https://github.com/viniciusnevescosta/normfix/releases) and
+verify it yourself, or build from a checkout with
+`cargo install --path crates/normfix-cli --locked`.
 
 There is no native Windows archive: use WSL, or the
 [browser playground](https://normfix.vercel.app). Full instructions, including
-checksum and provenance verification, are in
+provenance verification, are in
 [Getting started](https://normfix.vercel.app/docs/guide/getting-started).
 
 ## Use it

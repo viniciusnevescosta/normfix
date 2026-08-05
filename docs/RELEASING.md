@@ -99,3 +99,18 @@ is wrong, mark that release as a prerelease or remove its downloadable assets,
 fix the repository, increment the version, and publish a new tag. Checksums and
 provenance are meaningful only when one tag identifies one immutable source
 state.
+
+## After the release
+
+The Homebrew tap is a separate repository,
+[`viniciusnevescosta/homebrew-normfix`](https://github.com/viniciusnevescosta/homebrew-normfix),
+and it is not updated by the release workflow. Once the archives are published:
+
+1. update `version`, the four URLs, and the four `sha256` values in
+   `packaging/homebrew/normfix.rb` from the published `SHA256SUMS`;
+2. copy it to `Formula/normfix.rb` in the tap and push;
+3. verify with `brew fetch viniciusnevescosta/normfix/normfix`, which fails
+   loudly on a wrong checksum.
+
+The one-line installer needs no release step: it resolves the newest release
+through the GitHub API and reads the checksums from the manifest.
