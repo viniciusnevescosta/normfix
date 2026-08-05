@@ -1,0 +1,25 @@
+.playground-nav-link {
+  margin-left: 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 16px;
+  padding: 2px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 24px;
+  color: var(--vp-c-text-1);
+  white-space: nowrap;
+  transition:
+    border-color 0.25s,
+    color 0.25s;
+}
+
+.playground-nav-link:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+@media (max-width: 767px) {
+  .playground-nav-link {
+    display: none;
+  }
+}
