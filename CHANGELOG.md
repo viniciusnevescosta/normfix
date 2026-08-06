@@ -10,6 +10,56 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [0.4.0-beta.5] / 2026-08-06
+
+Written against an external code review. The review's own top priority was
+benchmarks, on the grounds that a stated performance goal without instruments
+is a guess. That turned out to be exactly right: the first benchmark found a
+3-to-4x win that hand timing had hidden for weeks.
+
+### Added
+
+- **Benchmarks** (`cargo bench -p normfix-c-actions`) covering an
+  already-correct file, a messy file, and a large one, plus an informational CI
+  job. They measure the code this project owns; the official checker and the
+  compiler dominate a cold run, but their cost is a process launch and says
+  nothing about a change made here.
+- **Two generated properties**: formatting any generated function twice equals
+  formatting it once, and a function name survives layout verbatim.
+- **Two fuzz targets** for the invariants generation cannot reach: the tape
+  reconstructs any input byte for byte, and the action pipeline returns a value
+  or a typed error rather than panicking. `cargo-fuzz` needs nightly, so the
+  crate sits outside the pinned workspace and is documented as a manual step.
+- **`--allow-untested-norminette`.** Refusing every release but 3.3.59 means
+  the tool stops working for everyone the day 42 upgrades. The flag continues
+  and reports `NORMINETTE_VERSION_UNTESTED`. This does not weaken the safety
+  argument: the before/after proof compares two answers from the same
+  executable, so a run still cannot make its own official result worse.
+
+### Changed
+
+- **The source is parsed once per pass instead of once per phase.** It cannot
+  change while the phase loop runs, because accepting a batch is the only thing
+  that rewrites it and that breaks out immediately. An already-correct 50-line
+  file went from 4.49 ms to 0.98 ms and a messy 800-line file from 108 ms to
+  37.9 ms. End to end on a real project a warm run improved 29 percent and a
+  cold run 5 percent, because a cold run is dominated by the checker
+  subprocess.
+- **The README opens with something executable**: the install line, a
+  before-and-after diff, and the field-test number. Provenance verification
+  moved next to the install instructions, because an attestation nobody is told
+  about protects nobody.
+
+### Known gaps
+
+- `pipeline.rs` is 3 800 lines and remains the largest module. Splitting it is
+  a maintenance improvement with no behavioral effect, and a refactor of that
+  size immediately before a stable release trades a real risk for a future
+  benefit. It is the first change after 1.0.0.
+- Benchmarks measure this project's own code, not the end-to-end run. The
+  dominant cold-run cost is one Python process per file, which would need
+  batched invocation to address, and that restructures the compatibility path.
+
 ## [0.4.0-beta.4] / 2026-08-06
 
 The last beta. A performance and hardening pass, plus self-update.
@@ -259,6 +309,7 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[0.4.0-beta.5]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.5
 [0.4.0-beta.4]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.4
 [0.4.0-beta.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.3
 [0.4.0-beta.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.2

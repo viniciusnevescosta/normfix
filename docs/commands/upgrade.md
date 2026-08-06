@@ -9,7 +9,7 @@ normfix upgrade --check  # report only
 
 ```console
 $ normfix upgrade --check
-normfix 0.4.0-beta.4 is already the newest release.
+normfix 0.4.0-beta.5 is already the newest release.
 ```
 
 ## What it does, in order
@@ -45,7 +45,7 @@ keeps the old file until it exits.
 A normal run prints one line when a newer release exists:
 
 ```text
-normfix 0.4.0-beta.4 is available; this is 0.4.0-beta.4. Run `normfix upgrade`.
+normfix 0.4.0-beta.5 is available; this is 0.4.0-beta.5. Run `normfix upgrade`.
 ```
 
 This is the only network access outside `upgrade` itself, so it is deliberately
