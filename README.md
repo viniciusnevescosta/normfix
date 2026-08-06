@@ -30,15 +30,22 @@ uploaded.
 
 ## Requirements
 
-- The official Norminette `3.3.59` on `PATH`, or supplied with
-  `--norminette PATH`. Any other release is rejected rather than accepted with
-  a warning.
-- Rust 1.85 or newer only when building from source. Release archives contain a
-  native binary.
+The official Norminette `3.3.59` on `PATH`, or supplied with
+`--norminette PATH`:
 
 ```sh
 pipx install norminette==3.3.59
 ```
+
+`normfix` does not reimplement it. The official checker decides what counts as
+a Norm error, and every run compares its answer before and after the edits; that
+comparison is the reason a run cannot leave a file worse than it found it.
+Another release is refused by default, because the rule names and locations
+feed that proof. Pass `--allow-untested-norminette` when 42 upgrades before this
+project does.
+
+Nothing else is required. The release archives contain a native binary and no
+toolchain.
 
 ## Install
 
@@ -62,9 +69,10 @@ Once installed, keep it current with:
 normfix upgrade
 ```
 
-Or download the archive from the
+You can also download the archive directly from the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases), or
-build from a checkout with `cargo install --path crates/normfix-cli --locked`.
+build it from a checkout with
+`cargo install --path crates/normfix-cli --locked`.
 
 ### Verify what you installed
 

@@ -17,6 +17,11 @@ disagreements turn out to be disagreements with a decision recorded there.
 
 ## Setup
 
+Building from source needs Rust 1.85 or newer; the pinned toolchain in
+`rust-toolchain.toml` is installed for you by the first command. Nobody
+*using* normfix needs a toolchain, because the release archives ship a native
+binary.
+
 ```sh
 rustup show active-toolchain     # installs the pinned toolchain
 pipx install norminette==3.3.59  # the compatibility authority
