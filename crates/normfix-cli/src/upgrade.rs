@@ -95,12 +95,16 @@ fn download(url: &str, target: &Path) -> Result<(), String> {
 }
 
 fn fetch_text(url: &str) -> Result<String, String> {
-    let temporary = std::env::temp_dir().join(format!("normfix-fetch-{}", std::process::id()));
+    // A predictable path under the shared temporary directory is a symbolic
+    // link waiting to happen: on a multi-user machine another account can
+    // create it first and redirect the download. TempDir creates a private
+    // directory that cannot already exist.
+    let directory = tempfile::TempDir::new()
+        .map_err(|error| format!("could not create a private temporary directory: {error}"))?;
+    let temporary = directory.path().join("response");
     download(url, &temporary)?;
-    let text = fs::read_to_string(&temporary)
-        .map_err(|error| format!("could not read the downloaded response: {error}"));
-    let _ = fs::remove_file(&temporary);
-    text
+    fs::read_to_string(&temporary)
+        .map_err(|error| format!("could not read the downloaded response: {error}"))
 }
 
 fn which(program: &str) -> Option<PathBuf> {

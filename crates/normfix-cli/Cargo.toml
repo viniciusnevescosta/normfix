@@ -28,6 +28,7 @@ normfix-project = { path = "../normfix-project" }
 normfix-report = { path = "../normfix-report" }
 serde.workspace = true
 sha2.workspace = true
+tempfile.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
