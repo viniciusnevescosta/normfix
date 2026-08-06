@@ -38,6 +38,10 @@ publish = false
 [workspace.dependencies]
 anyhow = "1.0"
 anstyle = "1.0"
+# The renderer rustc itself uses. Its only dependencies are `anstyle` and
+# `unicode-width`, both already listed here, so pointing at the source of an
+# error costs no new transitive crate. Its declared MSRV matches this workspace.
+annotate-snippets = "0.12"
 blake3 = "1.8"
 camino = { version = "1.2", features = ["serde1"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }

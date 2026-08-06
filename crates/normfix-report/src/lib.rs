@@ -8,18 +8,24 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
+use annotate_snippets::{Annotation, AnnotationKind, Group, Level, Origin, Renderer, Snippet};
 use camino::{Utf8Path, Utf8PathBuf};
-use normfix_core::{
-    Diagnostic, DiagnosticSource, FixRecord, LineIndex, Severity, TextSize, visual_width,
-};
+use normfix_core::{Diagnostic, DiagnosticSource, FixRecord, Severity};
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 
 /// Version of the stable JSON report schema.
 pub const REPORT_SCHEMA_VERSION: u32 = 1;
+
+/// Fixed width every snippet is rendered against.
+///
+/// Norm-conforming lines fit in 80 columns; the rest is gutter and margin for
+/// the few lines that do not yet conform.
+const RENDER_WIDTH: usize = 120;
 
 /// Execution mode represented in a report.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -511,6 +517,14 @@ struct DiagnosticGroupKey {
     help: Option<String>,
 }
 
+/// Occurrences shown per rule before the rest are summarized.
+///
+/// A project can carry thousands of one diagnostic. Printing every snippet
+/// would make the report unreadable in exactly the way snippets are meant to
+/// prevent, so the default shows enough to recognize the pattern and names the
+/// flag that shows the rest.
+const GROUPED_OCCURRENCE_LIMIT: usize = 3;
+
 fn render_diagnostics(output: &mut String, paint: &Paint, files: &[FileReport], verbose: bool) {
     if verbose {
         render_diagnostics_expanded(output, paint, files);
@@ -536,6 +550,7 @@ fn render_diagnostics(output: &mut String, paint: &Paint, files: &[FileReport], 
 
     output.push_str("\nDiagnostics grouped by rule\n");
     let sources = source_map(files);
+    let renderer = snippet_renderer(paint.color);
     for (group, mut diagnostics) in groups {
         diagnostics.sort_by(|left, right| {
             left.path
@@ -543,249 +558,273 @@ fn render_diagnostics(output: &mut String, paint: &Paint, files: &[FileReport], 
                 .then_with(|| left.range.cmp(&right.range))
                 .then_with(|| left.message.cmp(&right.message))
         });
-        let paths = diagnostics
-            .iter()
-            .map(|diagnostic| diagnostic.path.as_path())
-            .collect::<BTreeSet<_>>();
-        let (level, style) = severity_label(group.severity, paint);
-        let occurrence_word = if diagnostics.len() == 1 {
-            "occurrence"
-        } else {
-            "occurrences"
-        };
-        let file_word = if paths.len() == 1 { "file" } else { "files" };
-        let _ = writeln!(
-            output,
-            "\n{style}{level}[{}]:{} {} {occurrence_word} in {} {file_word}",
-            terminal_safe_inline(&group.rule_id),
-            paint.reset,
-            diagnostics.len(),
-            paths.len()
-        );
-        for diagnostic in diagnostics {
-            let location = diagnostic_location(diagnostic, &sources);
-            let _ = writeln!(
-                output,
-                "  {location:<36} {}",
-                terminal_safe_inline(&diagnostic.message)
-            );
-            for note in &diagnostic.notes {
-                let _ = writeln!(output, "    note: {}", terminal_safe_inline(note));
-            }
-        }
-        if let Some(help) = &group.help {
-            let _ = writeln!(output, " = help: {}", terminal_safe_inline(help));
-        }
-        let _ = writeln!(
-            output,
-            " = source: {}",
-            terminal_safe_inline(&source_label(&group.source))
-        );
-        let _ = writeln!(
-            output,
-            " = explain: normfix explain {}",
-            terminal_safe_inline(&group.rule_id)
-        );
+        output.push('\n');
+        output.push_str(&render_rule_group(
+            &renderer,
+            &group,
+            &diagnostics,
+            &sources,
+        ));
     }
 }
 
-fn diagnostic_location(diagnostic: &Diagnostic, sources: &BTreeMap<&Utf8Path, &str>) -> String {
-    let Some(source) = sources.get(diagnostic.path.as_path()) else {
-        return format!(
-            "{}:{}..{}",
-            safe_path(&diagnostic.path),
-            diagnostic.range.start().get(),
-            diagnostic.range.end().get()
-        );
+/// One rule, its occurrences marked in the source they appear in.
+///
+/// Occurrences in the same file share a snippet so the reader sees the pattern
+/// in its own context, rather than a list of coordinates to go look up.
+fn render_rule_group(
+    renderer: &Renderer,
+    group: &DiagnosticGroupKey,
+    diagnostics: &[&Diagnostic],
+    sources: &BTreeMap<&Utf8Path, &str>,
+) -> String {
+    let paths = diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.path.as_path())
+        .collect::<BTreeSet<_>>();
+
+    // Every borrowed string the report shows has to outlive the groups that
+    // reference it, so the escaping happens here and the builder below only
+    // borrows.
+    let shown = diagnostics.len().min(GROUPED_OCCURRENCE_LIMIT);
+    let mut plans: Vec<SnippetPlan<'_>> = Vec::new();
+    let mut missing_sources: Vec<String> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+    for diagnostic in diagnostics.iter().take(shown) {
+        for note in &diagnostic.notes {
+            let note = terminal_safe_inline(note);
+            if !notes.contains(&note) {
+                notes.push(note);
+            }
+        }
+        let label = if diagnostics.len() == 1 {
+            String::new()
+        } else {
+            terminal_safe_inline(&diagnostic.message)
+        };
+        let source = sources
+            .get(diagnostic.path.as_path())
+            .filter(|_| has_locatable_range(diagnostic));
+        let Some(source) = source else {
+            let path = safe_path(&diagnostic.path);
+            if !missing_sources.contains(&path) {
+                missing_sources.push(path);
+            }
+            continue;
+        };
+        let span = snippet_span(source, diagnostic);
+        match plans
+            .iter_mut()
+            .find(|plan| plan.path == diagnostic.path.as_path())
+        {
+            Some(plan) => plan.spans.push((span, label)),
+            None => plans.push(SnippetPlan {
+                path: diagnostic.path.as_path(),
+                safe_path: safe_path(&diagnostic.path),
+                source,
+                spans: vec![(span, label)],
+            }),
+        }
+    }
+
+    let occurrence_word = if diagnostics.len() == 1 {
+        "occurrence"
+    } else {
+        "occurrences"
     };
-    let Ok(index) = LineIndex::new(Arc::from(*source)) else {
-        return safe_path(&diagnostic.path);
+    let file_word = if paths.len() == 1 { "file" } else { "files" };
+    let title = if diagnostics.len() == 1 {
+        terminal_safe_inline(&diagnostics[0].message)
+    } else {
+        format!(
+            "{} {occurrence_word} in {} {file_word}",
+            diagnostics.len(),
+            paths.len()
+        )
     };
-    index.line_column(diagnostic.range.start()).map_or_else(
-        || safe_path(&diagnostic.path),
-        |position| {
-            format!(
-                "{}:{}:{}",
-                safe_path(&diagnostic.path),
-                position.line,
-                position.visual_column
-            )
-        },
-    )
+    let rule_id = terminal_safe_inline(&group.rule_id);
+    let help = group.help.as_deref().map(terminal_safe_inline);
+    let origin = terminal_safe_inline(&source_label(&group.source));
+    let explain = format!("normfix explain {rule_id}");
+    let remaining = diagnostics.len().saturating_sub(shown);
+    let hidden = format!(
+        "{remaining} further {} not shown; run the same command with --verbose",
+        if remaining == 1 {
+            "occurrence"
+        } else {
+            "occurrences"
+        }
+    );
+
+    let mut report = Group::with_title(
+        annotation_level(group.severity)
+            .primary_title(title.as_str())
+            .id(rule_id.as_str()),
+    );
+    for plan in &plans {
+        report = report.element(plan.to_snippet());
+    }
+    for path in &missing_sources {
+        report = report.element(Origin::path(path.as_str()));
+    }
+    if remaining > 0 {
+        report = report.element(Level::NOTE.message(hidden.as_str()));
+    }
+    if let Some(help) = &help {
+        report = report.element(Level::HELP.message(help.as_str()));
+    }
+    for note in &notes {
+        report = report.element(Level::NOTE.message(note.as_str()));
+    }
+    report = report
+        .element(Level::NOTE.with_name("source").message(origin.as_str()))
+        .element(Level::NOTE.with_name("explain").message(explain.as_str()));
+
+    let mut text = renderer.render(&[report]);
+    text.push('\n');
+    text
+}
+
+/// Every annotation normfix wants to place in one file's source.
+struct SnippetPlan<'a> {
+    path: &'a Utf8Path,
+    safe_path: String,
+    source: &'a str,
+    spans: Vec<(Range<usize>, String)>,
+}
+
+impl<'a> SnippetPlan<'a> {
+    fn to_snippet(&'a self) -> Snippet<'a, Annotation<'a>> {
+        let mut snippet = Snippet::source(self.source)
+            .path(self.safe_path.as_str())
+            .fold(true);
+        for (span, label) in &self.spans {
+            let mut annotation = AnnotationKind::Primary.span(span.clone());
+            if !label.is_empty() {
+                annotation = annotation.label(label.as_str());
+            }
+            snippet = snippet.annotation(annotation);
+        }
+        snippet
+    }
+}
+
+fn snippet_renderer(color: bool) -> Renderer {
+    let renderer = if color {
+        Renderer::styled()
+    } else {
+        Renderer::plain()
+    };
+    // Reading the real terminal width would make one report render two ways on
+    // two machines, and these reports get diffed and pasted into issues.
+    renderer.term_width(RENDER_WIDTH)
+}
+
+const fn annotation_level(severity: Severity) -> Level<'static> {
+    match severity {
+        Severity::Error => Level::ERROR,
+        Severity::Warning => Level::WARNING,
+        Severity::Info => Level::INFO,
+    }
+}
+
+/// Whether pointing at this diagnostic's range would tell the reader the truth.
+///
+/// A compiler reports against the whole translation unit, so a diagnostic can
+/// belong to a file whose local position is unknown; the pipeline records that
+/// as an empty range at the start of the file and names the real location in a
+/// note. Drawing a caret there would mark the 42 header block as the problem,
+/// which is worse than showing no snippet at all.
+fn has_locatable_range(diagnostic: &Diagnostic) -> bool {
+    diagnostic.source != DiagnosticSource::Compiler
+        || diagnostic.range.start().get() != 0
+        || diagnostic.range.end().get() != 0
+}
+
+/// Clamps a diagnostic range to something the source can actually slice.
+///
+/// Ranges arrive from three independent authorities and travel through the
+/// cache, so a stale entry or a column landing inside a multi-byte character
+/// must degrade to a caret in roughly the right place, never to a panic in the
+/// renderer.
+fn snippet_span(source: &str, diagnostic: &Diagnostic) -> Range<usize> {
+    let limit = source.len();
+    let mut start = usize::try_from(diagnostic.range.start().get())
+        .unwrap_or(usize::MAX)
+        .min(limit);
+    let mut end = usize::try_from(diagnostic.range.end().get())
+        .unwrap_or(usize::MAX)
+        .min(limit)
+        .max(start);
+    while start > 0 && !source.is_char_boundary(start) {
+        start -= 1;
+    }
+    while end < limit && !source.is_char_boundary(end) {
+        end += 1;
+    }
+    start..end
 }
 
 fn render_diagnostics_expanded(output: &mut String, paint: &Paint, files: &[FileReport]) {
     let mut emitted_header = false;
+    let renderer = snippet_renderer(paint.color);
     for file in files {
-        let Some(source) = file.fixed.as_ref().or(file.original.as_ref()) else {
-            for diagnostic in &file.after {
-                if !emitted_header {
-                    output.push_str("\nDiagnostics\n");
-                    emitted_header = true;
-                }
-                render_diagnostic_without_source(output, paint, diagnostic);
-            }
-            continue;
-        };
-        let line_index = LineIndex::new(Arc::clone(source)).ok();
+        let source = file.fixed.as_deref().or(file.original.as_deref());
         for diagnostic in &file.after {
             if !emitted_header {
                 output.push_str("\nDiagnostics\n");
                 emitted_header = true;
             }
-            if let Some(index) = &line_index {
-                render_source_diagnostic(output, paint, diagnostic, source, index);
-            } else {
-                render_diagnostic_without_source(output, paint, diagnostic);
-            }
+            output.push('\n');
+            output.push_str(&render_one_diagnostic(&renderer, diagnostic, source));
         }
     }
 }
 
-fn render_diagnostic_without_source(output: &mut String, paint: &Paint, diagnostic: &Diagnostic) {
-    let (level, style) = severity_label(diagnostic.severity, paint);
-    let _ = writeln!(
-        output,
-        "\n{style}{level}[{}]:{} {}",
-        terminal_safe_inline(&diagnostic.rule_id),
-        paint.reset,
-        terminal_safe_inline(&diagnostic.message)
-    );
-    let _ = writeln!(
-        output,
-        " --> {}:{}..{}",
-        safe_path(&diagnostic.path),
-        diagnostic.range.start().get(),
-        diagnostic.range.end().get()
-    );
-    render_diagnostic_footer(output, diagnostic);
-}
-
-fn render_source_diagnostic(
-    output: &mut String,
-    paint: &Paint,
+/// One diagnostic with its own snippet, help, notes and origin.
+fn render_one_diagnostic(
+    renderer: &Renderer,
     diagnostic: &Diagnostic,
-    source: &str,
-    line_index: &LineIndex,
-) {
-    let Some(position) = line_index.line_column(diagnostic.range.start()) else {
-        render_diagnostic_without_source(output, paint, diagnostic);
-        return;
-    };
-    let (level, style) = severity_label(diagnostic.severity, paint);
-    let _ = writeln!(
-        output,
-        "\n{style}{level}[{}]:{} {}",
-        terminal_safe_inline(&diagnostic.rule_id),
-        paint.reset,
-        terminal_safe_inline(&diagnostic.message)
-    );
-    let _ = writeln!(
-        output,
-        " {}--> {}:{}:{}{}",
-        paint.blue,
-        safe_path(&diagnostic.path),
-        position.line,
-        position.visual_column,
-        paint.reset
-    );
-    let Some(range) = line_index.line_range(position.line) else {
-        render_diagnostic_footer(output, diagnostic);
-        return;
-    };
-    let start = usize::try_from(range.start().get()).ok();
-    let end = usize::try_from(range.end().get()).ok();
-    let Some(raw_line) = start
-        .zip(end)
-        .and_then(|(start, end)| source.get(start..end))
-        .map(|line| line.trim_end_matches(['\r', '\n']))
-    else {
-        render_diagnostic_footer(output, diagnostic);
-        return;
-    };
-    let expanded = expand_tabs(raw_line);
-    let number_width = position.line.to_string().len();
-    let _ = writeln!(output, "{:>number_width$} |", "");
-    let _ = writeln!(output, "{} | {expanded}", position.line);
-    let caret_offset = position.visual_column.saturating_sub(1) as usize;
-    let caret_length = diagnostic_caret_length(diagnostic, source, raw_line, range.start());
-    let marker = format!(
-        "{style}{}{reset}",
-        "^".repeat(caret_length),
-        reset = paint.reset
-    );
-    let _ = writeln!(
-        output,
-        "{:>number_width$} | {}{}",
-        "",
-        " ".repeat(caret_offset),
-        marker
-    );
-    render_diagnostic_footer(output, diagnostic);
-}
+    source: Option<&str>,
+) -> String {
+    let rule_id = terminal_safe_inline(&diagnostic.rule_id);
+    let message = terminal_safe_inline(&diagnostic.message);
+    let path = safe_path(&diagnostic.path);
+    let help = diagnostic.help.as_deref().map(terminal_safe_inline);
+    let notes = diagnostic
+        .notes
+        .iter()
+        .map(|note| terminal_safe_inline(note))
+        .collect::<Vec<_>>();
+    let origin = terminal_safe_inline(&source_label(&diagnostic.source));
 
-fn render_diagnostic_footer(output: &mut String, diagnostic: &Diagnostic) {
-    if let Some(help) = &diagnostic.help {
-        let _ = writeln!(output, " = help: {}", terminal_safe_inline(help));
-    }
-    for note in &diagnostic.notes {
-        let _ = writeln!(output, " = note: {}", terminal_safe_inline(note));
-    }
-    let _ = writeln!(
-        output,
-        " = source: {}",
-        terminal_safe_inline(&source_label(&diagnostic.source))
+    let mut report = Group::with_title(
+        annotation_level(diagnostic.severity)
+            .primary_title(message.as_str())
+            .id(rule_id.as_str()),
     );
-}
-
-fn diagnostic_caret_length(
-    diagnostic: &Diagnostic,
-    source: &str,
-    raw_line: &str,
-    line_start: TextSize,
-) -> usize {
-    let relative_start = diagnostic
-        .range
-        .start()
-        .get()
-        .saturating_sub(line_start.get()) as usize;
-    let relative_end = diagnostic
-        .range
-        .end()
-        .get()
-        .saturating_sub(line_start.get()) as usize;
-    let end = relative_end.min(raw_line.len());
-    let start = relative_start.min(end);
-    source
-        .get(
-            usize::try_from(line_start.get()).unwrap_or_default() + start
-                ..usize::try_from(line_start.get()).unwrap_or_default() + end,
-        )
-        .map_or(1, |fragment| {
-            visual_width(fragment, 1).saturating_sub(1) as usize
-        })
-        .max(1)
-}
-
-fn expand_tabs(line: &str) -> String {
-    let mut output = String::new();
-    let mut column = 1_u32;
-    for character in line.chars() {
-        if character == '\t' {
-            let count = 4 - ((column - 1) % 4);
-            output.push_str(&" ".repeat(count as usize));
-            column += count;
-        } else if character.is_control() {
-            let escaped = format!("\\u{{{:x}}}", u32::from(character));
-            column =
-                column.saturating_add(u32::try_from(escaped.chars().count()).unwrap_or(u32::MAX));
-            output.push_str(&escaped);
-        } else {
-            output.push(character);
-            column = column.saturating_add(1);
-        }
+    report = match source.filter(|_| has_locatable_range(diagnostic)) {
+        Some(source) => report.element(
+            Snippet::source(source)
+                .path(path.as_str())
+                .fold(true)
+                .annotation(AnnotationKind::Primary.span(snippet_span(source, diagnostic))),
+        ),
+        // A cached report drops its source buffer, so the location is all that
+        // survives. Naming it beats dropping the diagnostic.
+        None => report.element(Origin::path(path.as_str())),
+    };
+    if let Some(help) = &help {
+        report = report.element(Level::HELP.message(help.as_str()));
     }
-    output
+    for note in &notes {
+        report = report.element(Level::NOTE.message(note.as_str()));
+    }
+    report = report.element(Level::NOTE.with_name("source").message(origin.as_str()));
+
+    let mut text = renderer.render(&[report]);
+    text.push('\n');
+    text
 }
 
 fn render_failures(output: &mut String, paint: &Paint, files: &[FileReport]) {
@@ -863,14 +902,6 @@ fn has_blocking_diagnostic(diagnostics: &[Diagnostic]) -> bool {
         .any(|diagnostic| diagnostic.severity != Severity::Info)
 }
 
-fn severity_label(severity: Severity, paint: &Paint) -> (&'static str, &str) {
-    match severity {
-        Severity::Error => ("error", paint.bold_red),
-        Severity::Warning => ("warning", paint.bold_yellow),
-        Severity::Info => ("info", paint.bold_blue),
-    }
-}
-
 fn source_label(source: &DiagnosticSource) -> String {
     match source {
         DiagnosticSource::NativeNorm41 => "Norm v4.1 native rule".to_owned(),
@@ -937,6 +968,9 @@ fn format_duration(seconds: f64) -> String {
 }
 
 struct Paint {
+    /// Whether this run emits ANSI styling, which the snippet renderer needs
+    /// to answer for itself.
+    color: bool,
     reset: &'static str,
     bold: &'static str,
     green: &'static str,
@@ -945,7 +979,6 @@ struct Paint {
     bold_yellow: &'static str,
     bold_red: &'static str,
     bold_blue: &'static str,
-    blue: &'static str,
     bold_cyan: &'static str,
 }
 
@@ -953,6 +986,7 @@ impl Paint {
     const fn new(color: bool) -> Self {
         if color {
             Self {
+                color,
                 reset: "\x1b[0m",
                 bold: "\x1b[1m",
                 green: "\x1b[32m",
@@ -961,11 +995,12 @@ impl Paint {
                 bold_yellow: "\x1b[1;33m",
                 bold_red: "\x1b[1;31m",
                 bold_blue: "\x1b[1;34m",
-                blue: "\x1b[34m",
+
                 bold_cyan: "\x1b[1;36m",
             }
         } else {
             Self {
+                color,
                 reset: "",
                 bold: "",
                 green: "",
@@ -974,7 +1009,7 @@ impl Paint {
                 bold_yellow: "",
                 bold_red: "",
                 bold_blue: "",
-                blue: "",
+
                 bold_cyan: "",
             }
         }
@@ -1003,7 +1038,10 @@ mod tests {
     use camino::Utf8PathBuf;
     use normfix_core::{Diagnostic, DiagnosticSource, FixRecord, Severity, TextRange, TextSize};
 
-    use super::{FileReport, RenderOptions, ReportIdentity, ReportMode, RunReport, render_human};
+    use super::{
+        FileReport, GROUPED_OCCURRENCE_LIMIT, RenderOptions, ReportIdentity, ReportMode, RunReport,
+        render_human,
+    };
 
     fn diagnostic() -> Diagnostic {
         Diagnostic {
@@ -1061,11 +1099,63 @@ mod tests {
 
         assert!(rendered.contains("warning[TOO_MANY_LINES]"));
         assert!(rendered.contains("--> src/main.c:1:6"));
-        assert!(rendered.contains("1 | int main(void)"));
-        assert!(rendered.contains('^'));
+        // The source line is shown with its tab expanded, and the carets sit
+        // under the exact bytes the range covers.
+        assert!(rendered.contains("1 | int    main(void)"));
+        assert!(rendered.contains("  |         ^^^^"));
         assert!(rendered.contains("= help: Extract one coherent responsibility"));
         assert!(rendered.contains("= source: Norm v4.1 native rule"));
         assert!(!rendered.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn a_caret_marks_the_bytes_the_range_covers_on_a_tab_indented_line() {
+        // The shape of a real 42 statement: two tabs, then the call.
+        let source: Arc<str> = Arc::from("void\tf(void)\n{\n\t\tsort_medium(ctx);\n}\n");
+        let call = source.find("sort_medium").expect("the call");
+        let mut file = file();
+        file.original = Some(Arc::clone(&source));
+        file.fixed = Some(Arc::clone(&source));
+        file.after[0].range = TextRange::new(
+            TextSize::new(u32::try_from(call).expect("fits")),
+            TextSize::new(u32::try_from(call + "sort_medium".len()).expect("fits")),
+        )
+        .expect("range");
+
+        let report = RunReport::new(
+            "0.4.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![file],
+            Duration::ZERO,
+        );
+        let rendered = render_human(
+            &report,
+            RenderOptions {
+                color: false,
+                verbose: true,
+                show_diff: false,
+            },
+        );
+
+        let lines = rendered.lines().collect::<Vec<_>>();
+        let source_line = lines
+            .iter()
+            .position(|line| line.contains("sort_medium(ctx);"))
+            .expect("the source line");
+        let carets = lines[source_line + 1];
+        let identifier = lines[source_line]
+            .find("sort_medium")
+            .expect("the identifier");
+        assert_eq!(
+            carets.find('^'),
+            Some(identifier),
+            "the caret must start under the identifier\n{}\n{carets}",
+            lines[source_line]
+        );
+        assert_eq!(carets.matches('^').count(), "sort_medium".len());
     }
 
     #[test]
@@ -1099,6 +1189,140 @@ mod tests {
         assert!(rendered.contains("src/main.c:1:6"));
         assert!(rendered.contains("src/other.c:1:6"));
         assert!(rendered.contains("= explain: normfix explain TOO_MANY_LINES"));
+        // The default view shows the source, not only coordinates, and each
+        // occurrence keeps its own message as the label on its own carets.
+        assert_eq!(rendered.matches("1 | int    main(void)").count(), 2);
+        assert!(rendered.contains("^^^^ Function exceeds the 25-line limit"));
+        assert!(rendered.contains("^^^^ other() exceeds the 25-line limit"));
+        // The shared note is stated once for the whole rule, not repeated per
+        // occurrence, which is what made the old grouped output noisy.
+        assert_eq!(
+            rendered.matches("= note: main() has 30 body lines").count(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_rule_with_many_occurrences_shows_a_bounded_number_of_snippets() {
+        let files = (0..12)
+            .map(|index| {
+                let mut file = file();
+                file.path = Utf8PathBuf::from(format!("src/f{index:02}.c"));
+                file.after[0].path = file.path.clone();
+                file
+            })
+            .collect::<Vec<_>>();
+        let report = RunReport::new(
+            "0.4.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            files,
+            Duration::ZERO,
+        );
+
+        let grouped = render_human(
+            &report,
+            RenderOptions {
+                color: false,
+                verbose: false,
+                show_diff: false,
+            },
+        );
+
+        assert!(grouped.contains("warning[TOO_MANY_LINES]: 12 occurrences in 12 files"));
+        assert_eq!(
+            grouped.matches("1 | int    main(void)").count(),
+            GROUPED_OCCURRENCE_LIMIT,
+            "the default view must stay bounded on a project with many hits"
+        );
+        assert!(grouped.contains("9 further occurrences not shown"));
+        assert!(grouped.contains("--verbose"));
+
+        // The flag it names has to actually show the rest.
+        let expanded = render_human(
+            &report,
+            RenderOptions {
+                color: false,
+                verbose: true,
+                show_diff: false,
+            },
+        );
+        assert_eq!(expanded.matches("1 | int    main(void)").count(), 12);
+        assert!(!expanded.contains("further occurrences not shown"));
+    }
+
+    #[test]
+    fn a_compiler_diagnostic_with_no_local_position_draws_no_caret() {
+        // The pipeline records "reported against this file, position unknown"
+        // as an empty range at offset zero. Line 1 of a 42 file is the header
+        // block, so a caret there would accuse the wrong code.
+        let mut file = file();
+        file.after[0].source = DiagnosticSource::Compiler;
+        file.after[0].range = TextRange::empty(TextSize::new(0));
+        file.after[0].notes = vec!["Compiler location: includes/a.h:82:30".to_owned()];
+        let report = RunReport::new(
+            "0.4.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![file],
+            Duration::ZERO,
+        );
+
+        for verbose in [false, true] {
+            let rendered = render_human(
+                &report,
+                RenderOptions {
+                    color: false,
+                    verbose,
+                    show_diff: false,
+                },
+            );
+            assert!(
+                rendered.contains("--> src/main.c"),
+                "verbose={verbose}: the file must still be named"
+            );
+            assert!(
+                !rendered.contains("1 | int"),
+                "verbose={verbose}: no snippet may be drawn for an unknown position\n{rendered}"
+            );
+            assert!(rendered.contains("= note: Compiler location: includes/a.h:82:30"));
+        }
+    }
+
+    #[test]
+    fn a_diagnostic_without_its_source_still_names_where_it_is() {
+        let mut file = file();
+        file.original = None;
+        file.fixed = None;
+        let report = RunReport::new(
+            "0.4.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![file],
+            Duration::ZERO,
+        );
+
+        for verbose in [false, true] {
+            let rendered = render_human(
+                &report,
+                RenderOptions {
+                    color: false,
+                    verbose,
+                    show_diff: false,
+                },
+            );
+            assert!(
+                rendered.contains("src/main.c"),
+                "verbose={verbose}: the path must survive a missing source buffer"
+            );
+            assert!(rendered.contains("TOO_MANY_LINES"));
+        }
     }
 
     #[test]
