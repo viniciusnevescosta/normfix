@@ -116,6 +116,13 @@ releases. Automation should use `--format json` and check `schema_version`;
 JSON retains individual findings. An incompatible JSON structure requires a
 schema-version increment and compatibility notes.
 
+One consequence is worth stating plainly: the line and column printed beside a
+snippet follow the C compiler convention and count characters, while the
+official Norminette counts display columns. The two disagree on a tab-indented
+line. Neither number is part of the versioned surface, and the caret under the
+source is what locates the finding. See
+[Reporting](reference/reporting.md#reading-a-diagnostic).
+
 ## What versioning covers
 
 `normfix` follows Semantic Versioning. The version number describes the

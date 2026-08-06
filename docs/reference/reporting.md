@@ -1,22 +1,67 @@
 # Reporting, exit codes, and performance
 
-Human output includes:
+## Reading a diagnostic
+
+Every diagnostic is shown against the code it is about, so you can go straight
+to the line instead of looking a coordinate up:
+
+```text
+error[CC_IMPLICIT_FUNCTION_DECLARATION]: 2 occurrences in 2 files
+  --> srcs/sort/sort.c:30:3
+   |
+30 |         sort_medium(ctx);
+   |         ^^^^^^^^^^^ call to undeclared function 'sort_medium'
+   |
+  ::: srcs/sort/sort_adaptive.c:21:3
+   |
+21 |         sort_medium(ctx);
+   |         ^^^^^^^^^^^ call to undeclared function 'sort_medium'
+   |
+   = help: Fix this strict -Wall/-Wextra/-Werror compiler diagnostic, then rerun normfix.
+   = source: C compiler
+   = explain: normfix explain CC_IMPLICIT_FUNCTION_DECLARATION
+```
+
+The carets span the exact bytes the rule is about, not only its first
+character. Occurrences of one rule are grouped under one heading, each labelled
+with its own message, and the shared help, notes, origin, and `explain` hint
+are stated once for the group instead of repeated under every occurrence.
+
+The default view shows the first three occurrences of a rule and says how many
+it held back, because a project can carry thousands of one diagnostic.
+`--verbose` shows every one, each in its own section with its own snippet.
+
+A few details worth knowing:
+
+- Tabs are expanded, so the caret lands under the right character.
+- Control characters in your source are shown as visible pictures and never
+  reach the terminal as controls.
+- The column in the `-->` line is counted in characters, the convention a C
+  compiler uses. The official Norminette counts display columns instead, so its
+  own output can name a larger column for the same character on a tab-indented
+  line. The caret is the authoritative answer to *where*.
+- A compiler diagnostic that belongs to a file without a position inside it,
+  usually because the real location is in an included header, names the file
+  and the header rather than drawing a caret on unrelated code.
+
+The rendering uses [`annotate-snippets`], the library `rustc` renders its own
+diagnostics with.
+
+[`annotate-snippets`]: https://crates.io/crates/annotate-snippets
+
+## The rest of the output
 
 - a per-file status table: `CLEAN`, `INFO`, `FIXED`, `WOULD FIX`, `REVIEW`, or
   `FAILED`;
-- exact `path:line:display-column` locations;
-- grouped rule/severity/source sections, with every affected location and
-  message retained;
-- source snippets and carets in `--verbose` output, with tabs expanded to
-  four-column stops;
-- stable rule IDs, shared help, notes, diagnostic origin, and an
+- stable rule IDs, shared help, notes, diagnostic origin, and a
   `normfix explain RULE` hint;
 - optional accepted-fix details with `--verbose`;
 - unified diffs with `--diff`;
 - aggregate counts and elapsed wall time.
 
 Color is enabled only for an interactive stdout. `--no-color`, `NO_COLOR`, JSON
-output, and redirected output are color-free.
+output, and redirected output are color-free. Snippets are rendered against a
+fixed width, so one report reads the same way on two machines.
 
 `--format json` emits a deterministic, pretty-printed schema with
 `schema_version: 1`. It includes identity metadata, discovery and quarantine
