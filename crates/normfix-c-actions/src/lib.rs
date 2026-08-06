@@ -332,8 +332,10 @@ fn remap_diagnostics(
     diagnostics: &[ReportedDiagnostic],
     edits: &[Edit],
 ) -> Vec<ReportedDiagnostic> {
-    let before_lines = source::SourceLines::new(before);
-    let after_lines = source::SourceLines::new(after);
+    let before_index = source::SourceLines::index(before);
+    let after_index = source::SourceLines::index(after);
+    let before_lines = source::SourceLines::new(before, &before_index);
+    let after_lines = source::SourceLines::new(after, &after_index);
     diagnostics
         .iter()
         .map(|diagnostic| {

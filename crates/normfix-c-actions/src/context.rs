@@ -3,7 +3,7 @@
 use normfix_c_syntax::{CParser, ParsedFile, SyntaxFacts, TapePiece, TriviaKind};
 
 use crate::CActionError;
-use crate::source::{LexicalMap, SourceLines};
+use crate::source::{LexicalMap, PhysicalLine, SourceLines};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FingerprintMode {
@@ -23,6 +23,10 @@ pub(crate) struct ParsedContext {
     parsed: ParsedFile,
     tokens: Vec<Token>,
     lexical: LexicalMap,
+    /// Built once per parse. Every phase asks for the lines, and a file is
+    /// re-examined once per fixed-point pass, so rebuilding this per call cost
+    /// more than the edits themselves on a large file.
+    line_index: Vec<PhysicalLine>,
 }
 
 impl ParsedContext {
@@ -45,10 +49,12 @@ impl ParsedContext {
             });
         }
         let lexical = LexicalMap::scan(parsed.source());
+        let line_index = SourceLines::index(parsed.source());
         Ok(Self {
             parsed,
             tokens,
             lexical,
+            line_index,
         })
     }
 
@@ -65,7 +71,7 @@ impl ParsedContext {
     }
 
     pub(crate) fn lines(&self) -> SourceLines<'_> {
-        SourceLines::new(self.source())
+        SourceLines::new(self.source(), &self.line_index)
     }
 
     pub(crate) fn tokens(&self) -> &[Token] {

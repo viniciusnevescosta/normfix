@@ -161,7 +161,7 @@ fn hygiene_fix(
 #[derive(Clone, Debug)]
 pub(crate) struct SourceLines<'source> {
     source: &'source str,
-    lines: Vec<PhysicalLine>,
+    lines: &'source [PhysicalLine],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -172,7 +172,12 @@ pub(crate) struct PhysicalLine {
 }
 
 impl<'source> SourceLines<'source> {
-    pub(crate) fn new(source: &'source str) -> Self {
+    /// Builds the physical line index for one source.
+    ///
+    /// Scanning is linear, but every formatting phase asks for the lines and a
+    /// file is re-examined once per fixed-point pass, so the result is built
+    /// once per parsed context and borrowed from there.
+    pub(crate) fn index(source: &str) -> Vec<PhysicalLine> {
         let mut lines = Vec::new();
         let mut start = 0;
         for (index, byte) in source.bytes().enumerate() {
@@ -190,14 +195,17 @@ impl<'source> SourceLines<'source> {
                 start = index + 1;
             }
         }
-        if start < source.len() || lines.is_empty() {
-            let content_end = source.len();
+        if start < source.len() {
             lines.push(PhysicalLine {
                 start,
-                content_end,
+                content_end: source.len(),
                 end: source.len(),
             });
         }
+        lines
+    }
+
+    pub(crate) const fn new(source: &'source str, lines: &'source [PhysicalLine]) -> Self {
         Self { source, lines }
     }
 

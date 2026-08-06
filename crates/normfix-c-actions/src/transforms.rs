@@ -470,7 +470,8 @@ fn comment_at(start: usize, end: usize, lines: &SourceLines<'_>) -> Comment {
 fn official_header_end(source: &str) -> Option<usize> {
     const EDGE: &str =
         "/* ************************************************************************** */";
-    let lines = SourceLines::new(source);
+    let line_index = SourceLines::index(source);
+    let lines = SourceLines::new(source, &line_index);
     if lines.len() < 11 {
         return None;
     }
