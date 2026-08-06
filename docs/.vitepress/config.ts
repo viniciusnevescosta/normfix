@@ -81,6 +81,7 @@ export default defineConfig({
           { text: "Makefiles and projects", link: "/reference/projects" },
           { text: "Reporting", link: "/reference/reporting" },
           { text: "Known boundaries", link: "/reference/boundaries" },
+          { text: "Performance", link: "/reference/performance" },
           { text: "Architecture", link: "/ARCHITECTURE" },
           { text: "Compatibility policy", link: "/COMPATIBILITY" },
           { text: "Release process", link: "/RELEASING" },

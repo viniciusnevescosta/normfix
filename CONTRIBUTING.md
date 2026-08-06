@@ -43,7 +43,14 @@ cargo deny --all-features check
 cargo test --locked -p normfix-engine --test differential -- --ignored
 ```
 
-The last one needs the official Norminette on `PATH`. It is the gate that
+Benchmarks are not a gate, but run them when you touch the parser, the tape, or
+the scheduler:
+
+```sh
+cargo bench -p normfix-c-actions
+```
+
+The last one of the gates above needs the official Norminette on `PATH`. It is the gate that
 matters most: it asserts that a run never leaves a file with more official
 diagnostics than it started with, that a second run changes nothing, and that
 a file that compiled still compiles.

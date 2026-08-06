@@ -145,6 +145,7 @@ The documentation lives at
 | [Makefiles and project files](https://normfix.vercel.app/docs/reference/projects) | Make, README documents, and the compiler preflight |
 | [Reporting](https://normfix.vercel.app/docs/reference/reporting) | Terminal output, the JSON schema, and the cache |
 | [Known boundaries](https://normfix.vercel.app/docs/reference/boundaries) | Every limit, and why it is deliberate |
+| [Performance](https://normfix.vercel.app/docs/reference/performance) | Measured numbers, and what dominates a run |
 | [Architecture](https://normfix.vercel.app/docs/ARCHITECTURE) | What each crate owns and why the boundaries exist |
 | [Compatibility](https://normfix.vercel.app/docs/COMPATIBILITY) | Supported Norminette, MSRV, and what versioning covers |
 
