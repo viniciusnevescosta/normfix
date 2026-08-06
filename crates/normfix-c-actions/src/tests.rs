@@ -460,13 +460,13 @@ proptest::proptest! {
         tabs in proptest::bool::ANY,
     ) {
         let indent = if tabs { "\t" } else { "  " };
-        let source = bodies
-            .iter()
-            .enumerate()
-            .map(|(index, body)| {
-                format!("int\tfn_{index}(int a, int b, int c)\n{{\n{indent}{body}\n}}\n\n")
-            })
-            .collect::<String>();
+        let mut source = String::new();
+        for (index, body) in bodies.iter().enumerate() {
+            let _ = write!(
+                source,
+                "int\tfn_{index}(int a, int b, int c)\n{{\n{indent}{body}\n}}\n\n"
+            );
+        }
 
         let once = apply(&source, &[]);
         let twice = apply(&once, &[]);
@@ -477,10 +477,10 @@ proptest::proptest! {
     fn formatting_never_loses_a_significant_identifier(
         names in proptest::collection::vec("[a-z][a-z_0-9]{2,10}", 1..6),
     ) {
-        let source = names
-            .iter()
-            .map(|name| format!("int {name}(int a){{\nreturn a;\n}}\n\n"))
-            .collect::<String>();
+        let mut source = String::new();
+        for name in &names {
+            let _ = write!(source, "int {name}(int a){{\nreturn a;\n}}\n\n");
+        }
 
         let fixed = apply(&source, &[]);
 
