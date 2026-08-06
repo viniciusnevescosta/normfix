@@ -10,6 +10,9 @@ dist/
 .coverage
 htmlcov/
 /target/
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/corpus/
 /web/pkg/
 /web/dist/
 /node_modules/

@@ -17,6 +17,7 @@ members = [
     "crates/normfix-cache",
     "crates/normfix-wasm",
 ]
+exclude = ["fuzz"]
 default-members = ["crates/normfix-cli"]
 resolver = "3"
 

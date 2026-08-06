@@ -1,0 +1,29 @@
+[package]
+name = "normfix-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+rust-version = "1.85"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+camino = "1.2"
+normfix-c-actions = { path = "../crates/normfix-c-actions" }
+normfix-c-syntax = { path = "../crates/normfix-c-syntax" }
+
+[[bin]]
+name = "tape_round_trip"
+path = "fuzz_targets/tape_round_trip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "actions_never_panic"
+path = "fuzz_targets/actions_never_panic.rs"
+test = false
+doc = false
+bench = false

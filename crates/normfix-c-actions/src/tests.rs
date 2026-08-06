@@ -444,6 +444,57 @@ proptest::proptest! {
     #![proptest_config(proptest::prelude::ProptestConfig::with_cases(192))]
 
     #[test]
+    fn formatting_is_idempotent_for_any_generated_function(
+        bodies in proptest::collection::vec(
+            proptest::sample::select(vec![
+                "return 0;",
+                "return (0);",
+                "if(a)return 1;",
+                "if (a)\n\t\treturn (1);",
+                "while(a){a--;}",
+                "a = b + c;",
+                "return a+b;",
+            ]),
+            1..6,
+        ),
+        tabs in proptest::bool::ANY,
+    ) {
+        let indent = if tabs { "\t" } else { "  " };
+        let source = bodies
+            .iter()
+            .enumerate()
+            .map(|(index, body)| {
+                format!("int\tfn_{index}(int a, int b, int c)\n{{\n{indent}{body}\n}}\n\n")
+            })
+            .collect::<String>();
+
+        let once = apply(&source, &[]);
+        let twice = apply(&once, &[]);
+        proptest::prop_assert_eq!(&once, &twice, "a second run kept changing the file");
+    }
+
+    #[test]
+    fn formatting_never_loses_a_significant_identifier(
+        names in proptest::collection::vec("[a-z][a-z_0-9]{2,10}", 1..6),
+    ) {
+        let source = names
+            .iter()
+            .map(|name| format!("int {name}(int a){{\nreturn a;\n}}\n\n"))
+            .collect::<String>();
+
+        let fixed = apply(&source, &[]);
+
+        // Layout may move bytes anywhere, but a function name is a significant
+        // token and must survive verbatim.
+        for name in &names {
+            proptest::prop_assert!(
+                fixed.contains(name.as_str()),
+                "{name} disappeared from the formatted source"
+            );
+        }
+    }
+
+    #[test]
     fn reordering_preserves_every_include_and_sorts_it(
         includes in proptest::collection::vec(
             (proptest::bool::ANY, "[a-z][a-z_0-9]{0,7}"),
