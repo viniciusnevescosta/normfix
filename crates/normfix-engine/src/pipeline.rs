@@ -2956,7 +2956,7 @@ fn official_diagnostics(
         .map(|item| Diagnostic {
             rule_id: item.rule_id.clone(),
             path: path.clone(),
-            range: diagnostic_range(source, item.line, item.column),
+            range: diagnostic_range(source, item.line, item.column, ColumnUnit::Display),
             severity: Severity::Warning,
             message: item.message.clone(),
             source: DiagnosticSource::NorminetteCompat(
@@ -3005,8 +3005,24 @@ fn diagnostic_help(rule_id: &str) -> &'static str {
     }
 }
 
-fn diagnostic_range(source: &str, line: u32, visual_column: u32) -> TextRange {
-    let start = offset_for_line_column(source, line, visual_column);
+/// The unit a reported column is expressed in.
+///
+/// The two authorities disagree, and the disagreement is invisible until a line
+/// is indented with tabs. The official Norminette counts display columns, so a
+/// tab advances to the next four-column tab stop. A C compiler counts bytes, so
+/// a tab is one column. Reading one convention as the other puts the caret on
+/// the wrong character of every indented line, which is most lines of a 42
+/// project.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ColumnUnit {
+    /// Tab-expanded display column, as the official Norminette reports.
+    Display,
+    /// One-based byte offset within the physical line, as a C compiler reports.
+    Byte,
+}
+
+fn diagnostic_range(source: &str, line: u32, column: u32, unit: ColumnUnit) -> TextRange {
+    let start = offset_for_line_column(source, line, column, unit);
     let bytes = source.as_bytes();
     let mut end = start;
     if let Some(byte) = bytes.get(start) {
@@ -3027,9 +3043,9 @@ fn diagnostic_range(source: &str, line: u32, visual_column: u32) -> TextRange {
     compact_range(start, end)
 }
 
-fn offset_for_line_column(source: &str, line: u32, visual_column: u32) -> usize {
+fn offset_for_line_column(source: &str, line: u32, column: u32, unit: ColumnUnit) -> usize {
     let target_line = line.max(1);
-    let target_column = visual_column.max(1);
+    let target_column = column.max(1);
     let mut current_line = 1_u32;
     let mut line_start = 0_usize;
     for (index, byte) in source.bytes().enumerate() {
@@ -3047,6 +3063,17 @@ fn offset_for_line_column(source: &str, line: u32, visual_column: u32) -> usize 
     let line_end = source[line_start..]
         .find('\n')
         .map_or(source.len(), |offset| line_start + offset);
+    if unit == ColumnUnit::Byte {
+        let mut offset = line_start
+            .saturating_add(target_column.saturating_sub(1) as usize)
+            .min(line_end);
+        // A compiler column can land mid-character only on a malformed report;
+        // snapping forward keeps the range sliceable either way.
+        while offset < line_end && !source.is_char_boundary(offset) {
+            offset += 1;
+        }
+        return offset;
+    }
     let mut column = 1_u32;
     for (offset, character) in source[line_start..line_end].char_indices() {
         if column >= target_column {
@@ -3070,8 +3097,8 @@ fn compact_range(start: usize, end: usize) -> TextRange {
 
 fn line_point_range(source: &str, line: u32) -> TextRange {
     compact_range(
-        offset_for_line_column(source, line, 1),
-        offset_for_line_column(source, line, 1),
+        offset_for_line_column(source, line, 1, ColumnUnit::Display),
+        offset_for_line_column(source, line, 1, ColumnUnit::Display),
     )
 }
 
@@ -3473,7 +3500,7 @@ fn compiler_path_matches(compiler_path: &str, report_path: &str) -> bool {
 
 fn remap_compiler_range(original: &str, current: &str, line: u32, column: u32) -> TextRange {
     if original == current {
-        return diagnostic_range(current, line, column);
+        return diagnostic_range(current, line, column, ColumnUnit::Byte);
     }
     let Some(original_line) = original.lines().nth(line.saturating_sub(1) as usize) else {
         return TextRange::empty(TextSize::new(0));
@@ -3488,7 +3515,12 @@ fn remap_compiler_range(original: &str, current: &str, line: u32, column: u32) -
     if matches.next().is_some() {
         return TextRange::empty(TextSize::new(0));
     }
-    diagnostic_range(current, u32::try_from(mapped).unwrap_or(u32::MAX), column)
+    diagnostic_range(
+        current,
+        u32::try_from(mapped).unwrap_or(u32::MAX),
+        column,
+        ColumnUnit::Byte,
+    )
 }
 
 fn parser_diagnostics(path: &Utf8PathBuf, source: &str) -> Vec<Diagnostic> {
@@ -3629,6 +3661,7 @@ fn explain_constant_array_false_positives(
             source,
             diagnostic.line,
             diagnostic.column,
+            ColumnUnit::Display,
         ))
         .map_or(TextSize::new(u32::MAX), TextSize::new);
         let constant = semantic.arrays.iter().find(|array| {
@@ -3673,6 +3706,70 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{makefile_source_path, prepare_external_recovery_root, transaction_root};
+
+    #[test]
+    fn each_authority_column_convention_lands_on_the_same_character() {
+        use super::{ColumnUnit, offset_for_line_column};
+
+        // Two tabs then the call: the shape of almost every 42 statement.
+        let source = "int\tmain(void)\n{\n\t\tsort_medium(ctx);\n}\n";
+        let call = source.find("sort_medium").expect("the call");
+
+        // A C compiler counts bytes, so the call starts at column 3.
+        assert_eq!(
+            offset_for_line_column(source, 3, 3, ColumnUnit::Byte),
+            call,
+            "a compiler column must be read as a byte offset"
+        );
+        // The official Norminette counts display columns, so two four-column
+        // tab stops put the same character at column 9.
+        assert_eq!(
+            offset_for_line_column(source, 3, 9, ColumnUnit::Display),
+            call,
+            "a Norminette column must be read as a tab-expanded display column"
+        );
+        // Reading a compiler column as a display column is the bug this guards:
+        // it stops inside the indentation instead of on the call.
+        assert_ne!(
+            offset_for_line_column(source, 3, 3, ColumnUnit::Display),
+            call
+        );
+    }
+
+    #[test]
+    fn a_byte_column_past_the_line_or_inside_a_character_stays_sliceable() {
+        use super::{ColumnUnit, offset_for_line_column};
+
+        let source = "\tchar\t*s = \"caf\u{e9}\"; boom(s);\n";
+        // Clang counts both bytes of `é`, so the reported column is the byte
+        // offset plus one, not the character count.
+        let boom = source.find("boom").expect("the call");
+        let reported = u32::try_from(boom).expect("fits") + 1;
+        assert_eq!(
+            offset_for_line_column(source, 1, reported, ColumnUnit::Byte),
+            boom
+        );
+        assert!(reported > u32::try_from(source[..boom].chars().count()).expect("fits"));
+
+        // A column past the end clamps to the line end rather than running on
+        // into the next line.
+        let line_end = source.find('\n').expect("the newline");
+        assert_eq!(
+            offset_for_line_column(source, 1, 9_999, ColumnUnit::Byte),
+            line_end
+        );
+
+        // A column landing mid-character snaps forward to a boundary, so the
+        // range can still be sliced.
+        let accent = source.find('\u{e9}').expect("the accent");
+        let offset = offset_for_line_column(
+            source,
+            1,
+            u32::try_from(accent).expect("fits") + 2,
+            ColumnUnit::Byte,
+        );
+        assert!(source.is_char_boundary(offset));
+    }
 
     #[test]
     fn a_compiler_is_classified_by_its_banner_not_its_command_name() {
