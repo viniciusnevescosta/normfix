@@ -16,7 +16,7 @@ should be obvious to whoever reads the script later.
 
 ```console
 $ normfix format
-normfix 0.4.0-beta.3
+normfix 0.4.0-beta.4
 Safe automatic fixes for the 42 Norm v4.1
 
 Files

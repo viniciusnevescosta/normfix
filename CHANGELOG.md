@@ -10,6 +10,57 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [0.4.0-beta.4] / 2026-08-06
+
+The last beta. A performance and hardening pass, plus self-update.
+
+### Added
+
+- **`normfix upgrade`** replaces the running binary with the newest published
+  release. The archive is verified against `SHA256SUMS` before anything is
+  written, staging happens inside the destination directory so the final step
+  is a rename, and a Homebrew-managed install is refused with the command that
+  does the right thing instead.
+- **A release notice.** A run prints one line when a newer version exists. This
+  is the only network access outside `upgrade`, and it is narrow on purpose: at
+  most once a day, only for interactive human output, never for `--format json`
+  or a non-terminal, silent on failure, and disabled by
+  `NORMFIX_NO_UPDATE_CHECK`. It sends no path, no source, and no identifier.
+
+### Fixed
+
+- The upgrade download used a predictable path under the shared temporary
+  directory. On a multi-user machine another account could create that path
+  first as a symbolic link and redirect the write. Downloads now go through a
+  private directory that cannot already exist.
+
+### Changed
+
+- The physical line index is built once per parse instead of once per query.
+  Every formatting phase asks for it and a file is re-examined once per
+  fixed-point pass, so a full scan and allocation ran dozens of times per file.
+  An 800-line file went from 0.67 s to 0.25 s; files the size of real 42
+  sources were already fast enough that the difference is within noise.
+
+### Verified, not changed
+
+A pass over the crates looking for optimization and security work produced more
+confirmation than repair, which is worth recording:
+
+- **Hostile input fails closed.** Invalid UTF-8, embedded NUL bytes, a 1.6 MB
+  file, a 200 000-term expression on one line, nesting deep enough to crash the
+  official checker itself, a symbolic link to `/etc/passwd`, a symbolic link
+  loop, and a filename containing `$(id)` were all refused or reported without
+  modifying a single file and without executing anything.
+- **The analysis cache earns its place**: a repeat run over a real project is
+  about ten times faster than a cold one.
+- **The official checker is invoked once per distinct file content**, not once
+  per stage, because the in-memory run cache already deduplicates it.
+- **Shell independence**: the binary and the installer behave identically under
+  bash, zsh, and fish. The binary is compiled and the installer is POSIX `sh`,
+  so the only shell-specific concern is `PATH` guidance, which the installer
+  prints for both styles.
+
 ## [0.4.0-beta.3] / 2026-08-05
 
 The analyzer release. `--analyzer` now uses whatever deep analyzer the
@@ -208,6 +259,7 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[0.4.0-beta.4]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.4
 [0.4.0-beta.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.3
 [0.4.0-beta.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.2
 [0.4.0-beta.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.1
