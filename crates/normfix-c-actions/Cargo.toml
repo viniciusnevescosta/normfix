@@ -21,7 +21,13 @@ thiserror.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
+normfix-c-syntax = { path = "../normfix-c-syntax" }
 proptest.workspace = true
+
+[[bench]]
+name = "actions"
+harness = false
 
 [lints]
 workspace = true

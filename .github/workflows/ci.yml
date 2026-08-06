@@ -55,6 +55,26 @@ jobs:
       - name: Measure coverage
         run: cargo llvm-cov --workspace --locked --summary-only
 
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Informational. A shared runner is too noisy to gate on, but a benchmark
+    # that never runs is a benchmark that stops compiling.
+    continue-on-error: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Measure the native action pipeline
+        run: cargo bench -p normfix-c-actions --locked -- --output-format bencher | tee bench.txt
+      - name: Upload measurements
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmarks
+          path: bench.txt
+          if-no-files-found: error
+          retention-days: 30
+
   supply-chain:
     name: Dependency advisories, licences, and sources
     runs-on: ubuntu-24.04

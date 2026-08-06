@@ -208,12 +208,16 @@ pub fn apply_c_actions(
 
     for _ in 0..options.max_passes {
         let mut accepted = false;
+        // The source cannot change while the phase loop runs: accepting a batch
+        // is the only thing that rewrites it, and that breaks out immediately.
+        // Parsing per phase therefore reparsed the same bytes once for every
+        // phase, which for an already-correct file was the whole cost.
+        let before = ParsedContext::parse(&mut parser, &current)?;
+        before.require_safe()?;
         for phase in &ordered_phases {
             if phase.one_shot() && completed_one_shot.contains(phase) {
                 continue;
             }
-            let before = ParsedContext::parse(&mut parser, &current)?;
-            before.require_safe()?;
             let Some(batch) = phase.plan(&before, &active_diagnostics, options)? else {
                 if phase.one_shot() {
                     completed_one_shot.insert(*phase);
