@@ -27,6 +27,7 @@ normfix-header = { path = "../normfix-header" }
 normfix-project = { path = "../normfix-project" }
 normfix-report = { path = "../normfix-report" }
 serde.workspace = true
+sha2.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

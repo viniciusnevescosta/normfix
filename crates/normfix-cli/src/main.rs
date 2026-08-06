@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod rules;
+mod upgrade;
 
 use std::collections::BTreeMap;
 use std::env;
@@ -174,6 +175,15 @@ enum Command {
     Explain(ExplainArguments),
     /// Restore an intact backed-up run without overwriting later edits.
     Undo(UndoArguments),
+    /// Replace this binary with the newest published release.
+    Upgrade(UpgradeArguments),
+}
+
+#[derive(Debug, Args)]
+struct UpgradeArguments {
+    /// Report whether a newer release exists without installing it.
+    #[arg(long)]
+    check: bool,
 }
 
 #[derive(Debug, Args)]
@@ -276,6 +286,9 @@ fn run(cli: &Cli) -> ExitCode {
     if let Some(Command::Undo(arguments)) = &cli.command {
         return run_undo(cli, arguments, &cwd);
     }
+    if let Some(Command::Upgrade(arguments)) = &cli.command {
+        return run_upgrade(cli.format, arguments.check);
+    }
     let (mut paths, workflow) = selected_workflow(cli);
     let mut git_unexpected = Vec::new();
     let git_scoped = cli.changed || cli.staged;
@@ -338,16 +351,50 @@ fn run(cli: &Cli) -> ExitCode {
         return run_interactive(cli, &paths, &options);
     }
 
-    match run_fixes(&paths, &options) {
+    finish_run(cli, &paths, &options)
+}
+
+/// Runs the pipeline and renders its report.
+fn finish_run(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCode {
+    match run_fixes(paths, options) {
         Ok(report) => {
             if let Err(message) = render_report(cli, &report) {
                 print_run_error(cli.format, &message);
                 return ExitCode::from(2);
             }
+            if cli.format == OutputFormat::Human && io::stderr().is_terminal() {
+                upgrade::notify_if_outdated(env!("CARGO_PKG_VERSION"));
+            }
             ExitCode::from(report.exit_code())
         }
         Err(error) => {
             print_run_error(cli.format, &error.to_string());
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// Replaces the running binary with the newest published release.
+fn run_upgrade(format: OutputFormat, check_only: bool) -> ExitCode {
+    match upgrade::upgrade(env!("CARGO_PKG_VERSION"), check_only) {
+        Ok(upgrade::Outcome::Current(version)) => {
+            println!("normfix {version} is already the newest release.");
+            ExitCode::SUCCESS
+        }
+        Ok(upgrade::Outcome::Available { current, latest }) => {
+            println!("normfix {latest} is available; this is {current}.");
+            println!("Install it with: normfix upgrade");
+            ExitCode::SUCCESS
+        }
+        Ok(upgrade::Outcome::Installed {
+            previous,
+            installed,
+        }) => {
+            println!("Upgraded normfix {previous} to {installed}.");
+            ExitCode::SUCCESS
+        }
+        Err(message) => {
+            print_run_error(format, &message);
             ExitCode::from(2)
         }
     }
@@ -661,7 +708,9 @@ fn selected_workflow(cli: &Cli) -> (Vec<PathBuf>, Workflow) {
         Some(Command::Check(arguments)) => (arguments.paths.clone(), Workflow::Check),
         Some(Command::Budget(arguments)) => (arguments.paths.clone(), Workflow::Budget),
         Some(Command::Preflight(arguments)) => (arguments.paths.clone(), Workflow::Preflight),
-        Some(Command::Explain(_) | Command::Undo(_)) => (Vec::new(), Workflow::Default),
+        Some(Command::Explain(_) | Command::Undo(_) | Command::Upgrade(_)) => {
+            (Vec::new(), Workflow::Default)
+        }
         None => (cli.paths.clone(), Workflow::Default),
     }
 }
