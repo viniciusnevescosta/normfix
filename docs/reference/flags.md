@@ -375,6 +375,19 @@ normfix --unsafe --force
 For CI and scripts. `--force` on its own, with no destructive flag, is an
 error, so it cannot silently become a blanket approval.
 
+## Environment
+
+### `NORMFIX_NO_UPDATE_CHECK`
+
+Disables the once-a-day release notice.
+
+```sh
+export NORMFIX_NO_UPDATE_CHECK=1
+```
+
+The notice only ever appears for interactive human output and is silent on
+failure. See [`upgrade`](/commands/upgrade) for exactly what it sends.
+
 ## Information
 
 ### `-h`, `--help`

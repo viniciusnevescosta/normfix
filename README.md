@@ -48,6 +48,12 @@ With Homebrew:
 brew install viniciusnevescosta/normfix/normfix
 ```
 
+Once installed, keep it current with:
+
+```sh
+normfix upgrade
+```
+
 Or download the archive for your platform from the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases) and
 verify it yourself, or build from a checkout with
@@ -89,6 +95,7 @@ since.
 | [`preflight`](https://normfix.vercel.app/docs/commands/preflight) | no | The read-only checks before a defense |
 | [`explain`](https://normfix.vercel.app/docs/commands/explain) | no | Explain one rule offline |
 | [`undo`](https://normfix.vercel.app/docs/commands/undo) | yes | Restore a previous run |
+| [`upgrade`](https://normfix.vercel.app/docs/commands/upgrade) | yes | Replace this binary with the newest release |
 
 Exit codes: `0` clean or fixed, `1` work remains, `2` the run itself failed,
 `130` an interactive review was cancelled.

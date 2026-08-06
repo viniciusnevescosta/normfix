@@ -68,6 +68,7 @@ export default defineConfig({
           { text: "preflight", link: "/commands/preflight" },
           { text: "explain", link: "/commands/explain" },
           { text: "undo", link: "/commands/undo" },
+          { text: "upgrade", link: "/commands/upgrade" },
         ],
       },
       {

@@ -20,6 +20,7 @@ review.
 | [`preflight`](/commands/preflight) | no | You are about to defend and want the read-only checks |
 | [`explain`](/commands/explain) | no | You want a rule explained without scanning anything |
 | [`undo`](/commands/undo) | yes | You want a previous run restored |
+| [`upgrade`](/commands/upgrade) | yes | You want the newest release, verified |
 
 ## Every example on these pages is real
 
