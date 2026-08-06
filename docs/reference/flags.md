@@ -230,6 +230,22 @@ The version is still verified: it must be 3.3.59.
 
 ## Compiler checks
 
+### `--allow-untested-norminette`
+
+Continue with a Norminette release this version has not been verified against.
+
+```sh
+normfix --allow-untested-norminette
+```
+
+Without it, a different release is refused. With it, the run proceeds and
+reports `NORMINETTE_VERSION_UNTESTED` naming what it found.
+
+Use it on the day 42 upgrades and this project has not caught up. The
+before/after proof still holds, because it compares two answers from the same
+checker; what you lose is the guarantee that the native rules match that
+release. Read the diff.
+
 ### `--no-compiler-preflight`
 
 Skip the strict `cc -fsyntax-only -Wall -Wextra -Werror` pass.

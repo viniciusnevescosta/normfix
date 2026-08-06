@@ -136,6 +136,8 @@ pub struct FixOptions {
     pub compiler_executable: Option<PathBuf>,
     /// Run GCC `-fanalyzer` as an informational, fail-open advisory backend.
     pub analyzer: bool,
+    /// Continue with a Norminette release the project has not verified.
+    pub allow_untested_norminette: bool,
     /// Per-file official-tool timeout.
     pub timeout: Duration,
     /// Enable the external content-addressed cache.
@@ -186,6 +188,7 @@ impl FixOptions {
             compiler_preflight: true,
             compiler_executable: None,
             analyzer: false,
+            allow_untested_norminette: false,
             timeout: Duration::from_secs(5),
             cache: true,
             remove_invalid_comments: false,
@@ -547,6 +550,7 @@ fn build_oracle_context(
     let oracle = NorminetteOracle::locate(NorminetteConfig {
         executable: options.norminette_executable.clone(),
         expected_version: normfix_oracle::SUPPORTED_NORMINETTE_VERSION.to_owned(),
+        allow_untested_version: options.allow_untested_norminette,
         limits: ProcessLimits {
             timeout: options.timeout,
             output_bytes: 1024 * 1024,
@@ -1850,6 +1854,7 @@ fn process_c(
     let semantic_advisories =
         explain_constant_array_false_positives(&path, &current, &mut remaining_official);
     if file.kind == ProjectFileKind::CSource {
+        local_diagnostics.extend(untested_norminette_diagnostic(oracle, file, &path));
         local_diagnostics.extend(run_compiler_preflight(
             oracle, options, file, &path, &original, &current,
         ));
@@ -3082,6 +3087,35 @@ fn introduces_diagnostics(before: &[NorminetteDiagnostic], after: &[NorminetteDi
     counts(after)
         .into_iter()
         .any(|(rule, count)| count > before.get(&rule).copied().unwrap_or_default())
+}
+
+/// Warns once when the run used a Norminette release this version has not been
+/// verified against.
+fn untested_norminette_diagnostic(
+    oracle: &OracleContext,
+    file: &DiscoveredFile,
+    path: &Utf8PathBuf,
+) -> Option<Diagnostic> {
+    let fingerprint = oracle.oracle.fingerprint();
+    if !fingerprint.untested || oracle.compiler_notice_path.as_deref() != Some(file.path.as_path())
+    {
+        return None;
+    }
+    Some(point_diagnostic(
+        path,
+        "NORMINETTE_VERSION_UNTESTED",
+        Severity::Warning,
+        format!(
+            "This run used Norminette {}, which this normfix release has not been verified against; {} is the supported version.",
+            fingerprint.version,
+            normfix_oracle::SUPPORTED_NORMINETTE_VERSION
+        ),
+        DiagnosticSource::NorminetteCompat(fingerprint.version.clone()),
+        Some(
+            "The before/after proof still compares two answers from this same checker, so a run cannot make its own result worse. What is not guaranteed is that the native rules agree with this release; review the diff."
+                .to_owned(),
+        ),
+    ))
 }
 
 fn run_compiler_preflight(

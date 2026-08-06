@@ -142,6 +142,11 @@ struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     norminette: Option<PathBuf>,
 
+    /// Continue with a Norminette release this version has not been verified
+    /// against, instead of refusing to run.
+    #[arg(long, global = true)]
+    allow_untested_norminette: bool,
+
     /// Disable `cc -fsyntax-only -Wall -Wextra -Werror` diagnostics.
     #[arg(long, global = true)]
     no_compiler_preflight: bool,
@@ -484,6 +489,7 @@ fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions
         BackupPolicy::Automatic
     };
     options.norminette_executable.clone_from(&cli.norminette);
+    options.allow_untested_norminette = cli.allow_untested_norminette;
     options.compiler_preflight = !cli.no_compiler_preflight;
     options.compiler_executable.clone_from(&cli.cc);
     options.analyzer = cli.analyzer;

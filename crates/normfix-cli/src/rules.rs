@@ -104,6 +104,12 @@ fn structural_article(canonical: &str) -> Option<Article> {
             "Use one outer guard and check for project-wide macro references, #undef, X-macro use, and repeated-inclusion behavior.",
             "Guard edits are accepted only with a closed-project collision proof and final Norminette validation.",
         ),
+        "NORMINETTE_VERSION_UNTESTED" => (
+            "The official checker is a release this version has not been verified against",
+            "normfix is verified against one exact Norminette release, because the official rule names, locations and accepted layouts are inputs to its before/after proof. You passed --allow-untested-norminette, so the run continued with a different one.",
+            "Install the supported release when you can. Until then, read the diff before accepting it, and report any disagreement so the supported version can move deliberately.",
+            "The before/after proof still compares two answers from this same checker, so a run cannot make its own official result worse. What is not guaranteed is that the native rules agree with this release.",
+        ),
         "INCLUDE_ORDER" | "INCLUDE_ORDER_REVIEW" => (
             "Include block order",
             "The expected display order is <system headers> first, then \"project headers\", alphabetically inside each category.",

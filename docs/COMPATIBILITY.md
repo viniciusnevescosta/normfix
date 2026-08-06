@@ -32,6 +32,24 @@ A Norminette update requires one reviewed change that:
 Supporting a range is appropriate only after CI proves every version in that
 range and the oracle has an explicit adapter for any protocol difference.
 
+### When 42 moves first
+
+A tool that refuses every release but one stops working for everyone on the day
+the school upgrades, and a formatter that cannot run is worth nothing. So the
+refusal is the default, not the only option:
+
+```sh
+normfix --allow-untested-norminette
+```
+
+The run then continues and reports `NORMINETTE_VERSION_UNTESTED` naming the
+release it found. This is defensible rather than a hole in the argument,
+because the property the tool actually promises does not depend on knowing the
+version: the before/after regression proof compares two answers from **the same
+executable**, so a run still cannot leave a file with more official diagnostics
+than it started with. What an unverified release costs is the guarantee that
+the native rules agree with it, which is exactly what the warning says.
+
 ## Rust toolchain
 
 - Minimum supported Rust version (MSRV): `1.85`.

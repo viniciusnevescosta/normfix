@@ -20,6 +20,13 @@ pub struct NorminetteConfig {
     pub executable: Option<PathBuf>,
     /// Exact version required from `norminette --version`.
     pub expected_version: String,
+    /// Proceed with a different release instead of refusing.
+    ///
+    /// The before/after regression proof compares two answers from the same
+    /// executable, so it stays valid whatever version that is. What an untested
+    /// release costs is the guarantee that the native rules agree with it, so
+    /// this is opt-in and the run says so.
+    pub allow_untested_version: bool,
     /// Limits applied independently to version checks and lint calls.
     pub limits: ProcessLimits,
 }
@@ -29,6 +36,7 @@ impl Default for NorminetteConfig {
         Self {
             executable: None,
             expected_version: SUPPORTED_NORMINETTE_VERSION.to_owned(),
+            allow_untested_version: false,
             limits: ProcessLimits::per_file_default(),
         }
     }
@@ -37,6 +45,8 @@ impl Default for NorminetteConfig {
 /// Stable fingerprint of the verified external oracle.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NorminetteFingerprint {
+    /// Whether this release is the one the project verifies against.
+    pub untested: bool,
     /// Parsed Norminette version.
     pub version: String,
     /// Normalized complete `--version` output.
@@ -143,7 +153,8 @@ impl NorminetteOracle {
         }
         let version_output = normalized_output(&output);
         let version = parse_version(&version_output)?;
-        if version != config.expected_version {
+        let untested = version != config.expected_version;
+        if untested && !config.allow_untested_version {
             return Err(NorminetteError::VersionMismatch {
                 expected: config.expected_version,
                 found: version,
@@ -153,6 +164,7 @@ impl NorminetteOracle {
         Ok(Self {
             executable,
             fingerprint: NorminetteFingerprint {
+                untested,
                 version,
                 version_output,
                 digest,
@@ -501,6 +513,7 @@ mod tests {
             NorminetteOracle::locate(NorminetteConfig {
                 executable: Some(script.to_path_buf()),
                 expected_version: SUPPORTED_NORMINETTE_VERSION.to_owned(),
+                allow_untested_version: false,
                 limits: ProcessLimits {
                     // Version verification is setup, not the per-lint timeout
                     // exercised by these tests. Keep it robust under parallel CI.
