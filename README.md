@@ -3,22 +3,30 @@
 [![CI](https://github.com/viniciusnevescosta/normfix/actions/workflows/ci.yml/badge.svg)](https://github.com/viniciusnevescosta/normfix/actions/workflows/ci.yml)
 [![Release](https://github.com/viniciusnevescosta/normfix/actions/workflows/release.yml/badge.svg)](https://github.com/viniciusnevescosta/normfix/releases)
 
-Safe automatic fixes and clear diagnostics for the 42 Norm.
-
-A 42 student's scarcest resource is hours, and a large share of them goes into
-whitespace: indentation, declaration blocks, 80 columns, official headers.
-Across a cursus that is thousands of files, none of which teaches you anything
-the second time. `normfix` fixes what it can prove is safe to fix, across a
-whole project in one command, and explains the rest in English instead of a
-rule name.
-
-**[normfix.vercel.app](https://normfix.vercel.app)** hosts the browser
-playground and the full documentation.
+Fix a whole 42 project's Norm errors in one command, without sudo.
 
 ```sh
+curl -fsSL https://normfix.vercel.app/install.sh | sh   # no toolchain, no root
 cd path/to/a/42-project
-normfix
+normfix --diff                                          # see it first
+normfix                                                 # apply it
 ```
+
+```diff
+-int add(int a,int b){
+-return a+b;
++int	add(int a, int b)
++{
++	return (a + b);
+ }
+```
+
+Measured on four real 42 projects: **5 300 official Norminette errors fixed**,
+zero regressions. What it cannot prove, it explains in English instead of a
+rule name, and refuses to touch.
+
+**[Try it in your browser](https://normfix.vercel.app)**, no install, nothing
+uploaded.
 
 ## Requirements
 
@@ -54,10 +62,24 @@ Once installed, keep it current with:
 normfix upgrade
 ```
 
-Or download the archive for your platform from the
-[releases page](https://github.com/viniciusnevescosta/normfix/releases) and
-verify it yourself, or build from a checkout with
-`cargo install --path crates/normfix-cli --locked`.
+Or download the archive from the
+[releases page](https://github.com/viniciusnevescosta/normfix/releases), or
+build from a checkout with `cargo install --path crates/normfix-cli --locked`.
+
+### Verify what you installed
+
+Every archive is published with build provenance and a checksum manifest, so
+you never have to trust the download channel:
+
+```sh
+gh attestation verify normfix-aarch64-macos.tar.gz --repo viniciusnevescosta/normfix
+grep " normfix-aarch64-macos.tar.gz$" SHA256SUMS | shasum -a 256 -c -
+```
+
+The installer performs the checksum step for you and refuses to install on a
+mismatch. The attestation check is the stronger one, because it ties the binary
+to the workflow run that built it: use it if you are installing on a machine you
+care about.
 
 There is no native Windows archive: use WSL, or the
 [browser playground](https://normfix.vercel.app). Full instructions, including
