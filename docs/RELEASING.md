@@ -32,8 +32,8 @@ RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked
 Create a tag whose text is exactly the workspace version prefixed by `v`:
 
 ```sh
-git tag -a v0.4.0-beta.5 -m 'normfix 0.4.0-beta.5'
-git push origin v0.4.0-beta.5
+git tag -a v1.0.0-rc.1 -m 'normfix 1.0.0-rc.1'
+git push origin v1.0.0-rc.1
 ```
 
 `.github/workflows/release.yml` then:

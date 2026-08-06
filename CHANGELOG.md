@@ -10,6 +10,79 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.0.0-rc.1] / 2026-08-06
+
+The first release candidate for 1.0.0. It is about one thing: seeing where an
+error is without leaving the terminal.
+
+### Added
+
+- **Every diagnostic is shown against its own source.** Snippets used to appear
+  only under `--verbose`; the default view was a list of `path:line:column`
+  coordinates you had to go and look up one at a time. The default now shows
+  the code, with carets under the exact bytes the rule is about.
+
+  ```text
+  error[CC_IMPLICIT_FUNCTION_DECLARATION]: 2 occurrences in 2 files
+    --> srcs/sort/sort.c:30:3
+     |
+  30 |         sort_medium(ctx);
+     |         ^^^^^^^^^^^ call to undeclared function 'sort_medium'
+  ```
+
+  Occurrences of one rule in one file share a snippet, so the pattern is
+  visible in its own context, and each keeps its own message as the label on
+  its own carets. The rendering uses
+  [`annotate-snippets`](https://crates.io/crates/annotate-snippets), the
+  library `rustc` renders its own diagnostics with. Its only dependencies are
+  `anstyle` and `unicode-width`, both already in this workspace, so the whole
+  feature adds one crate to the dependency graph and no new transitive one.
+
+### Changed
+
+- **Shared context is stated once per rule.** Help, notes, origin, and the
+  `explain` hint were repeated under every occurrence, so four hits of one rule
+  meant reading the same compiler note four times. That repetition was most of
+  what made the grouped output hard to scan.
+- **The default view stops after three occurrences of a rule** and reports how
+  many it held back, naming `--verbose` for the rest. A project can carry
+  thousands of one diagnostic, and printing every snippet would make the report
+  unreadable in exactly the way snippets are meant to prevent.
+
+### Fixed
+
+- **A compiler column is read as a byte offset, not a display column.** The two
+  authorities disagree about what a column is, and the disagreement is
+  invisible until a line is indented with tabs: the official Norminette counts
+  display columns, expanding a tab to the next four-column stop, while a C
+  compiler counts bytes. Both were being read as display columns, so on a line
+  indented with two tabs a compiler diagnostic at column 3 resolved to the
+  first tab instead of the identifier. Every caret on an indented line pointed
+  into the whitespace, which is most lines of a 42 project.
+- **A caret spans the whole construct** rather than a single character. The
+  previous renderer measured its underline from the wrong end of the range and
+  usually produced one `^`.
+- **A compiler diagnostic with no position inside the file it belongs to**,
+  normally because the real location is in an included header, now names the
+  file and the header instead of drawing a caret on line 1. Line 1 of a 42 file
+  is the header block, so the old behavior accused unrelated code.
+
+### Notes
+
+The column in the `-->` line is now counted in characters, the convention a C
+compiler uses, where it was previously a display column. The official
+Norminette still reports display columns, so its own output can name a larger
+column for the same character on a tab-indented line. The caret is the
+authoritative answer to *where*, and `docs/reference/reporting.md` says so.
+
+Terminal safety is unchanged: messages, notes, and paths are still escaped
+before rendering, control characters in source are shown as visible pictures,
+and spans are clamped to the source before reaching the renderer, so a stale
+cache entry degrades to a caret in roughly the right place rather than a panic.
+
+Splitting `crates/normfix-engine/src/pipeline.rs` remains the first change
+after 1.0.0.
+
 ## [0.4.0-beta.5] / 2026-08-06
 
 Written against an external code review. The review's own top priority was
@@ -309,6 +382,7 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[1.0.0-rc.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.1
 [0.4.0-beta.5]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.5
 [0.4.0-beta.4]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.4
 [0.4.0-beta.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.3

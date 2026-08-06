@@ -30,7 +30,7 @@ does not commit them.
 $ normfix check --format json
 {
   "schema_version": 1,
-  "tool_version": "0.4.0-beta.5",
+  "tool_version": "1.0.0-rc.1",
   "mode": "check",
   "summary": {
     "files": 1,
