@@ -1,5 +1,74 @@
 # Safety, recovery, and destructive operations
 
+## Every run says what it is about to do
+
+Before reading a single file, `normfix` prints the action, the resolved scope,
+and the safety configuration that is actually in effect:
+
+```console
+$ normfix --unsafe --force
+normfix · starting
+  action       format
+  mode         write
+  scope        /home/student/demo (recursive)
+  working dir  /home/student/demo
+  identity     student@student.42.fr (user config)
+  workers      auto
+  checks       Norminette + strict compiler
+  norminette   automatic PATH discovery
+  version rule advisory (other releases continue)
+  timeout      5s per file
+  cache        enabled
+  gitignore    not applied
+  backups      automatic external backup
+  destructive  invalid comments, NULL-check compaction, missing or trivia-only Makefile entries, orphan header prototypes, unreachable static functions, unexpected-file quarantine
+  force        acknowledged
+```
+
+The `destructive` line names every capability the run actually holds, so
+`--unsafe` never expands silently.
+
+The `scope` line is the one to read. A command typed in the wrong directory
+looks wrong here, before anything is touched, rather than in the summary
+afterwards. In `--format json` the same information is the first event on
+stdout, so an agent can refuse a run whose scope it did not intend.
+
+## Protected scopes
+
+Filesystem roots, complete home directories, operating-system trees, and broad
+multi-project directories are refused outright:
+
+```console
+$ normfix check /
+normfix
+error: refusing to scan or modify protected scope `/` because it is a filesystem root; inspect the path and pass --force to acknowledge it explicitly
+No unvalidated changes were written.
+
+$ normfix check ~
+normfix
+error: refusing to scan or modify protected scope `/home/student` because it is the complete user home directory; inspect the path and pass --force to acknowledge it explicitly
+No unvalidated changes were written.
+```
+
+Both exit with status `2` and read nothing. The check resolves symbolic links
+and collapses `..` first, so a path like `/work/../etc` or a link pointing into
+`/etc` is refused for the same reason a literal `/etc` is. A Git-scoped run is
+judged by the repository root rather than by the files it selects, so
+`--git-changed` from a home directory is refused instead of quietly walking
+every project in it.
+
+`--force` acknowledges a protected scope and nothing else. It does not grant a
+destructive capability on its own, and a destructive capability still requires
+its own flag:
+
+```console
+$ normfix --force
+normfix
+error: --force requires --unsafe, --remove-unused, --remove-unexpected, or a protected system scope
+```
+
+## Function allowlists
+
 Projects with a subject-specific function allowlist can add `normfix.toml` at
 the project root:
 

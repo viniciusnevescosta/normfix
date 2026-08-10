@@ -91,6 +91,43 @@ The numeric score is a bounded prioritization heuristic, not a 42 grade; it
 cannot cover runtime behavior, project-specific tests, leaks, peer judgment,
 or defense questions.
 
+This is the `evaluation` object from a real run, on a project whose only
+remaining problem is a Makefile listing a source that was deleted:
+
+```json
+{
+  "schema_version": 2,
+  "evaluation": {
+    "conclusive": false,
+    "score": 59,
+    "grade": "fail",
+    "verdict": "hard_fail",
+    "hard_failures": [
+      {
+        "rule_id": "MAKEFILE_SOURCE_NOT_FOUND",
+        "path": "Makefile",
+        "line": 14,
+        "column": 20,
+        "message": "The literal Makefile source `ghost.c` does not exist below the project root."
+      }
+    ],
+    "notes": [
+      "Incomplete means discovery or file analysis failed, or no processable file was covered; no grade can be inferred from that run.",
+      "Hard fail: an unexpected project file, a finding corroborated by the installed official Norminette, or a Makefile finding was present.",
+      "The score deducts bounded category weights for those findings, other warnings, operational failures, and pending edits; it is not a 42 grade.",
+      "Runtime behavior, subject-specific tests, peer judgment, leaks, and defense questions remain outside this estimate."
+    ]
+  }
+}
+```
+
+`conclusive` is `false` in every report this tool can produce; it exists so a
+consumer never has to infer that limit from prose. `notes` is part of the
+document rather than terminal decoration, so an agent relaying the result
+carries the caveats with it. Read `verdict` for the decision and `score` only
+for ordering work: the verdict stays `hard_fail` while any hard failure
+remains, however high the score climbs.
+
 ### Exit codes
 
 | Code | Meaning |

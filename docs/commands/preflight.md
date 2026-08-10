@@ -25,6 +25,80 @@ error[CC_IMPLICIT_FUNCTION_DECLARATION]: 2 occurrences in 2 files
 That example is real: a header declared `sort_medium` but no file defined it,
 so the project did not build. Norminette would never have told you.
 
+## A complete run, before and after
+
+Every output on this page comes from an actual run. The project below is four
+files: `main.c` and `add.c` indented with spaces, a `demo.h` declaring an
+`unused_api` nobody implements, and a Makefile whose `SRC` still lists a
+`ghost.c` that was deleted.
+
+Preflight states what it is about to do before it reads anything:
+
+```console
+$ normfix preflight
+normfix · starting
+  action       preflight
+  mode         read-only check
+  scope        /home/student/demo (recursive)
+  working dir  /home/student/demo
+  identity     student@student.42.fr (user config)
+  workers      auto
+  checks       Norminette + strict compiler
+  norminette   automatic PATH discovery
+  version rule advisory (other releases continue)
+  timeout      5s per file
+  cache        enabled
+  gitignore    not applied
+  backups      automatic external backup
+  destructive  none
+  force        no
+```
+
+Then it reports the estimate against the bytes currently on disk:
+
+```console
+Pre-defense estimate: HARD FAIL | grade FAIL | 31/100
+This estimate is heuristic and never replaces the official evaluation.
+Hard-fail evidence
+  Makefile:1:1 [INVALID_HEADER] The official 42 Makefile header is missing or malformed
+  add.c:1:1 [INVALID_HEADER] Missing or invalid 42 header
+  demo.h:1:1 [INVALID_HEADER] Missing or invalid 42 header
+  main.c:1:1 [INVALID_HEADER] Missing or invalid 42 header
+  Makefile:2:20 [MAKEFILE_SOURCE_NOT_FOUND] The literal Makefile source `ghost.c` does not exist below the project root.
+  add.c:3:4 [SPACE_BEFORE_FUNC] Found space when expecting tab before function name
+  main.c:3:4 [SPACE_BEFORE_FUNC] Found space when expecting tab before function name
+  main.c:5:5 [SPACE_REPLACE_TAB] Found space when expecting tab
+  main.c:5:8 [SPACE_REPLACE_TAB] Found space when expecting tab
+  main.c:7:5 [SPACE_REPLACE_TAB] Found space when expecting tab
+  main.c:8:5 [SPACE_REPLACE_TAB] Found space when expecting tab
+  main.c:5:1 [TOO_FEW_TAB] Missing tabs for indent level
+  main.c:7:1 [TOO_FEW_TAB] Missing tabs for indent level
+  main.c:8:1 [TOO_FEW_TAB] Missing tabs for indent level
+```
+
+Most of that list is exactly what `normfix` repairs. Running the default fix
+and asking again:
+
+```console
+$ normfix
+$ normfix preflight
+Pre-defense estimate: HARD FAIL | grade FAIL | 59/100
+This estimate is heuristic and never replaces the official evaluation.
+Hard-fail evidence
+  Makefile:14:20 [MAKEFILE_SOURCE_NOT_FOUND] The literal Makefile source `ghost.c` does not exist below the project root.
+```
+
+Thirteen hard failures are gone and one remains, which is the useful result:
+the deleted `ghost.c` is still listed in the Makefile, and no tool should
+decide on its own whether that file should come back or the line should go.
+The verdict stays `HARD FAIL` while any hard failure remains — the score moves,
+the verdict does not soften.
+
+The evaluated bytes are the submitted bytes. In the first run, `normfix` had
+already computed the fixes for every `INVALID_HEADER` and `SPACE_REPLACE_TAB`
+above, and the estimate still failed on them, because a repair you have not
+written is not part of what an evaluator will open.
+
 Every filesystem-backed workflow, including the default check, compares
 non-static prototypes in project headers with every losslessly parsed project
 C/header file. A missing implementation or a matching definition whose body is
