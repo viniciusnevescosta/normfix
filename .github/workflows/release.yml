@@ -189,11 +189,19 @@ jobs:
             echo
             case "$version" in
               *-*)
+                echo "This is a pre-release. The pinned installer gives you exactly this build:"
+                echo
                 echo '```sh'
                 echo "NORMFIX_VERSION=${GITHUB_REF_NAME} sh -c \"\$(curl -fsSL https://normfix.vercel.app/install.sh)\""
                 echo '```'
                 echo
-                echo "This is a pre-release. The unpinned installer and the Homebrew formula stay on the latest stable version, so the tag above is required to install exactly this build."
+                echo "Or with Homebrew, which follows the tap formula and therefore the newest published release:"
+                echo
+                echo '```sh'
+                echo 'brew install viniciusnevescosta/normfix/normfix'
+                echo '```'
+                echo
+                echo "The unpinned \`curl ... | sh\` form installs the latest stable release instead."
                 ;;
               *)
                 echo '```sh'
