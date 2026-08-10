@@ -15,8 +15,10 @@ pub const EXACT_CONFIRMATION_PHRASE: &str = "I UNDERSTAND THIS MAY DELETE OR MOV
 pub enum DestructiveCapability {
     /// Remove `static` function definitions proven unreachable in a closed set.
     RemoveUnreferencedStaticFunctions,
-    /// Remove literal Makefile source tokens whose absence was proven.
+    /// Remove literal Makefile source tokens proven absent or trivia-only.
     RemoveMissingMakefileSources,
+    /// Remove project-local header prototypes proven to have no implementation or use.
+    RemoveOrphanPrototypes,
     /// Move unexpected regular files to an external recovery directory.
     QuarantineUnexpectedFiles,
 }

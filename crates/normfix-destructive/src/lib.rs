@@ -9,12 +9,16 @@
 #![forbid(unsafe_code)]
 
 mod authorization;
+mod orphan_prototypes;
 mod quarantine;
 mod static_functions;
 
 pub use authorization::{
     AuthorizationError, AuthorizationMethod, DestructiveAuthorization, DestructiveCapability,
     DestructiveRequest, EXACT_CONFIRMATION_PHRASE,
+};
+pub use orphan_prototypes::{
+    OrphanPrototypePlan, OrphanPrototypePlanError, plan_orphan_prototypes,
 };
 pub use quarantine::{
     QuarantineItem, QuarantinePlan, QuarantinePlanError, QuarantineRequest, QuarantineSnapshot,

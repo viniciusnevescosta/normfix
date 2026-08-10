@@ -28,6 +28,8 @@ pub struct SourceReconciliation {
     pub output: String,
     /// Literal source paths for which the caller could prove nonexistence.
     pub missing: Vec<MakefileSourceReference>,
+    /// Literal source paths proven to contain only C whitespace/comments.
+    pub empty: Vec<MakefileSourceReference>,
     /// Unsafe removals accepted from the exact input snapshot.
     pub fixes: Vec<Fix>,
 }
@@ -39,6 +41,8 @@ pub enum SourcePathStatus {
     Exists,
     /// The path was proven absent, normally through an exact `NotFound` result.
     Missing,
+    /// The path is a regular source containing no C token beyond trivia.
+    Empty,
     /// Existence could not be established safely.
     Unknown,
 }
@@ -48,9 +52,10 @@ pub enum SourcePathStatus {
 /// Only assignments whose complete value consists of ordinary relative `.c`
 /// paths are eligible. Make expansion, patterns, comments, quotes, commands,
 /// recipes, `define` bodies, and `.RECIPEPREFIX` projects fail closed. When
-/// `remove_missing` is true, missing tokens are removed and the remaining list
-/// is packed without reordering. The callback must return true only for paths
-/// it has independently proved to exist.
+/// `remove_missing` is true, tokens proven missing or trivia-only are removed
+/// and the remaining list is packed without reordering. The callback must
+/// return [`SourcePathStatus::Unknown`] whenever it cannot establish an exact
+/// regular-file status safely.
 #[must_use]
 pub fn reconcile_source_references<F>(
     source: &str,
@@ -64,12 +69,14 @@ where
         return SourceReconciliation {
             output: source.to_owned(),
             missing: Vec::new(),
+            empty: Vec::new(),
             fixes: Vec::new(),
         };
     }
     let lines = split_lines(source);
     let definitions = make_definition_lines(&lines);
     let mut missing = Vec::new();
+    let mut empty = Vec::new();
     let mut fixes = Vec::new();
     let mut replacements = Vec::new();
     let mut index = 0;
@@ -80,26 +87,39 @@ where
         }
         if !(index..=logical_end).any(|line| definitions.contains(&line)) {
             if let Some(assignment) = parse_assignment(&lines[index..=logical_end]) {
-                let assignment_missing = assignment
+                let assignment_statuses = assignment
                     .tokens
                     .iter()
-                    .filter(|token| exists(&token.reference.path) == SourcePathStatus::Missing)
-                    .cloned()
+                    .map(|token| (token.clone(), exists(&token.reference.path)))
+                    .collect::<Vec<_>>();
+                let assignment_missing = assignment_statuses
+                    .iter()
+                    .filter(|(_, status)| *status == SourcePathStatus::Missing)
+                    .map(|(token, _)| token.clone())
+                    .collect::<Vec<_>>();
+                let assignment_empty = assignment_statuses
+                    .iter()
+                    .filter(|(_, status)| *status == SourcePathStatus::Empty)
+                    .map(|(token, _)| token.clone())
                     .collect::<Vec<_>>();
                 missing.extend(
                     assignment_missing
                         .iter()
                         .map(|token| token.reference.clone()),
                 );
-                if remove_missing && !assignment_missing.is_empty() {
-                    let missing_ranges = assignment_missing
+                empty.extend(assignment_empty.iter().map(|token| token.reference.clone()));
+                if remove_missing
+                    && (!assignment_missing.is_empty() || !assignment_empty.is_empty())
+                {
+                    let removable_ranges = assignment_missing
                         .iter()
+                        .chain(&assignment_empty)
                         .map(|token| token.reference.range)
                         .collect::<BTreeSet<_>>();
                     let retained = assignment
                         .tokens
                         .iter()
-                        .filter(|token| !missing_ranges.contains(&token.reference.range))
+                        .filter(|token| !removable_ranges.contains(&token.reference.range))
                         .map(|token| token.reference.path.as_str())
                         .collect::<Vec<_>>();
                     if let Some(replacement) = assignment.reprint(&retained) {
@@ -108,6 +128,14 @@ where
                             code: "MAKEFILE_REMOVE_MISSING_SOURCE",
                             description: format!(
                                 "removed missing literal source `{}` from a proven source list",
+                                token.reference.path
+                            ),
+                            range: token.reference.range,
+                        }));
+                        fixes.extend(assignment_empty.into_iter().map(|token| Fix {
+                            code: "MAKEFILE_REMOVE_EMPTY_SOURCE",
+                            description: format!(
+                                "removed trivia-only literal source `{}` from a proven source list",
                                 token.reference.path
                             ),
                             range: token.reference.range,
@@ -123,10 +151,12 @@ where
         output.replace_range(range.start..range.end, replacement);
     }
     missing.sort_by_key(|reference| (reference.range.start, reference.range.end));
+    empty.sort_by_key(|reference| (reference.range.start, reference.range.end));
     fixes.sort_by_key(|fix| (fix.range.start, fix.range.end));
     SourceReconciliation {
         output,
         missing,
+        empty,
         fixes,
     }
 }
@@ -388,6 +418,25 @@ mod tests {
             reconcile_source_references(&fixed.output, true, |_| SourcePathStatus::Exists).output,
             fixed.output
         );
+    }
+
+    #[test]
+    fn reports_and_removes_a_proven_whitespace_only_source_only_when_enabled() {
+        let source = "SRCS = live.c empty.c\n";
+        let checked = reconcile_source_references(source, false, |path| match path {
+            "empty.c" => SourcePathStatus::Empty,
+            _ => SourcePathStatus::Exists,
+        });
+        assert_eq!(checked.output, source);
+        assert_eq!(checked.empty.len(), 1);
+        assert!(checked.fixes.is_empty());
+
+        let fixed = reconcile_source_references(source, true, |path| match path {
+            "empty.c" => SourcePathStatus::Empty,
+            _ => SourcePathStatus::Exists,
+        });
+        assert_eq!(fixed.output, "SRCS = live.c\n");
+        assert_eq!(fixed.fixes[0].code, "MAKEFILE_REMOVE_EMPTY_SOURCE");
     }
 
     #[test]
