@@ -7,10 +7,11 @@ texto leve porque o Monaco não oferece suporte oficial a navegadores móveis.
 
 ## Cabeçalho da 42
 
-Informe um e-mail de estudante válido no painel **Identidade 42**. Se a opção
-de lembrar estiver marcada, o e-mail fica somente no armazenamento local desse
-navegador e pode ser apagado com **Esquecer**. Ele é passado ao WebAssembly na
-aba atual para gerar o cabeçalho oficial; nunca é enviado ao servidor.
+Informe um e-mail de estudante válido no painel **Identidade 42**. A opção de
+lembrar começa desmarcada. Se você ativá-la, o e-mail fica somente no
+armazenamento local desse navegador e pode ser apagado com **Esquecer**. Ele é
+passado ao WebAssembly na aba atual para gerar o cabeçalho oficial; nunca é
+enviado ao servidor.
 
 ## Privacidade e limites
 

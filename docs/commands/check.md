@@ -29,7 +29,7 @@ does not commit them.
 ```console
 $ normfix check --format json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "tool_version": "1.0.0-rc.1",
   "mode": "check",
   "summary": {
@@ -43,7 +43,8 @@ $ normfix check --format json
     "unexpected_files": 0,
     "quarantine_candidates": 0,
     "quarantined": 0
-  }
+  },
+  "evaluation": null
 }
 ```
 

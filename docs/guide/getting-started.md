@@ -2,13 +2,15 @@
 
 ## Requirements
 
-- The official Norminette version `3.3.59` available on `PATH`, or supplied
-  with `--norminette PATH`.
-- Rust 1.85 or newer **only** when building from source. Release archives
-  contain a native binary and need no Rust toolchain.
+- The [official Norminette](https://github.com/42School/norminette) command
+  available on `PATH`, or supplied with `--norminette PATH`. Release `3.3.59`
+  is the tested compatibility baseline.
+- [Rust](https://www.rust-lang.org/tools/install) 1.85 or newer **only** when
+  building from source. Release archives contain a native binary and need no
+  Rust toolchain.
 
 Norminette uses its own Python runtime, as provided by the official package.
-Install the exact checker in an isolated environment when it is not already
+Install the tested checker in an isolated environment when it is not already
 available, then verify it:
 
 ```sh
@@ -19,12 +21,11 @@ norminette --version
 A campus-managed Python environment works too. Only the command version and
 its availability on `PATH` matter to `normfix`.
 
-::: warning Exactly 3.3.59
-Any other Norminette release is rejected rather than accepted with a warning.
-The official diagnostic names, locations, and accepted layouts are inputs to
-the before/after regression proof, so silently accepting a newer checker could
-authorize an edit under rules the formatter has never tested. See the
-[compatibility policy](/COMPATIBILITY).
+::: warning Version compatibility
+Another parseable Norminette release runs with a prominent compatibility
+advisory so a campus upgrade does not disable the tool. Use
+`--strict-norminette-version` to reject anything except `3.3.59` in pinned CI.
+See the [compatibility policy](/COMPATIBILITY).
 :::
 
 ## Install
@@ -39,7 +40,9 @@ It detects your platform, downloads the matching release archive, verifies it
 against the published `SHA256SUMS`, and installs the binary into
 `~/.local/bin`. It never uses `sudo`, never writes to a system directory, and
 never installs a toolchain, so it works on a 42 workstation where you have no
-administrative rights.
+administrative rights. By default it uses GitHub's latest stable release. If
+the project has not published a stable version yet, it safely falls back to
+the newest pre-release so the current release candidate remains installable.
 
 Two environment variables change what it does:
 
@@ -47,6 +50,9 @@ Two environment variables change what it does:
 NORMFIX_VERSION=v1.0.0-rc.1 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
+
+`NORMFIX_VERSION` is exact: the installer downloads that tag and does not
+perform channel selection.
 
 A checksum mismatch aborts the install and prints both digests. Read the script
 before piping it to a shell if you would rather see what it does:
@@ -111,7 +117,8 @@ is on `PATH`.
 ### Windows
 
 There is no native Windows archive. Run the Linux CLI and its Norminette
-dependency inside WSL, or use the
+dependency inside [WSL](https://learn.microsoft.com/windows/wsl/install), or
+use the
 [browser playground](/guide/playground) for the in-memory formatter preview.
 Native PowerShell and Windows process behavior are not part of the supported
 CLI contract yet.

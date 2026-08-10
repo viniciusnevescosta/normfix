@@ -7,10 +7,11 @@ ligero porque Monaco no admite oficialmente navegadores móviles.
 
 ## Cabecera de 42
 
-Introduce un correo de estudiante válido en **Identidad 42**. Si eliges
-recordarlo, queda solo en el almacenamiento local de ese navegador y puedes
-borrarlo con **Olvidar**. Se entrega al WebAssembly de la pestaña para generar
-la cabecera oficial; nunca se envía al servidor.
+Introduce un correo de estudiante válido en **Identidad 42**. La opción de
+recordarlo está desmarcada de forma predeterminada. Si la activas, queda solo en
+el almacenamiento local de ese navegador y puedes borrarlo con **Olvidar**. Se
+entrega al WebAssembly de la pestaña para generar la cabecera oficial; nunca se
+envía al servidor.
 
 ## Privacidad y límites
 

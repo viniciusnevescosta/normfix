@@ -120,6 +120,10 @@ normfix --email vneves-c@student.42.fr
 
 Without either flag, `normfix` resolves the identity from your environment and
 Git configuration, and asks interactively when it cannot and the run needs one.
+A valid explicitly supplied identity, or a valid answer to that prompt, is
+atomically saved in the platform's private per-user configuration so later runs
+do not ask again. See [official headers](/reference/headers) for paths and
+permissions.
 
 ## Backups and recovery
 
@@ -226,25 +230,24 @@ Use one exact Norminette executable instead of searching `PATH`.
 normfix --norminette ~/.local/pipx/venvs/norminette/bin/norminette
 ```
 
-The version is still verified: it must be 3.3.59.
+The version is fingerprinted. Release `3.3.59` is tested; another parseable
+release continues with a prominent `NORMINETTE_VERSION_UNTESTED` advisory.
 
 ## Compiler checks
 
-### `--allow-untested-norminette`
+### `--strict-norminette-version`
 
-Continue with a Norminette release this version has not been verified against.
+Refuse a Norminette release this version has not been verified against.
 
 ```sh
-normfix --allow-untested-norminette
+normfix --strict-norminette-version
 ```
 
-Without it, a different release is refused. With it, the run proceeds and
-reports `NORMINETTE_VERSION_UNTESTED` naming what it found.
-
-Use it on the day 42 upgrades and this project has not caught up. The
-before/after proof still holds, because it compares two answers from the same
-checker; what you lose is the guarantee that the native rules match that
-release. Read the diff.
+The default keeps working when a campus installs a newer official release while
+still naming the compatibility gap. Strict mode is useful for reproducible CI
+that deliberately pins `3.3.59`. The former
+`--allow-untested-norminette` spelling remains as a hidden no-op during the
+release-candidate transition.
 
 ### `--no-compiler-preflight`
 
@@ -260,8 +263,8 @@ inferred context cannot supply, and the noise is not useful.
 
 ### `--cc PATH`
 
-Use one exact compiler for the strict preflight and, with `--analyzer`, for the
-deep pass.
+Use one exact compiler for the strict syntax pass and the deep analyzer. The
+analyzer is automatic in `preflight`; ordinary workflows require `--analyzer`.
 
 ```sh
 normfix --cc /usr/bin/gcc-14
@@ -272,10 +275,11 @@ is really Clang is treated as Clang.
 
 ### `--analyzer`
 
-Also run the deep static analyzer your compiler ships.
+Also run the deep static analyzer your compiler ships during an ordinary
+workflow. `preflight` already enables this bounded pass automatically.
 
 ```sh
-normfix preflight --analyzer
+normfix --analyzer
 ```
 
 `normfix` picks the flags from the compiler's own version banner, not from the
@@ -293,15 +297,16 @@ with `--cc` does not get you `-fanalyzer`. `normfix` detects this and uses the
 Clang analyzer instead, so the flag does what you meant either way.
 :::
 
-Both analyzers are slower, opt-in, and informational. They can suggest a leak or
-an invalid access along a path; neither is proof of either, and neither is ever
-proof of their absence. A missing analyzer never changes the exit status.
+Both analyzers are slower and informational. They are automatic in `preflight`
+and opt-in elsewhere. They can suggest a leak or an invalid access along a
+path; neither is proof of either, and neither is ever proof of their absence. A
+missing analyzer never changes the exit status.
 
 For a real GCC on macOS, install one and point at it explicitly:
 
 ```sh
 brew install gcc
-normfix preflight --analyzer --cc "$(brew --prefix)/bin/gcc-14"
+normfix preflight --cc "$(brew --prefix)/bin/gcc-14"
 ```
 
 ## Content that is rewritten
@@ -382,14 +387,17 @@ not already exist as its own flag.
 
 ### `--force`
 
-Confirm destructive operations without a prompt.
+Confirm destructive operations without a prompt, or explicitly acknowledge a
+protected system/broad scope.
 
 ```sh
 normfix --unsafe --force
 ```
 
 For CI and scripts. `--force` on its own, with no destructive flag, is an
-error, so it cannot silently become a blanket approval.
+error unless the selected scope is protected. A protected-scope acknowledgement
+does not create any destructive capability; those still require their own
+flags.
 
 ## Environment
 

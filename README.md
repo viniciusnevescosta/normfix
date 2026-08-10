@@ -40,9 +40,9 @@ pipx install norminette==3.3.59
 `normfix` does not reimplement it. The official checker decides what counts as
 a Norm error, and every run compares its answer before and after the edits; that
 comparison is the reason a run cannot leave a file worse than it found it.
-Another release is refused by default, because the rule names and locations
-feed that proof. Pass `--allow-untested-norminette` when 42 upgrades before this
-project does.
+Another parseable release continues with a prominent compatibility advisory,
+because its rule names and locations have not yet been verified. Pinned CI can
+require exactly `3.3.59` with `--strict-norminette-version`.
 
 Nothing else is required. The release archives contain a native binary and no
 toolchain.
@@ -55,7 +55,10 @@ curl -fsSL https://normfix.vercel.app/install.sh | sh
 
 Downloads the archive for your machine, verifies it against the published
 `SHA256SUMS`, and installs into `~/.local/bin`. No sudo, no system path, no
-toolchain, which is what makes it work on a locked-down 42 workstation.
+toolchain, which is what makes it work on a locked-down 42 workstation. The
+default channel is the latest stable GitHub release. Before the first stable
+release exists, it falls back to the newest release candidate; set
+`NORMFIX_VERSION=vX.Y.Z` to request one exact tag.
 
 With Homebrew:
 
@@ -125,10 +128,16 @@ since.
 | [`preflight`](https://normfix.vercel.app/docs/commands/preflight) | no | The read-only checks before a defense |
 | [`explain`](https://normfix.vercel.app/docs/commands/explain) | no | Explain one rule offline |
 | [`undo`](https://normfix.vercel.app/docs/commands/undo) | yes | Restore a previous run |
-| [`upgrade`](https://normfix.vercel.app/docs/commands/upgrade) | yes | Replace this binary with the newest release |
+| [`upgrade`](https://normfix.vercel.app/docs/commands/upgrade) | yes | Replace this binary with the newest release in its channel |
 
 Exit codes: `0` clean or fixed, `1` work remains, `2` the run itself failed,
 `130` an interactive review was cancelled.
+
+`preflight` ends with a non-conclusive score and grade, plus exact hard-fail
+locations for unexpected files, installed-Norminette findings, and Makefile
+problems in the current on-disk snapshot—even when the read-only shadow proposes
+a fix. It runs a bounded compiler analyzer, but never an untrusted Makefile or
+project binary; README absence is not a failure.
 
 ## Read more
 

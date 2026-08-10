@@ -2,7 +2,8 @@
 
 Every limit below is deliberate. Reading them is the fastest way to understand what the tool is for.
 
-- Exact compatibility requires Norminette 3.3.59; other versions are rejected.
+- Exact compatibility is tested against Norminette 3.3.59; other parseable
+  versions run with a prominent advisory unless strict version mode is enabled.
 - C files must be valid UTF-8 and contain no NUL bytes.
 - Tree-sitter recovery or unclassified tape bytes disable syntax-aware edits
   for that file.
@@ -28,9 +29,9 @@ because each needs a build or a run that `normfix` refuses to perform:
 | Tool | Why it is not run |
 |---|---|
 | `valgrind`, `leaks` | Runtime tools. They need a linked binary and a workload, and `normfix` never builds or executes your program. |
-| AddressSanitizer, UBSan | Instrumented builds, for the same reason. |
+| [AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html), [LeakSanitizer](https://clang.llvm.org/docs/LeakSanitizer.html), UBSan | Instrumented builds, for the same reason. `preflight` gives a separate debug-build recipe without changing the submitted Makefile. |
+| [clang-tidy](https://clang.llvm.org/extra/clang-tidy/index.html) | It needs the project's real compilation database, include paths, defines, and target flags. `preflight` reports whether it is available, but does not guess a command. |
 | `cppcheck`, `scan-build` | Separate installs with their own project configuration; wiring them would mean guessing your build. |
 
 The rule behind all four rows is the same one behind everything else: a result
 this tool cannot reproduce and explain is not a result it will report.
-

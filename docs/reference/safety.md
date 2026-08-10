@@ -60,14 +60,22 @@ normfix --remove-unexpected --force
 normfix --unsafe --force
 ```
 
-`--unsafe` is a closed shorthand for five implemented operations:
+`--unsafe` is a closed shorthand for six implemented operations:
 
 - exact-location invalid-comment removal;
 - compacting simple `NULL` comparisons only when the dedicated C shape is
   proven;
-- removal of proven-missing tokens from simple literal Makefile source lists;
+- removal of proven-missing or trivia-only tokens from simple literal Makefile
+  source lists;
+- removal of project-local header prototypes only when a complete lossless
+  source proof finds neither an implementation nor any use/ambiguity;
 - unreachable-`static` removal under a closed-source proof;
 - unexpected-file quarantine.
+
+Prototype implementation warnings themselves are enabled in normal runs.
+Unsafe mode can remove a missing, unused declaration after the complete proof;
+it never removes an existing trivia-only definition or its prototype because a
+no-op body may be intentional.
 
 It does not enable arbitrary edits. Comment removal can also be requested
 alone with `--remove-invalid-comments`; the other destructive plans still
@@ -112,48 +120,9 @@ best-effort rollback from the captured original bytes; an incomplete rollback
 is reported with the recovery journal path.
 
 `--no-backup` applies only to ordinary safe formatting. A source deletion
-planned by `--remove-invalid-comments` or `--remove-unused` requires external
-recovery storage and fails closed if it is unavailable.
-
-Quarantine always retains a recoverable external copy, including when
-`--no-backup` was supplied:
-
-```text
-<backup-base>/quarantine/<run-id>/<original-relative-path>
-```
-
-The source type, byte length, and BLAKE3 hash are rechecked immediately before
-the move. Existing recovery destinations are never overwritten. A partial
-quarantine failure attempts to restore files already moved.
-
-Default source backups are external to the scanned project:
-
-```text
-$XDG_DATA_HOME/normfix/backups/<run-id>/
-```
-
-On Unix without `XDG_DATA_HOME`, the fallback is:
-
-```text
-~/.local/share/normfix/backups/<run-id>/
-```
-
-Each backed-up transaction includes exact original bytes and `journal.json`.
-Before the first target changes, the writer:
-
-- canonicalizes the project boundary;
-- rejects duplicate, external, symbolic-link, and non-regular targets;
-- confirms every current file still matches the analyzed bytes;
-- writes external backups;
-- stages and synchronizes every replacement.
-
-Targets are committed in sorted path order. A mid-commit error triggers
-best-effort rollback from the captured original bytes; an incomplete rollback
-is reported with the recovery journal path.
-
-`--no-backup` applies only to ordinary safe formatting. A source deletion
-planned by `--remove-invalid-comments` or `--remove-unused` requires external
-recovery storage and fails closed if it is unavailable.
+planned by invalid-comment removal, Makefile source reconciliation, orphan
+prototype removal, or unreachable-`static` removal requires external recovery
+storage and fails closed if it is unavailable.
 
 Quarantine always retains a recoverable external copy, including when
 `--no-backup` was supplied:

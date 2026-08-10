@@ -54,21 +54,24 @@ confirmation; non-interactive restoration requires `--force`.
 | `--remove-unused` | Remove only unreachable `static` functions proven in a complete project |
 | `--remove-unexpected` | Move unexpected regular files to recoverable external quarantine |
 | `--unsafe` | Enable the closed set of risky/destructive actions |
-| `--force` | Confirm destructive capabilities non-interactively |
+| `--force` | Confirm requested destructive capabilities or acknowledge a protected scope |
 | `--no-reorder-includes` | Leave contiguous include blocks in their current order |
 | `--no-format-markdown` | Analyze README documents without canonical CommonMark reprinting |
 | `--no-cache` | Disable the external persistent analysis cache |
 | `--norminette PATH` | Use one exact Norminette executable |
+| `--strict-norminette-version` | Refuse a checker release other than the tested one |
 | `--no-compiler-preflight` | Skip the default strict C compiler advisory pass |
 | `--cc PATH` | Use one exact C compiler for preflight and analysis |
-| `--analyzer` | Also request GCC `-fanalyzer` advisories, including possible leaks |
+| `--analyzer` | Add the bounded GCC/Clang analyzer to ordinary workflows; preflight enables it automatically |
 | `-h`, `--help` | Show built-in help |
 | `-V`, `--version` | Show the native CLI version |
 
 `--check` and `--diff` are mutually exclusive. `--changed` and `--staged` are
 mutually exclusive and cannot be combined with explicit path arguments.
 `--force` without `--unsafe`, `--remove-unused`, or `--remove-unexpected` is an
-error.
+error unless the scope itself is protected. Filesystem roots, the complete home
+directory, broad roots such as `/Users` and `/home`, and operating-system trees
+refuse before discovery without that explicit acknowledgement.
 
 ## Include order
 

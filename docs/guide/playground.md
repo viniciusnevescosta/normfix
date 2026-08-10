@@ -12,10 +12,10 @@ does not officially support mobile browsers.
 
 ## Official 42 headers
 
-Enter a valid student email in **42 identity**. With **Remember on this device**
-enabled, the address is stored only in this browser's same-origin local storage
-and can be removed at any time with **Forget**. Otherwise it lasts for the
-current tab only.
+Enter a valid student email in **42 identity**. **Remember on this device** is
+off by default. When explicitly enabled, the address is stored only in this
+browser's same-origin local storage and can be removed at any time with
+**Forget**. Otherwise it lasts for the current tab only.
 
 The address is passed to WebAssembly in the tab to generate the official 42
 header. It is never sent to a formatting server. Without a valid identity, the

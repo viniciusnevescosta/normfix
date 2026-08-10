@@ -26,8 +26,9 @@ features:
       anything ambiguous is reported instead of rewritten.
   - title: The official checker decides
     details: >-
-      Norminette 3.3.59 is required and verified. Compatibility output, not an
-      approximation, decides whether an edit is an evaluator-facing regression.
+      The installed official Norminette is the oracle. Version 3.3.59 is the
+      verified baseline; another release remains usable with a visible
+      compatibility warning.
   - title: Recoverable by construction
     details: >-
       Writes run through one auditable transaction with external backups, a
@@ -43,9 +44,10 @@ features:
 
 `normfix` formats and diagnoses C sources, headers, Makefiles, and README
 documents for 42 projects. It is not a general C rewriter: it operates under
-the Norm's physical layout rules, keeps the official Norminette as the
-compatibility authority, and refuses to guess where C syntax alone cannot
-prove a change is safe.
+the Norm's physical layout rules, keeps the
+[official Norminette](https://github.com/42School/norminette) as the
+compatibility authority, and refuses to guess where C syntax alone cannot prove
+a change is safe.
 
 ## What it will not do
 
@@ -53,7 +55,8 @@ Every boundary below is deliberate and documented in the
 [compatibility policy](/COMPATIBILITY) and the
 [architecture record](/ARCHITECTURE):
 
-- it does not accept a Norminette release other than 3.3.59;
+- it does not claim tested native-rule compatibility for a Norminette release
+  other than 3.3.59; it identifies that release before continuing;
 - it does not extract long functions for you, because choosing a function
   boundary changes program structure;
 - it does not prove leak freedom, and analyzer output stays informational;

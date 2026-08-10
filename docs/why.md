@@ -15,9 +15,11 @@ worth your time.
 
 ## In one paragraph
 
-You write C for a 42 project. The official Norminette tells you that line 47
-has the wrong indentation, that a function is too long, that a declaration is
-in the wrong place, and then stops, because reporting is all it does.
+You write C for a 42 project. The
+[official Norminette](https://github.com/42School/norminette) tells you that
+line 47 has the wrong indentation, that a function is too long, that a
+declaration is in the wrong place, and then stops, because reporting is all it
+does.
 `normfix` reads the same project, fixes the mistakes it can prove are safe to
 fix, and explains the rest in English instead of a rule name. It is one command
 that leaves your project closer to passing than it found it, or tells you
@@ -48,10 +50,13 @@ file to do it, so you cannot tell what it changed from what you wrote.
 
 ## What normfix does differently
 
-**It uses the official checker as the authority.** Norminette 3.3.59 runs
-before and after every batch of edits. If a batch introduces a rule violation
-that was not there before, the whole batch is reverted and your original bytes
-stay. `normfix` never argues with the tool you are actually graded by.
+**It uses the official checker as the authority.** The installed Norminette
+runs before and after every batch of edits. If a batch introduces a rule
+violation that was not there before, the whole batch is reverted and your
+original bytes stay. Version 3.3.59 is the tested compatibility baseline; a
+different installed release remains usable, but is named in a prominent
+warning because the native rules have not received the same validation.
+`normfix` never argues with the tool you are actually graded by.
 
 **It edits narrow byte ranges, not whole files.** A change touches the range it
 proved something about and nothing else, so the diff is reviewable and the rest
@@ -75,10 +80,11 @@ limitation of the current version:
 - It will not extract a long function for you.
 - It will not redesign control flow, rename across a project, or change a
   public signature.
-- It will not prove your program is leak-free. The optional analyzer pass can
+- It will not prove your program is leak-free. The analyzer pass can
   suggest a leak; it cannot prove its absence.
-- It will not accept a Norminette other than 3.3.59, because compatibility with
-  a checker it has never been tested against is not compatibility.
+- It will not call an untested Norminette release "supported." It continues
+  with a visible compatibility warning so a 42 upgrade does not make the tool
+  unusable, while `--strict-norminette-version` restores fail-closed behavior.
 - It will not guarantee 80 columns when no safe break exists. A long string or
   a macro stays long and is reported instead.
 

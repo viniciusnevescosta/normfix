@@ -7,7 +7,7 @@ when a validated identity is available. Identity resolution uses this order:
 
 1. `--email`, with optional `--login` consistency checking;
 2. `NORMFIX_EMAIL`, with an optional environment or CLI login;
-3. an INI configuration file;
+3. the persistent per-user INI configuration file;
 4. the effective Git `user.email`, if it is a supported 42 address;
 5. the `MAIL` environment variable;
 6. known Vim, Neovim, VS Code, Cursor, and VSCodium 42-header settings.
@@ -24,25 +24,29 @@ No verified 42 student email was found.
 Enter your 42 email (Enter, cancel, or q to skip the header):
 ```
 
-Enter, `cancel`, `q`, or end-of-input skips header insertion while all other
-safe fixes continue. JSON and non-interactive runs never prompt. Ctrl-C cancels
-the command itself, following normal terminal behavior.
+After a valid answer, `normfix` stores the canonical email/login for future
+runs. Enter, `cancel`, `q`, or end-of-input skips header insertion while all
+other safe fixes continue. JSON and non-interactive runs never prompt. Ctrl-C
+cancels the command itself, following normal terminal behavior.
 
 ### Persistent identity configuration
 
-The default configuration path is:
+Supplying a valid `--email` (with an optional matching `--login`) also updates
+this configuration automatically. On Unix, the application directory is mode
+`0700` and the atomically replaced file is mode `0600`. The email is ordinary
+configuration data, not an encrypted secret.
+
+`NORMFIX_CONFIG` selects an explicit absolute path. Otherwise the platform
+default is:
 
 ```text
-$XDG_CONFIG_HOME/normfix/config.ini
+$XDG_CONFIG_HOME/normfix/config.ini                    # explicit XDG base
+~/Library/Application Support/normfix/config.ini       # macOS
+%APPDATA%\normfix\config.ini                          # Windows
+~/.config/normfix/config.ini                           # other Unix
 ```
 
-When `XDG_CONFIG_HOME` is not set, it falls back to:
-
-```text
-~/.config/normfix/config.ini
-```
-
-Use `NORMFIX_CONFIG` to select another file. The supported format is:
+The supported format is:
 
 ```ini
 [header]

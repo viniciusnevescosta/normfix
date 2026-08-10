@@ -6,13 +6,15 @@ backed by automated evidence.
 
 ## Official Norminette
 
-The supported checker is exactly Norminette `3.3.59`.
+The tested checker is the
+[official Norminette](https://github.com/42School/norminette) `3.3.59`.
 
-`normfix` verifies the executable version before analysis and refuses a
-different release. This is stricter than a minimum-version check because the
-official diagnostic names, locations, parser behavior, and accepted layouts
-are inputs to the before/after regression proof. Silently accepting a newer
-checker could authorize an edit under rules the formatter has never tested.
+`normfix` fingerprints the executable version before analysis. A different
+release continues with a prominent `NORMINETTE_VERSION_UNTESTED` advisory by
+default; `--strict-norminette-version` refuses it for pinned CI. This is not a
+minimum-version compatibility claim because official diagnostic names,
+locations, parser behavior, and accepted layouts are inputs to the native
+compatibility layer. The warning makes that reduced assurance explicit.
 
 Norminette remains an external dependency. Release archives contain the native
 `normfix` binary, not Python or the official checker.
@@ -35,15 +37,14 @@ range and the oracle has an explicit adapter for any protocol difference.
 ### When 42 moves first
 
 A tool that refuses every release but one stops working for everyone on the day
-the school upgrades, and a formatter that cannot run is worth nothing. So the
-refusal is the default, not the only option:
+the school upgrades. The default therefore continues and reports
+`NORMINETTE_VERSION_UNTESTED`; pinned CI can opt into refusal:
 
 ```sh
-normfix --allow-untested-norminette
+normfix --strict-norminette-version
 ```
 
-The run then continues and reports `NORMINETTE_VERSION_UNTESTED` naming the
-release it found. This is defensible rather than a hole in the argument,
+The default behavior is defensible rather than a hole in the argument,
 because the property the tool actually promises does not depend on knowing the
 version: the before/after regression proof compares two answers from **the same
 executable**, so a run still cannot leave a file with more official diagnostics
@@ -52,7 +53,8 @@ the native rules agree with it, which is exactly what the warning says.
 
 ## Rust toolchain
 
-- Minimum supported Rust version (MSRV): `1.85`.
+- Minimum supported [Rust](https://www.rust-lang.org/tools/install) version
+  (MSRV): `1.85`.
 - Repository and release toolchain: `1.97.1`, pinned in
   `rust-toolchain.toml`.
 
@@ -76,12 +78,13 @@ machine-vendor labels. Toolchain target identifiers remain internal build
 inputs, not release or product names.
 
 Windows has no native release target. The full CLI is supported on Windows
-through WSL using the Linux archive and a Norminette installation inside the
-same WSL environment. The browser playground is the no-install alternative
-for formatter previews. Native PowerShell/CMD execution is unsupported: the
-bounded subprocess termination, symlink/path behavior, and transaction proofs
-currently have Unix-specific implementation and integration evidence, so a
-native Windows binary would overstate the contract.
+through [WSL](https://learn.microsoft.com/windows/wsl/install) using the Linux
+archive and a Norminette installation inside the same WSL environment. The
+browser playground is the no-install alternative for formatter previews.
+Native PowerShell/CMD execution is unsupported: the bounded subprocess
+termination, symlink/path behavior, and transaction proofs currently have
+Unix-specific implementation and integration evidence, so a native Windows
+binary would overstate the contract.
 
 ## C and build diagnostics
 
@@ -91,7 +94,8 @@ compiler runs by default as a separate diagnostics-only oracle for
 do not replace a project's own Makefile flags, defines, generated inputs,
 language mode, linker inputs, or runtime tests.
 
-GCC `-fanalyzer` is opt-in. Its allocation-lifetime and control-flow findings
+GCC `-fanalyzer` is automatic in `preflight` and opt-in in ordinary workflows.
+Its allocation-lifetime and control-flow findings
 can suggest a possible leak or invalid access, but they are not proof that
 arbitrary C behavior is correct or that a project is leak-free.
 
@@ -103,11 +107,14 @@ manual steps explicitly.
 
 The playground targets modern browsers with standard WebAssembly and ES module
 support. Its deliberately small, old-school HTML/CSS/TypeScript interface is
-built as a static site with pinned Vite 8.1.5 and can be served locally or by
+built as a static site with pinned
+[Vite 8.2.1](https://vite.dev/releases) and can be served locally or by
 Vercel. Its compatibility contract is the in-memory native
 formatter/diagnostic subset described in [`web/README.md`](../web/README.md).
-It does not bundle or emulate Norminette, a compiler, Git, filesystem
-transactions, or official-header identity logic.
+It can build an official header from an identity supplied to that browser tab,
+and can preview C, headers, Makefiles, and Markdown. It does not bundle or
+emulate Norminette, a compiler, Git, project-wide header-guard proofs, or
+filesystem transactions.
 
 ## Report compatibility
 

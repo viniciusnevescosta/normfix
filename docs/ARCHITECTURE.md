@@ -47,7 +47,7 @@ single parser/formatter pass.
 | Parallel files, sorted effects | Rayon processes independent files; results and writes are sorted | Uses available cores without making output nondeterministic | Cross-file proof phases still need serial/global snapshots |
 | External content-addressed cache | redb database keyed by all relevant deterministic inputs | Avoids repeated official checker calls without dirtying projects | Cache invalidation inputs must remain complete |
 | Dedicated Makefile and Markdown paths | GNU Make and CommonMark are not treated as C | Each language gets an appropriate safety policy | Behavior differs by file kind |
-| Diagnostics-only compiler preflight | Run `cc -fsyntax-only -Wall -Wextra -Werror` by default, independently of edit approval | Finds build-relevant mistakes without letting an incomplete guessed build context authorize formatting | Project-specific defines, language mode, generation, linking, and runtime tests remain external |
+| Diagnostics-only compiler preflight | Run `cc -fsyntax-only -Wall -Wextra -Werror` and a bounded GCC/Clang analyzer independently of edit approval | Finds build-relevant mistakes and possible leak paths without letting an incomplete guessed build context authorize formatting | Project-specific defines, language mode, generation, linking, and runtime tests remain external |
 | Explicit Git scopes | Resolve `--changed`/`--staged` through bounded NUL-delimited Git subprocesses | Review can target the same version-control state the student intends | Git state is a selection mechanism, not a completeness proof |
 | Narrow project policy with a closed proof | Parse only an allowed-function list, then resolve definitions from a complete C/header snapshot | Subject rules become machine-checkable without embedding every 42 subject or trusting a partial Git/path scope | One unreadable, recovered, or changed project source disables all allowlist findings for the run |
 | Capability-scoped destructive grants | Authorization names a closed operation set | `--unsafe` cannot become an open “do anything” switch | Confirmation occurs before candidate planning |
@@ -556,9 +556,10 @@ compiler is deliberately different: inability to construct a reliable
 compiler invocation is a visible advisory and cannot prevent independently
 proven formatting.
 
-The official version is exact, not a minimum: `3.3.59`. A different release
-may change rule names, columns, or output grammar, which would invalidate
-compatibility proofs and persistent-cache keys.
+The tested official version is exact, not a minimum: `3.3.59`. A different
+release may change rule names, columns, or output grammar, so the fingerprint
+enters persistent-cache keys and the report emits a compatibility advisory.
+Pinned CI can convert that advisory into refusal with strict version mode.
 
 ### Global proof context
 
@@ -627,7 +628,8 @@ strict compiler option to remain enabled. It emits
 `FUNCTION_POLICY_NOT_CONFIGURED` when the optional policy is absent and
 `PREFLIGHT_MANUAL_STEPS` to make the residual manual work explicit: it does not
 execute Make recipes, link or inspect a binary, run tests/the program, or
-invoke runtime leak tools. GCC analysis remains opt-in through `--analyzer`.
+invoke runtime leak tools. The bounded GCC/Clang analyzer is automatic in
+preflight and remains opt-in through `--analyzer` in ordinary workflows.
 
 Interactive formatting is also two-pass by design. The first check-mode report
 supplies a per-file diff. For each accepted file, the CLI creates a
@@ -764,7 +766,8 @@ The official checker adapter is intentionally strict:
 
 - resolves an explicit executable or searches `PATH`;
 - invokes no shell;
-- runs `--version` and requires exactly `3.3.59`;
+- runs `--version`, fingerprints it, and marks releases other than `3.3.59` as
+  untested (or refuses them in strict mode);
 - forces a stable English, color-free environment;
 - materializes each shadow source under its original basename in an isolated
   temporary directory;
@@ -816,11 +819,12 @@ veto an otherwise proven formatter edit. Missing includes or unsupported
 options that indicate an incomplete configuration become one explicit
 advisory rather than a misleading cascade.
 
-`--analyzer` adds GCC `-fanalyzer` and maps path findings to informational
-diagnostics. The tool may find a leak path or invalid access, but cannot prove
-absence of leaks across all paths, translation units, external calls, or
-ownership stored in aggregate state. Unsupported analyzer options fail open
-with a visible explanation.
+`--analyzer` adds the deep pass to ordinary workflows; preflight adds it
+automatically. GCC `-fanalyzer` and Clang analyzer path findings map to
+informational diagnostics. The tool may find a leak path or invalid access, but
+cannot prove absence of leaks across all paths, translation units, external
+calls, or ownership stored in aggregate state. Unsupported analyzer options
+fail open with a visible explanation.
 
 ## Persistent cache
 
@@ -892,6 +896,12 @@ Why email is authoritative:
 The official header requires both fields, and a locally configured username is
 not evidence of a 42 domain. Deriving the login from a validated address avoids
 constructing an email that may not exist.
+
+A valid flag-supplied or interactively entered identity is atomically persisted
+in the platform per-user configuration. Unix writes use an owner-only
+application directory and `0600` file; symbolic-link destinations are refused.
+The value is configuration data, not an encrypted secret. This persistence is
+kept outside projects so automated and future runs do not need a prompt.
 
 ### Exact templates
 
@@ -971,11 +981,18 @@ The same closed assignment shape supports literal-source reconciliation.
 Makefile, so nested Makefiles describe their own local source trees naturally.
 The Makefile directory must canonicalize below the project root; absolute,
 dot/parent, escaping, or symbolic-link paths are never classified as missing.
-A proven missing token is a diagnostic by default. Removal requires the named
-destructive capability and preserves token order; an unknown filesystem
+A proven missing or trivia-only token is a diagnostic by default. Removal
+requires the named destructive capability, a missing/hashed-content
+transaction precondition, and preserves token order; an unknown filesystem
 result is always retained. Resolving relative to each Makefile matches GNU
 Make authors' usual intent without executing Make, while root confinement
 prevents a stale-list cleanup from inspecting or changing outside files.
+
+Project-wide prototype analysis also runs by default. It reports missing
+non-static implementations and definitions whose compound body contains only
+braces and trivia. Missing, unreferenced declarations may be removed only with
+the exact unsafe capability and a complete lossless project snapshot; an
+existing trivia-only definition is warning-only.
 
 ## Markdown architecture
 
@@ -1049,14 +1066,22 @@ Color is a presentation capability:
 
 ### Stable JSON
 
-The JSON contract has `schema_version: 1`. Arrays are sorted before
+The JSON contract has `schema_version: 2`. Arrays are sorted before
 serialization. Original and fixed source buffers are deliberately excluded to
 avoid leaking whole projects or producing enormous automation payloads.
 
 The model includes before/after diagnostics, accepted fixes, backup paths,
-quarantine outcomes, identity provenance, summary counts, and
-`duration_seconds`. JSON retains individual diagnostics rather than copying the
+quarantine outcomes, identity provenance, summary counts, optional preflight
+evaluation, and `duration_seconds`. The preflight estimate is always marked
+non-conclusive and carries exact hard-fail evidence separately from its
+heuristic score. JSON retains individual diagnostics rather than copying the
 human grouping presentation into the machine contract.
+
+Preflight hard-fail evidence deliberately reads official Norminette and
+Makefile diagnostics from `before`/the original buffer. It adds only final
+shadow occurrences not already represented by the original rule counts. This
+prevents a read-only proposal from grading uncommitted bytes as a pass while
+still surfacing a rule exposed by formatting.
 
 ### Status and exit semantics
 
@@ -1143,12 +1168,15 @@ captured bytes instead of guessing reverse edits.
 The CLI can grant only:
 
 - remove unreachable `static` functions;
-- remove proven-missing source tokens from closed-shape Makefile lists;
+- remove proven-missing or trivia-only source tokens from closed-shape Makefile
+  lists;
+- remove unused project-local prototypes with no implementation under a
+  complete-source proof;
 - quarantine unexpected regular files.
 
 Invalid-comment deletion has its own explicit narrow flag and proof path.
 Compact `NULL` comparison rewriting is a separately proven semantic action.
-`--unsafe` enables those two plus the three named destructive capabilities; it
+`--unsafe` enables those two plus the four named destructive capabilities; it
 does not grant a generic operation or weaken any planner proof.
 
 Both invalid-comment and unreachable-static source deletions force an external
@@ -1392,7 +1420,7 @@ The current architecture does not claim:
 - inference of all build configurations;
 - automatic extraction of long functions (the tool provides a diagnostic
   suggestion only);
-- proof of leak freedom (GCC analyzer output is an optional advisory);
+- proof of leak freedom (GCC/Clang analyzer output is an advisory);
 - execution of Make recipes, linking, project tests, or runtime leak tools;
 - arbitrary identifier/API renames;
 - repair of malformed syntax by guessing;

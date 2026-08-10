@@ -8,10 +8,11 @@ mobiles.
 
 ## En-tête 42
 
-Saisissez une adresse étudiante valide dans **Identité 42**. Si vous choisissez
-de la mémoriser, elle reste uniquement dans le stockage local de ce navigateur
-et peut être supprimée avec **Oublier**. Elle est transmise au WebAssembly de
-l’onglet pour générer l’en-tête officiel, jamais à un serveur.
+Saisissez une adresse étudiante valide dans **Identité 42**. L’option de
+mémorisation est désactivée par défaut. Si vous l’activez, l’adresse reste
+uniquement dans le stockage local de ce navigateur et peut être supprimée avec
+**Oublier**. Elle est transmise au WebAssembly de l’onglet pour générer
+l’en-tête officiel, jamais à un serveur.
 
 ## Confidentialité et limites
 
