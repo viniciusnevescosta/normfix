@@ -1,116 +1,117 @@
 # normfix browser playground
 
-The playground is a deliberately simple, old-school workbench: plain
-HTML/CSS/TypeScript, a file list, text editor, and formatted/diagnostic/diff
-views. Pinned Vite 8.1.5 builds the static site, while WebAssembly reuses the
-same conservative native C action crate as the desktop CLI. Source files pass
-directly from JavaScript to WebAssembly and remain inside the browser tab.
-There is no server-side formatter, upload endpoint, analytics dependency, or
-application runtime.
+The playground is a deliberately simple, old-school workbench built with
+HTML, CSS, TypeScript, Vite, Monaco, and WebAssembly. It formats in-memory C,
+headers, Makefiles, and Markdown using the same conservative Rust crates as the
+CLI. There is no formatting backend, upload endpoint, account, or analytics
+runtime.
+
+Desktop browsers get Monaco with line numbers, search, multiple cursors,
+bracket matching, and language highlighting. Narrow or coarse-pointer devices
+get a lightweight textarea because Monaco does not officially support mobile
+browsers. Both paths expose the same formatter and keyboard shortcut.
 
 ## Requirements
 
 - Node.js 20.19+ or 22.12+
-- Rust 1.97.1 with the browser compilation target
+- Rust 1.97.1 with `wasm32-unknown-unknown`
 - `wasm-bindgen-cli` 0.2.126
-- Clang with WebAssembly support (used to compile the embedded C grammar)
+- a Clang installation that can actually compile a `wasm32` target
 - a POSIX shell for the checked-in build scripts
 
-Windows visitors can use the deployed playground in a modern browser without
-installing anything. Windows development and local builds should run inside
-WSL; the scripts do not claim native PowerShell support.
-
-Install the two Rust additions once:
+Windows visitors can use the deployed playground directly. Windows local
+development should use [WSL](https://learn.microsoft.com/windows/wsl/install);
+the scripts do not claim native PowerShell support.
 
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
-```
-
-`wasm32-unknown-unknown` is Rust's internal browser compilation target name,
-not a public normfix release archive name.
-
-Install the pinned frontend dependency from the lockfile:
-
-```sh
 npm ci
 ```
 
-## Develop and build
+`web/build.sh` probes candidate compilers instead of assuming that a command
+named `clang` supports WebAssembly. On macOS it checks configured and Homebrew
+LLVM paths and prints an actionable `brew install llvm` message if none works.
 
-Start the local Vite server:
+## Develop, test, and build
+
+From the repository root:
 
 ```sh
 npm run dev
-```
-
-The command rebuilds the WASM bindings before starting the site at
-<http://127.0.0.1:5173>.
-
-Create and inspect the exact production bundle:
-
-```sh
+npm run check --workspace normfix-playground
 npm run build
 npm run preview
 ```
 
-Vite writes the deployable site to `web/dist/`. Both `web/pkg/` and `web/dist/`
-are generated and intentionally ignored; CI and Vercel rebuild them instead of
-trusting checked-in binary blobs.
+The development and production commands regenerate the WASM bindings before
+they serve or publish the site. `web/pkg/` and `web/dist/` are generated and
+ignored, so a fresh CI or Vercel build never depends on a stale binary blob.
 
-## Browser contract
+Vite emits the English route at `/` and crawlable localized entries at `/pt/`,
+`/es/`, and `/fr/`. UI copy and browser-side validation live in `web/i18n.ts`.
+See the [localization guide](../docs/LOCALIZATION.md) before adding a locale.
 
-`normfix-wasm` exports `formatProject(requestJson)`. The request schema is:
+## Browser API and supported files
+
+`normfix-wasm` exports `formatProject(requestJson)`. A request can include the
+42 identity and a deterministic timestamp used by official-header generation:
 
 ```json
 {
   "files": [
-    { "path": "src/main.c", "source": "int main(void)\n{\n}\n" }
-  ]
+    { "path": "src/main.c", "source": "int main(void)\n{\n}\n" },
+    { "path": "Makefile", "source": "NAME=app\n" },
+    { "path": "README.md", "source": "# app\n" }
+  ],
+  "identity_email": "login@student.42.fr",
+  "timestamp": "2026/08/10 12:00:00"
 }
 ```
 
-The versioned response contains each formatted source, accepted safe fixes,
-remaining diagnostics with line and display column, function budgets, and a
-unified diff. A malformed C file fails independently so other selected files
-can still be inspected. Requests are bounded to 128 files, 1 MiB per file and
-4 MiB in total to keep browser memory use predictable. Paths must be canonical,
-portable relative paths of at most 240 UTF-8 bytes so duplicates and downloaded
-tar entries cannot acquire platform-dependent meanings. Any non-convergent
-formatter result is discarded rather than exposed as a usable partial edit.
+The response contains formatted source, accepted safe fixes, remaining native
+diagnostics, function budgets, and unified diffs. Native diagnostic text stays
+English until CLI diagnostic localization lands; all browser UI and validation
+messages are localized.
+
+The browser accepts `.c`, `.h`, `.md`, and files named `Makefile`. Requests are
+bounded to 128 files, 1 MiB per file, and 4 MiB total. Paths must be NFC-normalized
+portable relative paths no longer than 240 UTF-8 bytes and must also fit a
+portable tar header. Case-insensitive path collisions are rejected before the
+WASM call. Imported files must be valid UTF-8; a leading UTF-8 BOM is consumed.
+Any non-convergent result is discarded instead of exposed as a usable edit.
+
+## 42 identity and privacy boundary
+
+The identity panel accepts 42 student addresses only. The email is kept in
+memory unless the visitor explicitly selects **Remember on this device**. In
+that case it is stored under `normfix.identity.v1` in same-origin local storage
+and can be removed with **Forget**. It is passed directly to WebAssembly to
+generate the official 42 header and is never sent to a server.
+
+Source buffers likewise stay inside the browser process. The only external
+browser request is an unauthenticated, no-referrer fetch of the repository's
+public GitHub star count; a bundled fallback is shown if GitHub is unavailable.
 
 ## Why the browser scope is smaller
 
-The runtime bundle contains no filesystem, environment, subprocess, Git, or
-network adapter. This boundary makes the privacy claim directly auditable and
-keeps the WASM operation deterministic.
+The WASM bundle intentionally has no filesystem, environment, subprocess, or
+Git adapter. That makes the source privacy claim auditable and the operation
+deterministic, but it also means the browser cannot run the official
+[Norminette](https://github.com/42school/norminette), a C compiler, Git, Make,
+or the CLI transaction/backup/undo system. The playground is a native formatter
+preview, not an official evaluation.
 
-Consequently, the playground provides native safe C formatting, structural
-diagnostics, and function budgets. Use the desktop CLI for official 42 header
-identity/timestamps, project-wide header-guard proofs, the official Norminette
-oracle, compiler/analyzer checks, Makefile updates, allowed-function policy,
-Git-scoped runs, backups, and undo.
+## Deployment and security policy
 
-## Vercel
+The root `vercel.json` installs the workspaces, regenerates WASM, builds the
+playground and VitePress documentation, and publishes `web/dist/`. Keep the
+Vercel project Root Directory at the repository root.
 
-The repository-root `vercel.json` is monorepo-safe: it installs only the
-`web/` package, runs its dedicated Vercel build, and publishes only `web/dist/`.
-Keep the Vercel project Root Directory at the repository root so these paths
-remain valid.
-
-Vercel's standard Node build image does not guarantee the Rust toolchain. The
-dedicated build script therefore ensures Clang is present and installs the
-pinned minimal Rust toolchain, browser target, and matching binding generator
-into `.vercel-rust/` before the Vite build. This happens only at build time;
-none of those tools ship to the browser.
-
-No environment variable, secret, function, rewrite, or backend service is
-required. The configured content-security policy only allows same-origin
-scripts, styles, WASM, and fetches.
-
-To publish, import the repository into Vercel and leave the project Root
-Directory at the repository root. The checked-in `vercel.json` supplies the
-Vite framework, install command, build command, output directory, cache
-headers, and browser security headers. Each connected-branch deployment then
-builds a preview; promoting the chosen deployment publishes the production
-site. No separate API or server project is needed.
+Content security policies are split so the playground and `/docs/` never
+receive competing CSP headers. Scripts remain same-origin and disallow inline
+execution. Monaco requires same-origin/blob workers and injects editor styles,
+so the playground permits `worker-src 'self' blob:` and `style-src 'unsafe-inline'`.
+`connect-src` additionally permits only GitHub's public API for the star count.
+The inline-style exception is intentionally limited to styles; it does not
+weaken `script-src`.

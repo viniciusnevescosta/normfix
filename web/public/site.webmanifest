@@ -1,0 +1,16 @@
+{
+  "name": "normfix browser playground",
+  "short_name": "normfix",
+  "description": "Private in-browser formatting and diagnostics for 42 School projects.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111311",
+  "theme_color": "#111311",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

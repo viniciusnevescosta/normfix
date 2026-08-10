@@ -47,6 +47,17 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 code {
   color: var(--accent);
   font-family: inherit;
@@ -108,6 +119,18 @@ code {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+.language-picker select {
+  min-width: 50px;
+  padding: 3px 5px;
+  font-size: 11px;
+}
+
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .topbar-link {
@@ -205,7 +228,7 @@ h2 {
 
 .workbench {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   min-height: 590px;
   border: 1px solid var(--border);
   background: var(--panel);
@@ -314,6 +337,73 @@ h2 {
   border-top: 1px solid var(--border);
 }
 
+.identity-panel {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.identity-panel > strong {
+  font-size: 11px;
+}
+
+.identity-panel > label:not(.remember-option) {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.identity-panel input[type="email"] {
+  min-width: 0;
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  background: #121412;
+  font-size: 10px;
+}
+
+.identity-panel input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.remember-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.remember-option input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.identity-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.identity-actions .button {
+  min-height: 25px;
+}
+
+.identity-status,
+.identity-privacy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.identity-status:not(:empty) {
+  color: var(--accent);
+}
+
 .button {
   display: inline-flex;
   min-height: 30px;
@@ -383,10 +473,23 @@ h2 {
   font-size: 10px;
 }
 
-#editor {
+.editor-surface {
+  position: relative;
   width: 100%;
   min-height: 480px;
   flex: 1;
+  background: #121412;
+}
+
+#monaco-editor {
+  position: absolute;
+  inset: 0;
+}
+
+#fallback-editor {
+  width: 100%;
+  min-height: 480px;
+  height: 100%;
   resize: vertical;
   padding: 14px 16px;
   color: var(--text);
@@ -398,6 +501,11 @@ h2 {
   line-height: 1.55;
   tab-size: 4;
   white-space: pre;
+}
+
+#monaco-editor[hidden],
+#fallback-editor[hidden] {
+  display: none;
 }
 
 .runbar {
@@ -696,6 +804,23 @@ dialog input {
   margin: 0;
   color: var(--muted);
   font-size: 10px;
+}
+
+.dependency-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  margin-top: 7px;
+  font-size: 9px;
+}
+
+.dependency-links span {
+  color: var(--muted);
+}
+
+.dependency-links a {
+  color: var(--accent);
+  text-underline-offset: 2px;
 }
 
 dialog {

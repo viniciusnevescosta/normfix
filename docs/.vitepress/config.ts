@@ -1,20 +1,288 @@
+import { createRequire } from "node:module";
 import { defineConfig } from "vitepress";
-import { MermaidMarkdown, MermaidPlugin } from "vitepress-plugin-mermaid";
+
+const require = createRequire(import.meta.url);
+const vueServerRenderer = require.resolve("vue/server-renderer");
+
+const siteOrigin = "https://normfix.vercel.app";
+const translatedPages = new Map<string, string>([
+  ["", ""],
+  ["guide/getting-started", "guide/getting-started"],
+  ["guide/playground", "guide/playground"],
+  ["reference/safety", "reference/safety"],
+  ["COMPATIBILITY", "COMPATIBILITY"],
+  ["LOCALIZATION", "LOCALIZATION"],
+]);
+const localePrefixes = ["pt", "es", "fr"] as const;
+const localizedSearch = {
+  pt: {
+    provider: "local" as const,
+    options: {
+      translations: {
+        button: { buttonText: "Buscar", buttonAriaLabel: "Buscar na documentação" },
+        modal: {
+          displayDetails: "Exibir detalhes",
+          resetButtonTitle: "Limpar busca",
+          backButtonTitle: "Fechar busca",
+          noResultsText: "Nenhum resultado encontrado",
+          footer: {
+            selectText: "selecionar",
+            selectKeyAriaLabel: "Enter",
+            navigateText: "navegar",
+            navigateUpKeyAriaLabel: "Seta para cima",
+            navigateDownKeyAriaLabel: "Seta para baixo",
+            closeText: "fechar",
+            closeKeyAriaLabel: "Escape",
+          },
+        },
+      },
+    },
+  },
+  es: {
+    provider: "local" as const,
+    options: {
+      translations: {
+        button: { buttonText: "Buscar", buttonAriaLabel: "Buscar en la documentación" },
+        modal: {
+          displayDetails: "Mostrar detalles",
+          resetButtonTitle: "Limpiar búsqueda",
+          backButtonTitle: "Cerrar búsqueda",
+          noResultsText: "No se encontraron resultados",
+          footer: {
+            selectText: "seleccionar",
+            selectKeyAriaLabel: "Enter",
+            navigateText: "navegar",
+            navigateUpKeyAriaLabel: "Flecha arriba",
+            navigateDownKeyAriaLabel: "Flecha abajo",
+            closeText: "cerrar",
+            closeKeyAriaLabel: "Escape",
+          },
+        },
+      },
+    },
+  },
+  fr: {
+    provider: "local" as const,
+    options: {
+      translations: {
+        button: { buttonText: "Rechercher", buttonAriaLabel: "Rechercher dans la documentation" },
+        modal: {
+          displayDetails: "Afficher les détails",
+          resetButtonTitle: "Effacer la recherche",
+          backButtonTitle: "Fermer la recherche",
+          noResultsText: "Aucun résultat trouvé",
+          footer: {
+            selectText: "sélectionner",
+            selectKeyAriaLabel: "Entrée",
+            navigateText: "naviguer",
+            navigateUpKeyAriaLabel: "Flèche vers le haut",
+            navigateDownKeyAriaLabel: "Flèche vers le bas",
+            closeText: "fermer",
+            closeKeyAriaLabel: "Échap",
+          },
+        },
+      },
+    },
+  },
+};
+
+function localizedRoute(locale: string, page: string): string {
+  const prefix = locale === "en" ? "" : `${locale}/`;
+  return `${siteOrigin}/docs/${prefix}${page}`;
+}
 
 // The playground owns the site root and the documentation is published beneath
 // it, so `base` must match the deployed `/docs/` prefix and `outDir` must write
 // inside the Vite bundle that Vercel publishes.
 //
-// `withMermaid` renders the architecture diagram that the reference documents
-// already express as a fenced `mermaid` block for GitHub.
+// Mermaid fences remain readable on GitHub and are rendered client-side by the
+// custom theme without the legacy VitePress plugin dependency.
 export default defineConfig({
   title: "normfix",
   description:
     "Safe automatic fixes and actionable diagnostics for the 42 Norm.",
   lang: "en-US",
+  locales: {
+    root: { label: "English", lang: "en-US", link: "/" },
+    pt: {
+      label: "Português",
+      lang: "pt-BR",
+      link: "/pt/",
+      description: "Correções automáticas seguras e diagnósticos úteis para a Norma da 42.",
+      markdown: { codeCopyButton: { tooltipText: "Copiar código", copiedText: "Copiado" } },
+      themeConfig: {
+        nav: [
+          { text: "Início", link: "/pt/" },
+          { text: "Instalação", link: "/pt/guide/getting-started" },
+          { text: "Playground", link: "/pt/guide/playground" },
+          { text: "Referência em inglês", link: "/guide/command-line" },
+          {
+            text: "Projeto",
+            items: [
+              { text: "Segurança e recuperação", link: "/pt/reference/safety" },
+              { text: "Compatibilidade", link: "/pt/COMPATIBILITY" },
+              { text: "Localização", link: "/pt/LOCALIZATION" },
+            ],
+          },
+        ],
+        sidebar: [
+          {
+            text: "Guia",
+            items: [
+              { text: "Visão geral", link: "/pt/" },
+              { text: "Primeiros passos", link: "/pt/guide/getting-started" },
+              { text: "Playground no navegador", link: "/pt/guide/playground" },
+              { text: "Segurança e recuperação", link: "/pt/reference/safety" },
+              { text: "Compatibilidade", link: "/pt/COMPATIBILITY" },
+              { text: "Guia de localização", link: "/pt/LOCALIZATION" },
+            ],
+          },
+        ],
+        editLink: { text: "Editar esta página no GitHub" },
+        docFooter: { prev: "Página anterior", next: "Próxima página" },
+        outline: { label: "Nesta página" },
+        returnToTopLabel: "Voltar ao topo",
+        sidebarMenuLabel: "Menu",
+        darkModeSwitchLabel: "Tema",
+        lightModeSwitchTitle: "Mudar para o tema claro",
+        darkModeSwitchTitle: "Mudar para o tema escuro",
+        langMenuLabel: "Mudar idioma",
+        skipToContentLabel: "Ir para o conteúdo",
+        search: localizedSearch.pt,
+        footer: {
+          message: "Publicado sob a licença MIT.",
+          copyright: "Copyright © 2026 Vinicius Neves Costa",
+        },
+        notFound: {
+          title: "PÁGINA NÃO ENCONTRADA",
+          quote: "O endereço pode ter mudado ou não existir.",
+          link: "/pt/",
+          linkLabel: "ir para o início",
+          linkText: "Voltar ao início",
+        },
+      },
+    },
+    es: {
+      label: "Español",
+      lang: "es-ES",
+      link: "/es/",
+      description: "Correcciones automáticas seguras y diagnósticos útiles para la Norma de 42.",
+      markdown: { codeCopyButton: { tooltipText: "Copiar código", copiedText: "Copiado" } },
+      themeConfig: {
+        nav: [
+          { text: "Inicio", link: "/es/" },
+          { text: "Instalación", link: "/es/guide/getting-started" },
+          { text: "Playground", link: "/es/guide/playground" },
+          { text: "Referencia en inglés", link: "/guide/command-line" },
+          {
+            text: "Proyecto",
+            items: [
+              { text: "Seguridad y recuperación", link: "/es/reference/safety" },
+              { text: "Compatibilidad", link: "/es/COMPATIBILITY" },
+              { text: "Localización", link: "/es/LOCALIZATION" },
+            ],
+          },
+        ],
+        sidebar: [
+          {
+            text: "Guía",
+            items: [
+              { text: "Resumen", link: "/es/" },
+              { text: "Primeros pasos", link: "/es/guide/getting-started" },
+              { text: "Playground del navegador", link: "/es/guide/playground" },
+              { text: "Seguridad y recuperación", link: "/es/reference/safety" },
+              { text: "Compatibilidad", link: "/es/COMPATIBILITY" },
+              { text: "Guía de localización", link: "/es/LOCALIZATION" },
+            ],
+          },
+        ],
+        editLink: { text: "Editar esta página en GitHub" },
+        docFooter: { prev: "Página anterior", next: "Página siguiente" },
+        outline: { label: "En esta página" },
+        returnToTopLabel: "Volver arriba",
+        sidebarMenuLabel: "Menú",
+        darkModeSwitchLabel: "Tema",
+        lightModeSwitchTitle: "Cambiar al tema claro",
+        darkModeSwitchTitle: "Cambiar al tema oscuro",
+        langMenuLabel: "Cambiar idioma",
+        skipToContentLabel: "Ir al contenido",
+        search: localizedSearch.es,
+        footer: {
+          message: "Publicado bajo la licencia MIT.",
+          copyright: "Copyright © 2026 Vinicius Neves Costa",
+        },
+        notFound: {
+          title: "PÁGINA NO ENCONTRADA",
+          quote: "La dirección puede haber cambiado o no existir.",
+          link: "/es/",
+          linkLabel: "ir al inicio",
+          linkText: "Volver al inicio",
+        },
+      },
+    },
+    fr: {
+      label: "Français",
+      lang: "fr-FR",
+      link: "/fr/",
+      description: "Corrections automatiques sûres et diagnostics utiles pour la Norme de 42.",
+      markdown: { codeCopyButton: { tooltipText: "Copier le code", copiedText: "Copié" } },
+      themeConfig: {
+        nav: [
+          { text: "Accueil", link: "/fr/" },
+          { text: "Installation", link: "/fr/guide/getting-started" },
+          { text: "Playground", link: "/fr/guide/playground" },
+          { text: "Référence en anglais", link: "/guide/command-line" },
+          {
+            text: "Projet",
+            items: [
+              { text: "Sécurité et récupération", link: "/fr/reference/safety" },
+              { text: "Compatibilité", link: "/fr/COMPATIBILITY" },
+              { text: "Localisation", link: "/fr/LOCALIZATION" },
+            ],
+          },
+        ],
+        sidebar: [
+          {
+            text: "Guide",
+            items: [
+              { text: "Vue d’ensemble", link: "/fr/" },
+              { text: "Bien démarrer", link: "/fr/guide/getting-started" },
+              { text: "Playground navigateur", link: "/fr/guide/playground" },
+              { text: "Sécurité et récupération", link: "/fr/reference/safety" },
+              { text: "Compatibilité", link: "/fr/COMPATIBILITY" },
+              { text: "Guide de localisation", link: "/fr/LOCALIZATION" },
+            ],
+          },
+        ],
+        editLink: { text: "Modifier cette page sur GitHub" },
+        docFooter: { prev: "Page précédente", next: "Page suivante" },
+        outline: { label: "Sur cette page" },
+        returnToTopLabel: "Retour en haut",
+        sidebarMenuLabel: "Menu",
+        darkModeSwitchLabel: "Thème",
+        lightModeSwitchTitle: "Passer au thème clair",
+        darkModeSwitchTitle: "Passer au thème sombre",
+        langMenuLabel: "Changer de langue",
+        skipToContentLabel: "Aller au contenu",
+        search: localizedSearch.fr,
+        footer: {
+          message: "Publié sous licence MIT.",
+          copyright: "Copyright © 2026 Vinicius Neves Costa",
+        },
+        notFound: {
+          title: "PAGE INTROUVABLE",
+          quote: "L’adresse a peut-être changé ou n’existe pas.",
+          link: "/fr/",
+          linkLabel: "aller à l’accueil",
+          linkText: "Retour à l’accueil",
+        },
+      },
+    },
+  },
   base: "/docs/",
   outDir: "../web/dist/docs",
   cleanUrls: true,
+  sitemap: { hostname: `${siteOrigin}/docs/` },
   lastUpdated: false,
   // README.md documents this directory for people reading the repository; it is
   // not a page of the published site.
@@ -42,8 +310,11 @@ export default defineConfig({
         items: [
           { text: "Changelog", link: "/changelog" },
           { text: "Compatibility", link: "/COMPATIBILITY" },
+          { text: "AI agents", link: "/guide/ai-agents" },
           { text: "Contributing", link: "/contributing" },
           { text: "Security", link: "/security" },
+          { text: "Roadmap", link: "/ROADMAP" },
+          { text: "Localization", link: "/LOCALIZATION" },
         ],
       },
     ],
@@ -55,6 +326,7 @@ export default defineConfig({
           { text: "Getting started", link: "/guide/getting-started" },
           { text: "Command line", link: "/guide/command-line" },
           { text: "Browser playground", link: "/guide/playground" },
+          { text: "AI agents", link: "/guide/ai-agents" },
         ],
       },
       {
@@ -93,6 +365,8 @@ export default defineConfig({
           { text: "Changelog", link: "/changelog" },
           { text: "Contributing", link: "/contributing" },
           { text: "Security policy", link: "/security" },
+          { text: "Roadmap", link: "/ROADMAP" },
+          { text: "Localization guide", link: "/LOCALIZATION" },
         ],
       },
     ],
@@ -116,8 +390,64 @@ export default defineConfig({
   },
   markdown: {
     config: (md) => {
-      md.use(MermaidMarkdown);
+      const defaultFence = md.renderer.rules.fence;
+      md.renderer.rules.fence = (tokens, index, options, environment, self) => {
+        const token = tokens[index];
+        if (token?.info.trim() === "mermaid") {
+          return `<pre class="mermaid">${md.utils.escapeHtml(token.content)}</pre>`;
+        }
+        return defaultFence
+          ? defaultFence(tokens, index, options, environment, self)
+          : self.renderToken(tokens, index, options);
+      };
     },
+  },
+  transformHead({ page, title, description }) {
+    const route = page
+      .replace(/\.(?:md|html)$/, "")
+      .replace(/(^|\/)index$/, "$1");
+    const withoutLocale = localePrefixes.reduce(
+      (value, locale) => value.replace(new RegExp(`^${locale}/`), ""),
+      route,
+    );
+    const pageKey = translatedPages.get(withoutLocale);
+    const activeLocale = localePrefixes.find((locale) => route.startsWith(`${locale}/`)) ?? "en";
+    const canonical = `${siteOrigin}/docs/${route}`;
+    const head: Array<[string, Record<string, string>]> = [
+      ["link", { rel: "canonical", href: canonical }],
+      ["meta", { property: "og:type", content: "article" }],
+      ["meta", { property: "og:site_name", content: "normfix" }],
+      ["meta", { property: "og:title", content: title }],
+      ["meta", { property: "og:description", content: description }],
+      ["meta", { property: "og:url", content: canonical }],
+      ["meta", { property: "og:image", content: `${siteOrigin}/og-normfix.png` }],
+      ["meta", { property: "og:image:width", content: "1731" }],
+      ["meta", { property: "og:image:height", content: "909" }],
+      ["meta", {
+        property: "og:image:alt",
+        content: "normfix — safe fixes and clear diagnostics for 42 C projects",
+      }],
+      ["meta", { name: "twitter:card", content: "summary_large_image" }],
+      ["meta", { name: "twitter:image", content: `${siteOrigin}/og-normfix.png` }],
+      ["meta", {
+        name: "twitter:image:alt",
+        content: "normfix — safe fixes and clear diagnostics for 42 C projects",
+      }],
+      ["meta", {
+        property: "og:locale",
+        content: activeLocale === "pt" ? "pt_BR" : activeLocale === "es" ? "es_ES" : activeLocale === "fr" ? "fr_FR" : "en_US",
+      }],
+    ];
+    if (pageKey !== undefined) {
+      head.push(
+        ["link", { rel: "alternate", hreflang: "x-default", href: localizedRoute("en", pageKey) }],
+        ["link", { rel: "alternate", hreflang: "en", href: localizedRoute("en", pageKey) }],
+        ["link", { rel: "alternate", hreflang: "pt-BR", href: localizedRoute("pt", pageKey) }],
+        ["link", { rel: "alternate", hreflang: "es", href: localizedRoute("es", pageKey) }],
+        ["link", { rel: "alternate", hreflang: "fr", href: localizedRoute("fr", pageKey) }],
+      );
+    }
+    return head;
   },
   // VitePress preloads every async chunk it knows about, so a page with no
   // diagram still told the browser to fetch several megabytes of renderer.
@@ -132,27 +462,17 @@ export default defineConfig({
     );
   },
   vite: {
-    plugins: [MermaidPlugin()],
+    resolve: {
+      // VitePress 2 alpha externalizes this subpath while rendering. Resolving
+      // it eagerly avoids Node treating Vue's directory as a bare ESM import
+      // in npm workspaces.
+      alias: { "vue/server-renderer": vueServerRenderer },
+    },
     build: {
-      // The mermaid renderer is large and the plugin imports it statically into
-      // the theme, so it cannot be made lazy from here. Isolating it in its own
-      // chunk at least keeps its hash stable: editing a page no longer
-      // invalidates the renderer in a reader's cache.
+      // Mermaid is loaded only by pages that contain a diagram. Its dedicated
+      // async chunk is intentionally larger than an ordinary documentation
+      // page and remains cacheable across prose-only edits.
       chunkSizeWarningLimit: 700,
-      rollupOptions: {
-        output: {
-          manualChunks(id: string) {
-            if (
-              /node_modules\/(mermaid|cytoscape|dagre|@?d3|katex|elkjs|khroma|roughjs)/.test(
-                id,
-              )
-            ) {
-              return "mermaid";
-            }
-            return undefined;
-          },
-        },
-      },
     },
   },
 });

@@ -1,0 +1,16 @@
+# normfix
+
+normfix safely formats 42 School C projects and explains edits it cannot prove.
+
+- AI-agent guide: https://normfix.vercel.app/docs/guide/ai-agents
+- Commands: https://normfix.vercel.app/docs/commands/
+- JSON report schema: https://normfix.vercel.app/docs/reference/reporting
+- Safety and recovery: https://normfix.vercel.app/docs/reference/safety
+- Official repository: https://github.com/viniciusnevescosta/normfix
+- Official Norminette: https://github.com/42school/norminette
+
+Read-only project check for an agent:
+
+    normfix check --format json
+
+Do not run formatting or unsafe flags without explicit permission to write.

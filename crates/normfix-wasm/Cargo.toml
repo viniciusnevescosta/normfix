@@ -17,10 +17,14 @@ crate-type = ["cdylib", "rlib"]
 camino.workspace = true
 normfix-c-actions = { path = "../normfix-c-actions" }
 normfix-core = { path = "../normfix-core" }
+normfix-header = { path = "../normfix-header" }
+normfix-makefile = { path = "../normfix-makefile" }
+normfix-markdown = { path = "../normfix-markdown" }
 serde.workspace = true
 serde_json.workspace = true
 similar.workspace = true
 thiserror.workspace = true
+unicode-normalization.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.126"

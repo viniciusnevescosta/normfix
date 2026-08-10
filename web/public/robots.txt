@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://normfix.vercel.app/sitemap.xml
+Sitemap: https://normfix.vercel.app/docs/sitemap.xml

@@ -924,10 +924,14 @@ dependencies = [
  "camino",
  "normfix-c-actions",
  "normfix-core",
+ "normfix-header",
+ "normfix-makefile",
+ "normfix-markdown",
  "serde",
  "serde_json",
  "similar",
  "thiserror",
+ "unicode-normalization",
  "wasm-bindgen",
 ]
 

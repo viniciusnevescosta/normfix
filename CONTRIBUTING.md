@@ -15,16 +15,25 @@ Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). It records what each crate
 owns and, more usefully, the tradeoff accepted for every boundary. Most review
 disagreements turn out to be disagreements with a decision recorded there.
 
+For a new language or translated string, also read
+[`docs/LOCALIZATION.md`](docs/LOCALIZATION.md). It defines which human surfaces
+are translated and which command, rule, JSON, and configuration tokens must
+remain stable.
+
 ## Setup
 
-Building from source needs Rust 1.85 or newer; the pinned toolchain in
-`rust-toolchain.toml` is installed for you by the first command. Nobody
+Building from source needs [Rust](https://www.rust-lang.org/tools/install)
+1.85 or newer; the pinned toolchain in `rust-toolchain.toml` is installed for
+you by the first command. Nobody
 *using* normfix needs a toolchain, because the release archives ship a native
 binary.
 
+The [official Norminette](https://github.com/42School/norminette) remains the
+compatibility authority used by the differential gate.
+
 ```sh
-rustup show active-toolchain     # installs the pinned toolchain
-pipx install norminette==3.3.59  # the compatibility authority
+rustup show active-toolchain     # installs the pinned Rust toolchain
+pipx install norminette==3.3.59  # installs the official checker
 npm ci                           # the playground and documentation workspace
 ```
 
@@ -41,6 +50,8 @@ RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked
 cargo +1.85.0 test --workspace --all-targets --locked
 cargo deny --all-features check
 cargo test --locked -p normfix-engine --test differential -- --ignored
+npm audit --audit-level=moderate
+npm run build
 ```
 
 Benchmarks are not a gate, but run them when you touch the parser, the tape, or

@@ -33,6 +33,7 @@ for (const page of PAGES) {
   const rewritten = body
     .replace(/\]\(docs\/ARCHITECTURE\.md\)/g, "](/ARCHITECTURE)")
     .replace(/\]\(docs\/COMPATIBILITY\.md\)/g, "](/COMPATIBILITY)")
+    .replace(/\]\(docs\/LOCALIZATION\.md\)/g, "](/LOCALIZATION)")
     .replace(/\]\(docs\/RELEASING\.md\)/g, "](/RELEASING)")
     .replace(/\]\(CHANGELOG\.md\)/g, "](/changelog)")
     .replace(/\]\(CONTRIBUTING\.md\)/g, "](/contributing)")
