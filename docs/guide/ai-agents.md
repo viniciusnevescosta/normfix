@@ -42,6 +42,27 @@ At startup, human mode writes a color-free action/configuration block to
 keeps the versioned final report as the only JSON document on `stdout`. Neither
 mode prompts when stdin is non-interactive.
 
+Read the scope out of that event before doing anything with the result. It is
+the run's own statement of what it was about to touch, so an agent can abort a
+run whose scope does not match the task it was given, instead of discovering
+the mismatch in the summary.
+
+A broad or operating-system-sensitive scope is refused before any file is read:
+
+```console
+$ normfix check /
+normfix
+error: refusing to scan or modify protected scope `/` because it is a filesystem root; inspect the path and pass --force to acknowledge it explicitly
+No unvalidated changes were written.
+```
+
+That is exit `2` with no JSON report on `stdout`. Filesystem roots, complete
+home directories, operating-system trees, and broad multi-project directories
+all refuse this way, and the check resolves symbolic links and `..` first. Do
+not add `--force` to make the message go away: the refusal almost always means
+the scope was computed wrong, and `--force` is a decision for the user to make
+about a path they have inspected.
+
 The regular formatter does not need Rust. A compiler is used only for advisory
 preflight checks; its findings never authorize an edit.
 

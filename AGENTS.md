@@ -14,6 +14,11 @@ Never begin with bare `normfix`: the commandless form is a recursive formatting
 run rooted at the current directory. Do not add `--unsafe`, `--force`, removal
 flags, or `upgrade` unless the user explicitly authorized that capability.
 
+Every run states its action, scope, and safety configuration on `stderr` before
+reading anything. Check that the scope is the one the task meant. If the run
+refuses a protected scope, treat it as a scope bug in your own command rather
+than a reason to pass `--force`.
+
 When changing this repository:
 
 - preserve the separation between analysis and filesystem writes;
