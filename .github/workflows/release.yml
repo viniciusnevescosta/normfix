@@ -37,7 +37,7 @@ jobs:
       - name: Run all tests
         run: cargo test --workspace --all-targets --locked
       - name: Install Python for the official checker
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install exact official Norminette
