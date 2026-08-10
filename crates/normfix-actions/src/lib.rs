@@ -720,6 +720,19 @@ fn commit_prepared_files(
     let root = canonical_directory(&options.project_root)?;
     for index in 0..prepared.len() {
         let target = prepared[index].plan.path.clone();
+        if let Err((changed_path, source)) =
+            validate_committed_replacements(prepared, &committed_indices)
+        {
+            return Err(rollback_error(
+                prepared,
+                &committed_indices,
+                journal,
+                journal_path,
+                &options.project_root,
+                changed_path,
+                source,
+            ));
+        }
         let committed_paths = committed_indices
             .iter()
             .map(|committed| absolute_lexical(&prepared[*committed].plan.path))
@@ -772,6 +785,19 @@ fn commit_prepared_files(
         }
     }
     Ok(committed_indices)
+}
+
+fn validate_committed_replacements(
+    prepared: &[PreparedFile],
+    committed_indices: &[usize],
+) -> Result<(), (PathBuf, io::Error)> {
+    for index in committed_indices {
+        let file = &prepared[*index];
+        if let Err(source) = preflight_bytes(&file.plan.path, &file.plan.replacement) {
+            return Err((file.plan.path.clone(), source));
+        }
+    }
+    Ok(())
 }
 
 fn finish_journal(
@@ -1406,7 +1432,7 @@ mod tests {
     use super::{
         PlannedFile, ReadPrecondition, TransactionError, TransactionOptions, UndoError,
         commit_files, commit_files_guarded, list_undo_runs, read_journal, sha256_hex, undo_run,
-        write_journal,
+        validate_committed_replacements, write_journal,
     };
 
     fn plan(path: &std::path::Path, replacement: &[u8]) -> PlannedFile {
@@ -1519,6 +1545,65 @@ mod tests {
             Err(TransactionError::ConcurrentModification(path)) if path == missing
         ));
         assert_eq!(fs::read(&target).expect("Makefile"), b"SRCS = missing.c\n");
+    }
+
+    #[test]
+    fn project_snapshot_preconditions_allow_a_multi_file_commit() {
+        let project = TempDir::new().expect("project");
+        let first = project.path().join("first.h");
+        let second = project.path().join("second.h");
+        fs::write(&first, "#ifndef FIRST\n#define FIRST\n#endif\n").expect("first");
+        fs::write(&second, "#ifndef SECOND\n#define SECOND\n#endif\n").expect("second");
+        let preconditions = [
+            ReadPrecondition::matches(&first, b"#ifndef FIRST\n#define FIRST\n#endif\n"),
+            ReadPrecondition::matches(&second, b"#ifndef SECOND\n#define SECOND\n#endif\n"),
+        ];
+        let options = TransactionOptions {
+            project_root: project.path().to_path_buf(),
+            run_id: "run-multi-read-set".to_owned(),
+            backup_root: None,
+        };
+
+        commit_files_guarded(
+            vec![
+                plan(&first, b"#ifndef FIRST_H\n#define FIRST_H\n#endif\n"),
+                plan(&second, b"#ifndef SECOND_H\n#define SECOND_H\n#endif\n"),
+            ],
+            &options,
+            &preconditions,
+        )
+        .expect("multi-file guarded commit");
+
+        assert_eq!(
+            fs::read(&first).expect("first"),
+            b"#ifndef FIRST_H\n#define FIRST_H\n#endif\n"
+        );
+        assert_eq!(
+            fs::read(&second).expect("second"),
+            b"#ifndef SECOND_H\n#define SECOND_H\n#endif\n"
+        );
+    }
+
+    #[test]
+    fn a_committed_target_must_still_match_before_the_next_replacement() {
+        let project = TempDir::new().expect("project");
+        let first = project.path().join("first.h");
+        fs::write(&first, "old\n").expect("first");
+        let mut prepared =
+            super::prepare_file(plan(&first, b"replacement\n"), None).expect("prepare replacement");
+        super::persist_staged(&mut prepared).expect("commit first replacement");
+        fs::write(&first, "concurrent writer\n").expect("concurrent change");
+
+        let error = validate_committed_replacements(&[prepared], &[0])
+            .expect_err("the changed committed target must be detected");
+
+        assert_eq!(error.0, first);
+        assert!(
+            error
+                .1
+                .to_string()
+                .contains("changed after transaction preflight")
+        );
     }
 
     #[test]
