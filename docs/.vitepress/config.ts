@@ -202,7 +202,7 @@ export default defineConfig({
           { text: "Inicio", link: "/es/" },
           { text: "Instalación", link: "/es/guide/getting-started" },
           { text: "Playground", link: "/es/guide/playground" },
-          { text: "Referencia en inglés", link: "/guide/command-line" },
+          { text: "Comandos", link: "/es/commands/" },
           {
             text: "Proyecto",
             items: [
@@ -217,9 +217,38 @@ export default defineConfig({
             text: "Guía",
             items: [
               { text: "Resumen", link: "/es/" },
+              { text: "Por qué normfix", link: "/es/why" },
               { text: "Primeros pasos", link: "/es/guide/getting-started" },
+              { text: "Línea de comandos", link: "/es/guide/command-line" },
               { text: "Playground del navegador", link: "/es/guide/playground" },
+              { text: "Agentes de IA", link: "/es/guide/ai-agents" },
+            ],
+          },
+          {
+            text: "Comandos",
+            items: [
+              { text: "Resumen", link: "/es/commands/" },
+              { text: "format", link: "/es/commands/format" },
+              { text: "lint", link: "/es/commands/lint" },
+              { text: "check", link: "/es/commands/check" },
+              { text: "budget", link: "/es/commands/budget" },
+              { text: "preflight", link: "/es/commands/preflight" },
+              { text: "explain", link: "/es/commands/explain" },
+              { text: "undo", link: "/es/commands/undo" },
+              { text: "upgrade", link: "/es/commands/upgrade" },
+            ],
+          },
+          {
+            text: "Referencia",
+            items: [
+              { text: "Todas las flags", link: "/es/reference/flags" },
+              { text: "Qué se corrige", link: "/es/reference/fixes" },
               { text: "Seguridad y recuperación", link: "/es/reference/safety" },
+              { text: "Cabeceras oficiales", link: "/es/reference/headers" },
+              { text: "Proyectos y Makefiles", link: "/es/reference/projects" },
+              { text: "Informes", link: "/es/reference/reporting" },
+              { text: "Rendimiento", link: "/es/reference/performance" },
+              { text: "Límites conocidos", link: "/es/reference/boundaries" },
               { text: "Compatibilidad", link: "/es/COMPATIBILITY" },
               { text: "Guía de localización", link: "/es/LOCALIZATION" },
             ],
