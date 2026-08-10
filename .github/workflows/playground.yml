@@ -55,6 +55,8 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
       - name: Install locked site dependencies
         run: npm ci
+      - name: Reject known site dependency advisories
+        run: npm audit --audit-level=moderate
       - name: Build the playground and the documentation
         run: npm run build
       - name: Upload preview artifact

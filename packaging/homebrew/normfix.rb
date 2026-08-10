@@ -37,13 +37,14 @@ class Normfix < Formula
 
   def caveats
     <<~EOS
-      normfix requires the official Norminette 3.3.59, which is a Python
-      package rather than a Homebrew formula:
+      normfix uses the official Norminette, which is a Python package rather
+      than a Homebrew formula. The tested compatibility baseline is 3.3.59:
 
         pipx install norminette==3.3.59
 
-      Any other Norminette release is rejected rather than accepted with a
-      warning. Documentation: https://normfix.vercel.app/docs
+      Another parseable release continues with a prominent compatibility
+      advisory. Use --strict-norminette-version in pinned CI.
+      Documentation: https://normfix.vercel.app/docs
     EOS
   end
 

@@ -76,7 +76,7 @@ jobs:
           retention-days: 30
 
   supply-chain:
-    name: Dependency advisories, licences, and sources
+    name: Dependency advisories, licenses, and sources
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -88,6 +88,16 @@ jobs:
           tool: cargo-deny
       - name: Check dependencies
         run: cargo deny --all-features check
+      - name: Install supported Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked site dependencies
+        run: npm ci
+      - name: Check site dependency advisories
+        run: npm audit --audit-level=moderate
 
   msrv:
     name: Rust 1.85 MSRV

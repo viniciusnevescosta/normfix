@@ -1,55 +1,64 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-# rust-clippy is a tool that runs a bunch of lints to catch common
-# mistakes in your Rust code and help improve your Rust code.
-# More details at https://github.com/rust-lang/rust-clippy
-# and https://rust-lang.github.io/rust-clippy/
-
-name: rust-clippy analyze
+name: Clippy code scanning
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ "main" ]
+    branches: [main]
   schedule:
-    - cron: '37 18 * * 1'
+    - cron: "37 18 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clippy-sarif-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   rust-clippy-analyze:
-    name: Run rust-clippy analyzing
-    runs-on: ubuntu-latest
+    name: Publish Clippy SARIF
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
-      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+      actions: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af #@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          components: clippy
-          override: true
+      - name: Show pinned Rust toolchain
+        run: rustup show active-toolchain
 
-      - name: Install required cargo
-        run: cargo install clippy-sarif sarif-fmt
+      - name: Install pinned SARIF converters
+        run: |
+          cargo install clippy-sarif --version 0.8.0 --locked
+          cargo install sarif-fmt --version 0.8.0 --locked
 
-      - name: Run rust-clippy
-        run:
-          cargo clippy
-          --all-features
-          --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+      - name: Run Clippy and render SARIF
+        id: clippy
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets --all-features --locked \
+            --message-format=json -- -D warnings \
+            | clippy-sarif \
+            | tee rust-clippy-results.sarif \
+            | sarif-fmt
         continue-on-error: true
 
-      - name: Upload analysis results to GitHub
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Upload analysis results
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
+
+      - name: Preserve the blocking Clippy result
+        if: steps.clippy.outcome == 'failure'
+        run: exit 1

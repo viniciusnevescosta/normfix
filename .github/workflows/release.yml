@@ -23,6 +23,21 @@ jobs:
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require an annotated tag from main
+        shell: bash
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if [[ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]]; then
+            echo "$GITHUB_REF_NAME must be an annotated tag" >&2
+            exit 1
+          fi
+          tagged_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          if ! git merge-base --is-ancestor "$tagged_commit" origin/main; then
+            echo "$GITHUB_REF_NAME does not point to a commit contained in main" >&2
+            exit 1
+          fi
       - name: Require tag to match workspace version
         shell: bash
         run: |
@@ -53,6 +68,22 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps --locked
+      - name: Install supported Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked site dependencies
+        run: npm ci
+      - name: Reject known site dependency advisories
+        run: npm audit --audit-level=moderate
+      - name: Install browser compilation tools
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-bindgen-cli --version 0.2.126 --locked
+      - name: Build playground and documentation
+        run: npm run build
 
   build:
     name: Build ${{ matrix.target }}
@@ -126,12 +157,12 @@ jobs:
           merge-multiple: true
       - name: Create checksum manifest
         working-directory: dist
-        run: shasum -a 256 *.tar.gz > SHA256SUMS
+        run: shasum -a 256 -- *.tar.gz > SHA256SUMS
       - name: Attest checksum manifest
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/SHA256SUMS
-      - name: Create or update release
+      - name: Create immutable release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -139,17 +170,17 @@ jobs:
         run: |
           # A SemVer pre-release carries a hyphen after the version core, and
           # must not be published as the latest stable download.
-          prerelease=""
+          prerelease=()
           case "${GITHUB_REF_NAME#v}" in
-            *-*) prerelease="--prerelease" ;;
+            *-*) prerelease=(--prerelease --latest=false) ;;
           esac
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}" $prerelease
-            # Point every published release at its own curated notes.
-            notes_link="Full notes for this version: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"
-            gh release view "$GITHUB_REF_NAME" --json body -q .body > generated-notes.md
-            printf '%s\n\n---\n\n' "$notes_link" | cat - generated-notes.md > release-notes.md
-            gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md
+            echo "release $GITHUB_REF_NAME already exists; release assets are immutable" >&2
+            exit 1
           fi
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}" "${prerelease[@]}"
+          # Point every published release at its own curated notes.
+          notes_link="Full notes for this version: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"
+          gh release view "$GITHUB_REF_NAME" --json body -q .body > generated-notes.md
+          printf '%s\n\n---\n\n' "$notes_link" | cat - generated-notes.md > release-notes.md
+          gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md
