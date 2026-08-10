@@ -115,7 +115,7 @@ export default defineConfig({
           { text: "Início", link: "/pt/" },
           { text: "Instalação", link: "/pt/guide/getting-started" },
           { text: "Playground", link: "/pt/guide/playground" },
-          { text: "Referência em inglês", link: "/guide/command-line" },
+          { text: "Comandos", link: "/pt/commands/" },
           {
             text: "Projeto",
             items: [
@@ -131,8 +131,30 @@ export default defineConfig({
             items: [
               { text: "Visão geral", link: "/pt/" },
               { text: "Primeiros passos", link: "/pt/guide/getting-started" },
+              { text: "Linha de comando", link: "/pt/guide/command-line" },
               { text: "Playground no navegador", link: "/pt/guide/playground" },
+            ],
+          },
+          {
+            text: "Comandos",
+            items: [
+              { text: "Visão geral", link: "/pt/commands/" },
+              { text: "format", link: "/pt/commands/format" },
+              { text: "lint", link: "/pt/commands/lint" },
+              { text: "check", link: "/pt/commands/check" },
+              { text: "budget", link: "/pt/commands/budget" },
+              { text: "preflight", link: "/pt/commands/preflight" },
+              { text: "explain", link: "/pt/commands/explain" },
+              { text: "undo", link: "/pt/commands/undo" },
+              { text: "upgrade", link: "/pt/commands/upgrade" },
+            ],
+          },
+          {
+            text: "Referência",
+            items: [
               { text: "Segurança e recuperação", link: "/pt/reference/safety" },
+              { text: "Cabeçalhos oficiais", link: "/pt/reference/headers" },
+              { text: "Limites conhecidos", link: "/pt/reference/boundaries" },
               { text: "Compatibilidade", link: "/pt/COMPATIBILITY" },
               { text: "Guia de localização", link: "/pt/LOCALIZATION" },
             ],
