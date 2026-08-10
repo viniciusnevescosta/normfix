@@ -164,6 +164,38 @@ normfix --check --format json | jq '.summary'
 Always branch on `schema_version` before reading JSON. The human layout is free
 to improve between releases; the JSON structure is not.
 
+### `--lang`
+
+Choose the language of human output: `en`, `pt`, `es`, or `fr`.
+
+```sh
+normfix check --lang pt
+```
+
+```console
+$ normfix check --lang pt
+normfix · iniciando
+  ação             check
+  modo             somente leitura
+  escopo           /home/student/demo (recursivo)
+...
+Resumo: 1 arquivo(s) | 1 proposto(s) | 0 gravado(s) | 1 correção(ões) | 0 pendente(s) | 0 informativo(s) | 0 com falha | 0 inesperado(s) | 0 em quarentena
+Concluído em 219 ms.
+```
+
+Without the flag the process locale is used — `NORMFIX_LANG`, then `LC_ALL`,
+`LC_MESSAGES`, and `LANG` — falling back to English. Only the primary subtag
+matters, so `pt_BR.UTF-8` selects Portuguese. An unpublished `--lang` value
+continues in English with one advisory rather than failing.
+
+This changes explanations only. Command names, flag spellings, rule IDs, exit
+codes, and every value in `--format json` stay identical in all four languages,
+so a script never has to select a language to keep working.
+
+Rule messages from the analysis backends are still English. A non-English run
+says so in one line rather than presenting a partly translated report as a
+complete one.
+
 ### `--no-color`
 
 Disable ANSI colors even on a terminal.

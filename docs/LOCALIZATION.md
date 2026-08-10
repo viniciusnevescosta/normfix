@@ -34,7 +34,7 @@ official link.
 | Browser playground | `web/i18n.ts` and `data-i18n*` attributes in `web/index.html` | Complete `en`, `pt`, `es`, and `fr` UI; native rule diagnostics remain English until the CLI catalogue is localized |
 | Documentation | Locale trees under `docs/` plus locale navigation in `docs/.vitepress/config.ts` | Localized landing, installation, playground, safety, compatibility, and contributor paths, with English as the explicit fallback for pages not yet published |
 | SEO | VitePress head/config, `web/index.html`, sitemaps, and `robots.txt` | Canonical URLs and `hreflang` only for pages that really exist |
-| Native CLI | Rust human-message catalogue planned for 1.1 | Commands, flags, JSON, rule IDs, and exit codes remain language-neutral |
+| Native CLI | `crates/normfix-i18n` catalogue, selected with `--lang` or the process locale | Run announcement and report prose in `en`, `pt`, `es`, and `fr`; backend rule messages remain English and the run says so; commands, flags, JSON, rule IDs, and exit codes remain language-neutral |
 
 ## Translating the playground
 
@@ -86,20 +86,50 @@ English and call it a translation. An explicit “This page is available in
 English” link is an acceptable temporary fallback when the localized route is
 not advertised as complete.
 
-## Translating the native CLI (1.1)
+## Translating the native CLI
 
-The future CLI catalogue must keep diagnostic data separate from rendering.
-Each human message should have a stable internal key, English fallback, typed
-placeholders, and translations in the same review. JSON serialization must
-continue to emit language-neutral fields and values; scripts should never need
-to select English to remain reliable.
+`crates/normfix-i18n` owns locale selection and the catalogue. Translated text
+lives there, never inside the code that decides what to say.
 
-Locale selection should follow an explicit CLI/config choice first, then the
-standard process locale, then English. Unsupported or incomplete locale data
-must fall back to English with one concise advisory, never a panic. Snapshot
-tests should cover help, a clean run, a blocking diagnostic, an operational
-failure, the pre-defense estimate, and destructive confirmation in every
-published locale.
+Completeness is enforced by the compiler rather than by review. Each locale is
+one `Messages` struct literal, so a new entry that some locale does not
+translate is a build failure. Two tests cover what the type system cannot: no
+entry may be empty, and every translation must carry the same `{placeholder}`
+set as its English original. Placeholders are named, not positional, so a
+translation may reorder them.
+
+To add an entry:
+
+1. add the field to `Messages` with a doc comment naming its placeholders;
+2. fill it in all four locale literals in the same change;
+3. render it through `messages.<field>` and `normfix_i18n::fill`, never as a
+   literal at the call site.
+
+Locale selection follows `--lang`, then `NORMFIX_LANG`, `LC_ALL`,
+`LC_MESSAGES`, and `LANG`, then English. Only the primary subtag matters, so
+`pt_BR.UTF-8` selects Portuguese. An unpublished `--lang` value falls back to
+English with one concise advisory; an unpublished process locale falls back
+silently, because a hint is not a decision. Neither case is ever fatal: output
+language must not be a reason to refuse to analyze a project.
+
+JSON is never localized. The `execution_start` event and the final report keep
+English values in every locale, so a script never has to select a language to
+stay reliable.
+
+### What is translated today
+
+The run announcement and the report's own prose: headings, the project
+reminder, discovery and quarantine notes, summary counts, the elapsed-time
+line, and the pre-defense estimate.
+
+Rule messages from the analysis backends are still English. A non-English run
+prints one line saying so, for the same reason the playground does: a localized
+frame around English diagnostics is honest, while a localized frame that
+implies the diagnostics were translated is not. Removing that line is part of
+translating the backends, not a separate cosmetic change.
+
+Status tokens in the file table (`CLEAN`, `WOULD FIX`, `REVIEW`, `FAILED`) and
+severity words stay English with the rule IDs they sit beside.
 
 ## Terminology and tone
 
