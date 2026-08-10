@@ -119,6 +119,41 @@ pub struct Messages {
     pub destructive_unused_statics: &'static str,
     /// Quarantine of unexpected project files.
     pub destructive_quarantine: &'static str,
+
+    /// One-line description printed under the tool name.
+    pub report_tagline: &'static str,
+    /// Lead-in for the English-source reminder.
+    pub report_project_reminder_label: &'static str,
+    /// Body of the English-source reminder.
+    pub report_project_reminder: &'static str,
+    /// Stated limit of this release's terminal translation.
+    pub report_translation_scope: &'static str,
+    /// Heading above the per-file table.
+    pub report_files_heading: &'static str,
+    /// Heading above rule-grouped diagnostics.
+    pub report_grouped_heading: &'static str,
+    /// Heading above ungrouped diagnostics.
+    pub report_diagnostics_heading: &'static str,
+    /// Explanation of which files a 42 project is expected to contain.
+    pub report_expected_files: &'static str,
+    /// Note that a preview never moved the listed files.
+    pub report_preview_kept_files: &'static str,
+    /// Lead-in for the counts line.
+    pub report_summary_label: &'static str,
+    /// Counts line. Placeholders: `{files}`, `{proposed}`, `{written}`,
+    /// `{fixes}`, `{remaining}`, `{info}`, `{failed}`, `{unexpected}`,
+    /// `{quarantined}`.
+    pub report_summary_counts: &'static str,
+    /// Elapsed-time line. Placeholder: `{duration}`.
+    pub report_completed_in: &'static str,
+    /// Lead-in for the pre-defense estimate.
+    pub report_estimate_label: &'static str,
+    /// Estimate body. Placeholders: `{verdict}`, `{grade}`, `{score}`.
+    pub report_estimate_value: &'static str,
+    /// The estimate's standing caveat.
+    pub report_estimate_caveat: &'static str,
+    /// Heading above located hard failures.
+    pub report_hard_fail_heading: &'static str,
 }
 
 /// Returns the catalogue for `locale`.
@@ -186,6 +221,23 @@ const ENGLISH: Messages = Messages {
     destructive_orphan_prototypes: "orphan header prototypes",
     destructive_unused_statics: "unreachable static functions",
     destructive_quarantine: "unexpected-file quarantine",
+
+    report_tagline: "Safe automatic fixes for the 42 Norm v4.1",
+    report_project_reminder_label: "Project reminder:",
+    report_project_reminder: "keep submitted code and permitted comments in English (not a Norm rule).",
+    report_translation_scope: "Rule messages from the analysis backends are still English in this release.",
+    report_files_heading: "Files",
+    report_grouped_heading: "Diagnostics grouped by rule",
+    report_diagnostics_heading: "Diagnostics",
+    report_expected_files: "Only .c, .h, Makefile, and README files are expected.",
+    report_preview_kept_files: "Preview mode did not move these files.",
+    report_summary_label: "Summary:",
+    report_summary_counts: "{files} files | {proposed} proposed | {written} written | {fixes} fixes | {remaining} remaining | {info} info | {failed} failed | {unexpected} unexpected | {quarantined} quarantined",
+    report_completed_in: "Completed in {duration}.",
+    report_estimate_label: "Pre-defense estimate:",
+    report_estimate_value: "{verdict} | grade {grade} | {score}/100",
+    report_estimate_caveat: "This estimate is heuristic and never replaces the official evaluation.",
+    report_hard_fail_heading: "Hard-fail evidence",
 };
 
 const PORTUGUESE: Messages = Messages {
@@ -242,6 +294,23 @@ const PORTUGUESE: Messages = Messages {
     destructive_orphan_prototypes: "protótipos órfãos de cabeçalho",
     destructive_unused_statics: "funções static inalcançáveis",
     destructive_quarantine: "quarentena de arquivos inesperados",
+
+    report_tagline: "Correções automáticas seguras para a Norm v4.1 da 42",
+    report_project_reminder_label: "Lembrete do projeto:",
+    report_project_reminder: "mantenha o código entregue e os comentários permitidos em inglês (não é uma regra da Norm).",
+    report_translation_scope: "As mensagens de regra vindas dos analisadores continuam em inglês nesta versão.",
+    report_files_heading: "Arquivos",
+    report_grouped_heading: "Diagnósticos agrupados por regra",
+    report_diagnostics_heading: "Diagnósticos",
+    report_expected_files: "Só são esperados arquivos .c, .h, Makefile e README.",
+    report_preview_kept_files: "O modo de pré-visualização não moveu estes arquivos.",
+    report_summary_label: "Resumo:",
+    report_summary_counts: "{files} arquivo(s) | {proposed} proposto(s) | {written} gravado(s) | {fixes} correção(ões) | {remaining} pendente(s) | {info} informativo(s) | {failed} com falha | {unexpected} inesperado(s) | {quarantined} em quarentena",
+    report_completed_in: "Concluído em {duration}.",
+    report_estimate_label: "Estimativa pré-defesa:",
+    report_estimate_value: "{verdict} | nota {grade} | {score}/100",
+    report_estimate_caveat: "Esta estimativa é heurística e nunca substitui a avaliação oficial.",
+    report_hard_fail_heading: "Evidências de reprovação",
 };
 
 const SPANISH: Messages = Messages {
@@ -298,6 +367,23 @@ const SPANISH: Messages = Messages {
     destructive_orphan_prototypes: "prototipos huérfanos de cabecera",
     destructive_unused_statics: "funciones static inalcanzables",
     destructive_quarantine: "cuarentena de archivos inesperados",
+
+    report_tagline: "Correcciones automáticas seguras para la Norm v4.1 de 42",
+    report_project_reminder_label: "Recordatorio del proyecto:",
+    report_project_reminder: "mantén el código entregado y los comentarios permitidos en inglés (no es una regla de la Norm).",
+    report_translation_scope: "Los mensajes de regla de los analizadores siguen en inglés en esta versión.",
+    report_files_heading: "Archivos",
+    report_grouped_heading: "Diagnósticos agrupados por regla",
+    report_diagnostics_heading: "Diagnósticos",
+    report_expected_files: "Solo se esperan archivos .c, .h, Makefile y README.",
+    report_preview_kept_files: "El modo de vista previa no movió estos archivos.",
+    report_summary_label: "Resumen:",
+    report_summary_counts: "{files} archivo(s) | {proposed} propuesto(s) | {written} escrito(s) | {fixes} corrección(es) | {remaining} pendiente(s) | {info} informativo(s) | {failed} con fallo | {unexpected} inesperado(s) | {quarantined} en cuarentena",
+    report_completed_in: "Completado en {duration}.",
+    report_estimate_label: "Estimación previa a la defensa:",
+    report_estimate_value: "{verdict} | nota {grade} | {score}/100",
+    report_estimate_caveat: "Esta estimación es heurística y nunca sustituye a la evaluación oficial.",
+    report_hard_fail_heading: "Evidencias de suspenso",
 };
 
 const FRENCH: Messages = Messages {
@@ -354,6 +440,23 @@ const FRENCH: Messages = Messages {
     destructive_orphan_prototypes: "prototypes orphelins d'en-tête",
     destructive_unused_statics: "fonctions static inatteignables",
     destructive_quarantine: "mise en quarantaine des fichiers inattendus",
+
+    report_tagline: "Corrections automatiques sûres pour la Norm v4.1 de 42",
+    report_project_reminder_label: "Rappel du projet :",
+    report_project_reminder: "gardez le code rendu et les commentaires autorisés en anglais (ce n'est pas une règle de la Norm).",
+    report_translation_scope: "Les messages de règle issus des analyseurs restent en anglais dans cette version.",
+    report_files_heading: "Fichiers",
+    report_grouped_heading: "Diagnostics groupés par règle",
+    report_diagnostics_heading: "Diagnostics",
+    report_expected_files: "Seuls les fichiers .c, .h, Makefile et README sont attendus.",
+    report_preview_kept_files: "Le mode aperçu n'a déplacé aucun de ces fichiers.",
+    report_summary_label: "Résumé :",
+    report_summary_counts: "{files} fichier(s) | {proposed} proposé(s) | {written} écrit(s) | {fixes} correction(s) | {remaining} restant(s) | {info} informatif(s) | {failed} en échec | {unexpected} inattendu(s) | {quarantined} en quarantaine",
+    report_completed_in: "Terminé en {duration}.",
+    report_estimate_label: "Estimation avant soutenance :",
+    report_estimate_value: "{verdict} | note {grade} | {score}/100",
+    report_estimate_caveat: "Cette estimation est heuristique et ne remplace jamais l'évaluation officielle.",
+    report_hard_fail_heading: "Preuves d'échec",
 };
 
 #[cfg(test)]
@@ -429,6 +532,37 @@ mod tests {
                 messages.destructive_unused_statics,
             ),
             ("destructive_quarantine", messages.destructive_quarantine),
+            ("report_tagline", messages.report_tagline),
+            (
+                "report_project_reminder_label",
+                messages.report_project_reminder_label,
+            ),
+            ("report_project_reminder", messages.report_project_reminder),
+            (
+                "report_translation_scope",
+                messages.report_translation_scope,
+            ),
+            ("report_files_heading", messages.report_files_heading),
+            ("report_grouped_heading", messages.report_grouped_heading),
+            (
+                "report_diagnostics_heading",
+                messages.report_diagnostics_heading,
+            ),
+            ("report_expected_files", messages.report_expected_files),
+            (
+                "report_preview_kept_files",
+                messages.report_preview_kept_files,
+            ),
+            ("report_summary_label", messages.report_summary_label),
+            ("report_summary_counts", messages.report_summary_counts),
+            ("report_completed_in", messages.report_completed_in),
+            ("report_estimate_label", messages.report_estimate_label),
+            ("report_estimate_value", messages.report_estimate_value),
+            ("report_estimate_caveat", messages.report_estimate_caveat),
+            (
+                "report_hard_fail_heading",
+                messages.report_hard_fail_heading,
+            ),
         ]
     }
 
@@ -487,6 +621,7 @@ mod tests {
             "label_gitignore",
             "label_backups",
             "checks_norminette",
+            "report_diagnostics_heading",
         ];
         for locale in PUBLISHED.iter().filter(|l| **l != Locale::English) {
             let english = entries(messages(Locale::English));

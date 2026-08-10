@@ -12,6 +12,7 @@ publish.workspace = true
 description = "Deterministic human and JSON diagnostics for normfix"
 
 [dependencies]
+normfix-i18n = { path = "../normfix-i18n" }
 annotate-snippets.workspace = true
 anstyle.workspace = true
 camino.workspace = true

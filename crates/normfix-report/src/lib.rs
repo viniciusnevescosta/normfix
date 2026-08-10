@@ -15,6 +15,7 @@ use std::time::Duration;
 use annotate_snippets::{Annotation, AnnotationKind, Group, Level, Origin, Renderer, Snippet};
 use camino::{Utf8Path, Utf8PathBuf};
 use normfix_core::{Diagnostic, DiagnosticSource, FixRecord, LineIndex, Severity};
+use normfix_i18n::{Locale, Messages, fill};
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 
@@ -373,6 +374,11 @@ pub struct RenderOptions {
     pub verbose: bool,
     /// Include unified diffs.
     pub show_diff: bool,
+    /// Language for the report's own prose.
+    ///
+    /// Rule identifiers, paths, and backend messages are unaffected: only text
+    /// this crate authors is translated.
+    pub locale: Locale,
 }
 
 impl Default for RenderOptions {
@@ -381,6 +387,7 @@ impl Default for RenderOptions {
             color: true,
             verbose: false,
             show_diff: false,
+            locale: Locale::English,
         }
     }
 }
@@ -389,13 +396,14 @@ impl Default for RenderOptions {
 #[must_use]
 pub fn render_human(report: &RunReport, options: RenderOptions) -> String {
     let paint = Paint::new(options.color);
+    let messages = normfix_i18n::messages(options.locale);
     let mut output = String::new();
     let _ = writeln!(
         output,
         "{}normfix{} {}",
         paint.bold_cyan, paint.reset, report.tool_version
     );
-    output.push_str("Safe automatic fixes for the 42 Norm v4.1\n");
+    let _ = writeln!(output, "{}", messages.report_tagline);
     if report.files.iter().any(|file| {
         matches!(file.path.extension(), Some("c" | "h"))
             || file
@@ -407,26 +415,51 @@ pub fn render_human(report: &RunReport, options: RenderOptions) -> String {
     }
     let _ = writeln!(
         output,
-        "\n{}Project reminder:{} keep submitted code and permitted comments in English (not a Norm rule).",
-        paint.bold_blue, paint.reset
+        "\n{}{}{} {}",
+        paint.bold_blue,
+        messages.report_project_reminder_label,
+        paint.reset,
+        messages.report_project_reminder
     );
-    render_discovery(&mut output, &paint, report);
-    render_quarantine(&mut output, &paint, report);
-    render_file_table(&mut output, &paint, &report.files, options.verbose);
+    // Backend rule messages are not translated yet. Saying so is better than
+    // letting a localized frame imply the whole report was translated.
+    if options.locale != Locale::English {
+        let _ = writeln!(output, "{}", messages.report_translation_scope);
+    }
+    render_discovery(&mut output, &paint, report, messages);
+    render_quarantine(&mut output, &paint, report, messages);
+    render_file_table(
+        &mut output,
+        &paint,
+        &report.files,
+        options.verbose,
+        messages,
+    );
     if options.verbose {
         render_fixes(&mut output, &paint, &report.files);
     }
-    render_diagnostics(&mut output, &paint, &report.files, options.verbose);
+    render_diagnostics(
+        &mut output,
+        &paint,
+        &report.files,
+        options.verbose,
+        messages,
+    );
     render_failures(&mut output, &paint, &report.files);
     if options.show_diff {
         render_diffs(&mut output, &report.files);
     }
-    render_evaluation(&mut output, &paint, report.evaluation.as_ref());
-    render_summary(&mut output, &paint, report);
+    render_evaluation(&mut output, &paint, report.evaluation.as_ref(), messages);
+    render_summary(&mut output, &paint, report, messages);
     output
 }
 
-fn render_evaluation(output: &mut String, paint: &Paint, evaluation: Option<&EvaluationReport>) {
+fn render_evaluation(
+    output: &mut String,
+    paint: &Paint,
+    evaluation: Option<&EvaluationReport>,
+    messages: &Messages,
+) {
     let Some(evaluation) = evaluation else {
         return;
     };
@@ -450,12 +483,22 @@ fn render_evaluation(output: &mut String, paint: &Paint, evaluation: Option<&Eva
     };
     let _ = writeln!(
         output,
-        "\n{}Pre-defense estimate:{} {verdict} | grade {grade} | {}/100",
-        style, paint.reset, evaluation.score
+        "\n{}{}{} {}",
+        style,
+        messages.report_estimate_label,
+        paint.reset,
+        fill(
+            messages.report_estimate_value,
+            &[
+                ("verdict", verdict),
+                ("grade", grade),
+                ("score", &evaluation.score.to_string()),
+            ]
+        )
     );
-    output.push_str("This estimate is heuristic and never replaces the official evaluation.\n");
+    let _ = writeln!(output, "{}", messages.report_estimate_caveat);
     if !evaluation.hard_failures.is_empty() {
-        output.push_str("Hard-fail evidence\n");
+        let _ = writeln!(output, "{}", messages.report_hard_fail_heading);
         for finding in &evaluation.hard_failures {
             let location = match (finding.line, finding.column) {
                 (Some(line), Some(column)) => {
@@ -680,7 +723,7 @@ fn render_identity(output: &mut String, paint: &Paint, identity: &ReportIdentity
     }
 }
 
-fn render_discovery(output: &mut String, paint: &Paint, report: &RunReport) {
+fn render_discovery(output: &mut String, paint: &Paint, report: &RunReport, messages: &Messages) {
     for error in &report.discovery_errors {
         let _ = writeln!(
             output,
@@ -701,10 +744,10 @@ fn render_discovery(output: &mut String, paint: &Paint, report: &RunReport) {
     for path in &report.unexpected_files {
         let _ = writeln!(output, "  {}", safe_path(path));
     }
-    output.push_str("Only .c, .h, Makefile, and README files are expected.\n");
+    let _ = writeln!(output, "{}", messages.report_expected_files);
 }
 
-fn render_quarantine(output: &mut String, paint: &Paint, report: &RunReport) {
+fn render_quarantine(output: &mut String, paint: &Paint, report: &RunReport, messages: &Messages) {
     if !report.quarantined_files.is_empty() {
         let _ = writeln!(
             output,
@@ -723,7 +766,7 @@ fn render_quarantine(output: &mut String, paint: &Paint, report: &RunReport) {
         for path in &report.quarantine_candidates {
             let _ = writeln!(output, "  {}", safe_path(path));
         }
-        output.push_str("  Preview mode did not move these files.\n");
+        let _ = writeln!(output, "  {}", messages.report_preview_kept_files);
     }
     for error in &report.quarantine_errors {
         let _ = writeln!(
@@ -736,8 +779,14 @@ fn render_quarantine(output: &mut String, paint: &Paint, report: &RunReport) {
     }
 }
 
-fn render_file_table(output: &mut String, paint: &Paint, files: &[FileReport], verbose: bool) {
-    output.push_str("\nFiles\n");
+fn render_file_table(
+    output: &mut String,
+    paint: &Paint,
+    files: &[FileReport],
+    verbose: bool,
+    messages: &Messages,
+) {
+    let _ = writeln!(output, "\n{}", messages.report_files_heading);
     output.push_str("STATUS      FIXES  REMAINING  INFO  FILE\n");
     let clean_count = files
         .iter()
@@ -836,9 +885,15 @@ struct DiagnosticGroupKey {
 /// flag that shows the rest.
 const GROUPED_OCCURRENCE_LIMIT: usize = 3;
 
-fn render_diagnostics(output: &mut String, paint: &Paint, files: &[FileReport], verbose: bool) {
+fn render_diagnostics(
+    output: &mut String,
+    paint: &Paint,
+    files: &[FileReport],
+    verbose: bool,
+    messages: &Messages,
+) {
     if verbose {
-        render_diagnostics_expanded(output, paint, files);
+        render_diagnostics_expanded(output, paint, files, messages);
         return;
     }
     let diagnostic_count = files.iter().map(|file| file.after.len()).sum::<usize>();
@@ -859,7 +914,7 @@ fn render_diagnostics(output: &mut String, paint: &Paint, files: &[FileReport], 
             .push(diagnostic);
     }
 
-    output.push_str("\nDiagnostics grouped by rule\n");
+    let _ = writeln!(output, "\n{}", messages.report_grouped_heading);
     let sources = source_map(files);
     let renderer = snippet_renderer(paint.color);
     for (group, mut diagnostics) in groups {
@@ -1076,14 +1131,19 @@ fn snippet_span(source: &str, diagnostic: &Diagnostic) -> Range<usize> {
     start..end
 }
 
-fn render_diagnostics_expanded(output: &mut String, paint: &Paint, files: &[FileReport]) {
+fn render_diagnostics_expanded(
+    output: &mut String,
+    paint: &Paint,
+    files: &[FileReport],
+    messages: &Messages,
+) {
     let mut emitted_header = false;
     let renderer = snippet_renderer(paint.color);
     for file in files {
         let source = file.fixed.as_deref().or(file.original.as_deref());
         for diagnostic in &file.after {
             if !emitted_header {
-                output.push_str("\nDiagnostics\n");
+                let _ = writeln!(output, "\n{}", messages.report_diagnostics_heading);
                 emitted_header = true;
             }
             output.push('\n');
@@ -1182,28 +1242,35 @@ pub fn unified_diff(file: &FileReport) -> Option<String> {
     Some(terminal_safe_multiline(&diff))
 }
 
-fn render_summary(output: &mut String, paint: &Paint, report: &RunReport) {
+fn render_summary(output: &mut String, paint: &Paint, report: &RunReport, messages: &Messages) {
     let summary = &report.summary;
     let written = report.files.iter().filter(|file| file.written).count();
-    let _ = writeln!(
-        output,
-        "\n{}Summary:{} {} files | {} proposed | {} written | {} fixes | {} remaining | {} info | {} failed | {} unexpected | {} quarantined",
-        paint.bold,
-        paint.reset,
-        summary.files,
-        summary.changed,
-        written,
-        summary.fixes,
-        summary.remaining,
-        summary.advisories,
-        summary.failed,
-        summary.unexpected_files,
-        summary.quarantined
+    let counts = fill(
+        messages.report_summary_counts,
+        &[
+            ("files", &summary.files.to_string()),
+            ("proposed", &summary.changed.to_string()),
+            ("written", &written.to_string()),
+            ("fixes", &summary.fixes.to_string()),
+            ("remaining", &summary.remaining.to_string()),
+            ("info", &summary.advisories.to_string()),
+            ("failed", &summary.failed.to_string()),
+            ("unexpected", &summary.unexpected_files.to_string()),
+            ("quarantined", &summary.quarantined.to_string()),
+        ],
     );
     let _ = writeln!(
         output,
-        "Completed in {}.",
-        format_duration(report.duration_seconds)
+        "\n{}{}{} {counts}",
+        paint.bold, messages.report_summary_label, paint.reset
+    );
+    let _ = writeln!(
+        output,
+        "{}",
+        fill(
+            messages.report_completed_in,
+            &[("duration", &format_duration(report.duration_seconds))]
+        )
     );
 }
 
@@ -1354,8 +1421,8 @@ mod tests {
     use normfix_core::{Diagnostic, DiagnosticSource, FixRecord, Severity, TextRange, TextSize};
 
     use super::{
-        EvaluationGrade, EvaluationVerdict, FileReport, GROUPED_OCCURRENCE_LIMIT, RenderOptions,
-        ReportIdentity, ReportMode, RunReport, render_human,
+        EvaluationGrade, EvaluationVerdict, FileReport, GROUPED_OCCURRENCE_LIMIT, Locale,
+        RenderOptions, ReportIdentity, ReportMode, RunReport, render_human,
     };
 
     fn diagnostic() -> Diagnostic {
@@ -1409,6 +1476,7 @@ mod tests {
                 color: false,
                 verbose: true,
                 show_diff: false,
+                locale: Locale::English,
             },
         );
 
@@ -1452,6 +1520,7 @@ mod tests {
                 color: false,
                 verbose: true,
                 show_diff: false,
+                locale: Locale::English,
             },
         );
 
@@ -1495,6 +1564,7 @@ mod tests {
                 color: false,
                 verbose: false,
                 show_diff: false,
+                locale: Locale::English,
             },
         );
 
@@ -1543,6 +1613,7 @@ mod tests {
                 color: false,
                 verbose: false,
                 show_diff: false,
+                locale: Locale::English,
             },
         );
 
@@ -1562,6 +1633,7 @@ mod tests {
                 color: false,
                 verbose: true,
                 show_diff: false,
+                locale: Locale::English,
             },
         );
         assert_eq!(expanded.matches("1 | int    main(void)").count(), 12);
@@ -1594,6 +1666,7 @@ mod tests {
                     color: false,
                     verbose,
                     show_diff: false,
+                    locale: Locale::English,
                 },
             );
             assert!(
@@ -1630,6 +1703,7 @@ mod tests {
                     color: false,
                     verbose,
                     show_diff: false,
+                    locale: Locale::English,
                 },
             );
             assert!(
@@ -1699,6 +1773,7 @@ mod tests {
                     color: false,
                     verbose: false,
                     show_diff: false,
+                    locale: Locale::English,
                 },
             );
             assert!(rendered.contains("Pre-defense estimate: INCOMPLETE | grade — | 0/100"));
@@ -1830,6 +1905,7 @@ mod tests {
                 color: false,
                 verbose: false,
                 show_diff: false,
+                locale: Locale::English,
             },
         );
         assert!(rendered.contains("Pre-defense estimate: HARD FAIL"));
@@ -1894,6 +1970,7 @@ mod tests {
                 color: false,
                 verbose: true,
                 show_diff: true,
+                locale: Locale::English,
             },
         );
 

@@ -808,6 +808,7 @@ fn render_report(cli: &Cli, report: &RunReport) -> Result<(), String> {
                         color,
                         verbose: cli.verbose,
                         show_diff: cli.diff,
+                        locale: resolve_locale(cli).locale,
                     },
                 )
             );

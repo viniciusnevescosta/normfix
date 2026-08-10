@@ -916,6 +916,7 @@ dependencies = [
  "anstyle",
  "camino",
  "normfix-core",
+ "normfix-i18n",
  "serde",
  "serde_json",
  "similar",
