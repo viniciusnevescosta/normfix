@@ -1,6 +1,7 @@
 # `normfix upgrade`
 
-Replaces the running binary with the newest published release.
+Replaces the running binary with the newest published release in its update
+channel.
 
 ```sh
 normfix upgrade          # download, verify, and install
@@ -14,9 +15,10 @@ normfix 1.0.0-rc.1 is already the newest release.
 
 ## What it does, in order
 
-1. Asks GitHub for the newest release tag. The releases listing is used rather
-   than `/releases/latest`, which answers 404 while every published version is
-   a pre-release.
+1. Selects the update channel from the running version. A stable build asks
+   GitHub's `/releases/latest` endpoint for the newest stable release. A
+   pre-release follows the complete release feed, so it can advance to a newer
+   release candidate or to the eventual stable release.
 2. Stops if you already run it.
 3. Refuses if the binary is managed by Homebrew, and tells you the command that
    does the right thing there.
@@ -29,6 +31,10 @@ normfix 1.0.0-rc.1 is already the newest release.
 
 Replacing a running executable is safe on Unix, because the running process
 keeps the old file until it exits.
+
+The channel boundary is deliberate: a stable installation is never moved to a
+beta or release candidate by `upgrade` or by the daily release notice. Opting
+into a pre-release remains an explicit install-time choice.
 
 ## When it refuses
 
@@ -67,6 +73,6 @@ export NORMFIX_NO_UPDATE_CHECK=1
 ```
 
 ::: tip Nothing about your code leaves the machine
-The check asks GitHub for a version list. It sends no path, no source, and no
-identifier of any kind.
+The check asks GitHub for public release metadata. It sends no path, no source,
+and no identifier of any kind.
 :::

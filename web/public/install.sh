@@ -9,7 +9,7 @@
 # toolchain. On a 42 workstation that means it needs no privileges at all.
 #
 # Environment:
-#   NORMFIX_VERSION   install this exact tag instead of the newest release
+#   NORMFIX_VERSION   install this exact tag instead of the newest stable release
 #   NORMFIX_BIN_DIR   install here instead of ~/.local/bin
 
 set -eu
@@ -34,12 +34,11 @@ need uname
 need tar
 need mkdir
 need install
+need mktemp
 
 if command -v curl >/dev/null 2>&1; then
-    fetch() { curl -fsSL "$1"; }
     fetch_to() { curl -fsSL "$1" -o "$2"; }
 elif command -v wget >/dev/null 2>&1; then
-    fetch() { wget -qO- "$1"; }
     fetch_to() { wget -qO "$2" "$1"; }
 else
     die "this installer needs curl or wget on PATH"
@@ -67,21 +66,74 @@ case "$os:$arch" in
         ;;
 esac
 
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT INT TERM
+
 version="${NORMFIX_VERSION:-}"
 if [ -z "$version" ]; then
-    # The newest release, whether or not it is a pre-release. Releases are
-    # listed newest first.
-    version="$(
-        fetch "https://api.github.com/repos/$REPO/releases" 2>/dev/null |
-            sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
-            head -n 1
-    )"
+    # GitHub's latest endpoint deliberately excludes pre-releases. Prefer it
+    # so a normal installation stays on the stable channel.
+    latest="$work/latest.json"
+    if fetch_to "https://api.github.com/repos/$REPO/releases/latest" "$latest" 2>/dev/null; then
+        version="$(
+            sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$latest" |
+                head -n 1
+        )"
+        prerelease="$(
+            sed -n 's/.*"prerelease"[[:space:]]*:[[:space:]]*\([[:alpha:]]*\).*/\1/p' "$latest" |
+                head -n 1
+        )"
+        # Fail closed if an unexpected response claims that /latest is a
+        # pre-release; the release feed fallback below will reselect safely.
+        if [ "$prerelease" != "false" ]; then
+            version=""
+        fi
+    fi
+
+    if [ -z "$version" ]; then
+        # `/releases/latest` returns 404 before the first stable release. Scan
+        # the public feed and prefer any stable tag; only when none exists do
+        # we fall back to its newest pre-release. This also preserves the
+        # stable-channel guarantee if the latest endpoint transiently fails.
+        releases="$work/releases.json"
+        fetch_to "https://api.github.com/repos/$REPO/releases?per_page=100" "$releases" 2>/dev/null ||
+            die "could not determine the newest release; set NORMFIX_VERSION=vX.Y.Z"
+        first_published=""
+        while IFS= read -r candidate; do
+            [ -n "$candidate" ] || continue
+            if [ -z "$first_published" ]; then
+                first_published="$candidate"
+            fi
+            without_build="${candidate%%+*}"
+            case "$without_build" in
+                *-*) ;;
+                *)
+                    version="$candidate"
+                    break
+                    ;;
+            esac
+        done <<EOF
+$(awk '
+    {
+        rest = $0
+        while (match(rest, /"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+            token = substr(rest, RSTART, RLENGTH)
+            sub(/^"tag_name"[[:space:]]*:[[:space:]]*"/, "", token)
+            sub(/"$/, "", token)
+            print token
+            rest = substr(rest, RSTART + RLENGTH)
+        }
+    }
+' "$releases")
+EOF
+        if [ -z "$version" ]; then
+            version="$first_published"
+        fi
+    fi
 fi
 [ -n "$version" ] || die "could not determine the newest release; set NORMFIX_VERSION=vX.Y.Z"
 
 base="https://github.com/$REPO/releases/download/$version"
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT INT TERM
 
 note "normfix $version for $os $arch"
 
@@ -120,7 +172,8 @@ case ":$PATH:" in
 esac
 
 note ""
-note "normfix needs the official Norminette 3.3.59:"
+note "normfix is tested with official Norminette 3.3.59:"
 note "  pipx install norminette==3.3.59"
+note "Other parseable releases continue with a compatibility advisory."
 note ""
 note "Documentation: https://normfix.vercel.app/docs"

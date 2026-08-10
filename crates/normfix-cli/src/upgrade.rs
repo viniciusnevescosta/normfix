@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const REPO: &str = "viniciusnevescosta/normfix";
@@ -114,17 +115,69 @@ fn which(program: &str) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// Returns the newest published tag, pre-release included.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UpdateChannel {
+    Stable,
+    Preview,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+}
+
+fn update_channel(current_version: &str) -> UpdateChannel {
+    let without_build = current_version
+        .split_once('+')
+        .map_or(current_version, |(version, _)| version);
+    if without_build.contains('-') {
+        UpdateChannel::Preview
+    } else {
+        UpdateChannel::Stable
+    }
+}
+
+fn release_metadata_url(channel: UpdateChannel) -> String {
+    let endpoint = match channel {
+        UpdateChannel::Stable => "releases/latest",
+        UpdateChannel::Preview => "releases?per_page=100",
+    };
+    format!("https://api.github.com/repos/{REPO}/{endpoint}")
+}
+
+fn stable_tag(body: &str) -> Result<String, String> {
+    let release = serde_json::from_str::<GithubRelease>(body)
+        .map_err(|error| format!("the latest stable release response was invalid: {error}"))?;
+    if release.draft || release.prerelease || release.tag_name.is_empty() {
+        return Err("GitHub did not return a published stable release".to_owned());
+    }
+    Ok(release.tag_name)
+}
+
+fn newest_published_tag(body: &str) -> Result<String, String> {
+    serde_json::from_str::<Vec<GithubRelease>>(body)
+        .map_err(|error| format!("the release listing was invalid: {error}"))?
+        .into_iter()
+        .find(|release| !release.draft && !release.tag_name.is_empty())
+        .map(|release| release.tag_name)
+        .ok_or_else(|| "the release listing contained no published tag".to_owned())
+}
+
+/// Returns the newest tag permitted by the running version's update channel.
 ///
-/// The releases endpoint is used rather than `/releases/latest`, which answers
-/// 404 while every published version is a pre-release.
-fn newest_tag() -> Result<String, String> {
-    let body = fetch_text(&format!("https://api.github.com/repos/{REPO}/releases"))?;
-    body.split("\"tag_name\"")
-        .nth(1)
-        .and_then(|rest| rest.split('"').nth(1))
-        .map(str::to_owned)
-        .ok_or_else(|| "the release listing contained no tag".to_owned())
+/// Stable binaries use GitHub's `/releases/latest` endpoint, which excludes
+/// pre-releases. A running pre-release deliberately follows the complete
+/// release feed, so testers can move to a newer preview (or its eventual
+/// stable release) without reinstalling by hand.
+fn newest_tag(current_version: &str) -> Result<String, String> {
+    let channel = update_channel(current_version);
+    let body = fetch_text(&release_metadata_url(channel))?;
+    match channel {
+        UpdateChannel::Stable => stable_tag(&body),
+        UpdateChannel::Preview => newest_published_tag(&body),
+    }
 }
 
 /// Rejects an install another package manager owns.
@@ -156,10 +209,17 @@ fn digest(bytes: &[u8]) -> String {
         })
 }
 
+fn staging_directory(parent: &Path) -> Result<tempfile::TempDir, String> {
+    tempfile::Builder::new()
+        .prefix(".normfix-upgrade-")
+        .tempdir_in(parent)
+        .map_err(|error| format!("could not create a private staging directory: {error}"))
+}
+
 /// Downloads, verifies and installs the newest release over the running binary.
 pub(crate) fn upgrade(current_version: &str, check_only: bool) -> Result<Outcome, String> {
     let archive = archive_name()?;
-    let latest = newest_tag()?;
+    let latest = newest_tag(current_version)?;
     let latest_version = latest.strip_prefix('v').unwrap_or(&latest);
 
     if latest_version == current_version {
@@ -179,14 +239,12 @@ pub(crate) fn upgrade(current_version: &str, check_only: bool) -> Result<Outcome
         .parent()
         .ok_or_else(|| "the running binary has no parent directory".to_owned())?;
 
-    // Stage inside the destination directory so the final step is a rename on
-    // the same filesystem, which either replaces the binary or leaves it alone.
-    let staging = directory.join(format!(".normfix-upgrade-{}", std::process::id()));
-    fs::create_dir_all(&staging)
-        .map_err(|error| format!("could not write next to {}: {error}", directory.display()))?;
-    let result = install_into(&staging, &executable, &latest, archive);
-    let _ = fs::remove_dir_all(&staging);
-    result?;
+    // Stage in a fresh private directory next to the binary. Sharing the
+    // destination filesystem makes the final rename atomic, while the random
+    // create-new path prevents another account from pre-creating a symlink at
+    // the old process-id-based name.
+    let staging = staging_directory(directory)?;
+    install_into(staging.path(), &executable, &latest, archive)?;
 
     Ok(Outcome::Installed {
         previous: current_version.to_owned(),
@@ -269,7 +327,7 @@ pub(crate) fn notify_if_outdated(current_version: &str) {
     let _ = fs::create_dir_all(state.parent().unwrap_or(&state));
     let _ = fs::write(&state, now_seconds().to_string());
 
-    let Ok(latest) = newest_tag() else {
+    let Ok(latest) = newest_tag(current_version) else {
         return;
     };
     let latest_version = latest.strip_prefix('v').unwrap_or(&latest);
@@ -301,4 +359,107 @@ fn is_stale(state: &Path) -> bool {
         return true;
     };
     now_seconds().saturating_sub(checked_at) >= CHECK_INTERVAL_SECONDS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        UpdateChannel, newest_published_tag, release_metadata_url, stable_tag, staging_directory,
+        update_channel,
+    };
+
+    #[test]
+    fn stable_versions_stay_on_the_stable_channel() {
+        assert_eq!(update_channel("1.0.0"), UpdateChannel::Stable);
+        assert_eq!(update_channel("1.0.0+linux-gnu"), UpdateChannel::Stable);
+    }
+
+    #[test]
+    fn prerelease_versions_follow_the_preview_channel() {
+        assert_eq!(update_channel("1.0.0-rc.1"), UpdateChannel::Preview);
+        assert_eq!(
+            update_channel("1.0.0-beta.2+linux-gnu"),
+            UpdateChannel::Preview
+        );
+    }
+
+    #[test]
+    fn channels_use_distinct_github_endpoints() {
+        assert_eq!(
+            release_metadata_url(UpdateChannel::Stable),
+            "https://api.github.com/repos/viniciusnevescosta/normfix/releases/latest"
+        );
+        assert_eq!(
+            release_metadata_url(UpdateChannel::Preview),
+            "https://api.github.com/repos/viniciusnevescosta/normfix/releases?per_page=100"
+        );
+    }
+
+    #[test]
+    fn stable_endpoint_accepts_only_a_published_stable_release() {
+        assert_eq!(
+            stable_tag(r#"{"tag_name":"v1.0.0","draft":false,"prerelease":false}"#)
+                .expect("stable tag"),
+            "v1.0.0"
+        );
+        assert!(
+            stable_tag(r#"{"tag_name":"v1.1.0-rc.1","draft":false,"prerelease":true}"#).is_err()
+        );
+        assert!(stable_tag(r#"{"tag_name":"v1.0.0","draft":true,"prerelease":false}"#).is_err());
+        assert!(stable_tag(r#"{"tag_name":"","draft":false,"prerelease":false}"#).is_err());
+        assert!(stable_tag(r#"{"tag_name":"v1.0.0"}"#).is_err());
+    }
+
+    #[test]
+    fn preview_feed_uses_the_newest_non_draft_release() {
+        let body = r#"[
+            {"tag_name":"v1.1.0-rc.2","draft":true,"prerelease":true},
+            {"tag_name":"v1.1.0-rc.1","draft":false,"prerelease":true},
+            {"tag_name":"v1.0.0","draft":false,"prerelease":false}
+        ]"#;
+        assert_eq!(
+            newest_published_tag(body).expect("published tag"),
+            "v1.1.0-rc.1"
+        );
+    }
+
+    #[test]
+    fn preview_feed_can_advance_to_the_eventual_stable_release() {
+        let body = r#"[
+            {"tag_name":"v1.0.0","draft":false,"prerelease":false},
+            {"tag_name":"v1.0.0-rc.1","draft":false,"prerelease":true}
+        ]"#;
+        assert_eq!(newest_published_tag(body).expect("published tag"), "v1.0.0");
+    }
+
+    #[test]
+    fn malformed_or_empty_release_feeds_fail_closed() {
+        assert!(stable_tag("not json").is_err());
+        assert!(newest_published_tag("not json").is_err());
+        assert!(newest_published_tag("[]").is_err());
+        assert!(
+            newest_published_tag(r#"[{"tag_name":"v2.0.0","draft":true,"prerelease":false}]"#)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn staging_directories_are_private_unique_and_self_cleaning() {
+        let parent = tempfile::TempDir::new().expect("parent");
+        let first = staging_directory(parent.path()).expect("first staging directory");
+        let second = staging_directory(parent.path()).expect("second staging directory");
+        let first_path = first.path().to_path_buf();
+        let second_path = second.path().to_path_buf();
+
+        assert_ne!(first_path, second_path);
+        assert_eq!(first_path.parent(), Some(parent.path()));
+        assert_eq!(second_path.parent(), Some(parent.path()));
+        assert!(first_path.is_dir());
+        assert!(second_path.is_dir());
+
+        drop(first);
+        drop(second);
+        assert!(!first_path.exists());
+        assert!(!second_path.exists());
+    }
 }
