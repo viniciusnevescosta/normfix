@@ -130,9 +130,11 @@ export default defineConfig({
             text: "Guia",
             items: [
               { text: "Visão geral", link: "/pt/" },
+              { text: "Por que o normfix", link: "/pt/why" },
               { text: "Primeiros passos", link: "/pt/guide/getting-started" },
               { text: "Linha de comando", link: "/pt/guide/command-line" },
               { text: "Playground no navegador", link: "/pt/guide/playground" },
+              { text: "Agentes de IA", link: "/pt/guide/ai-agents" },
             ],
           },
           {
@@ -152,8 +154,13 @@ export default defineConfig({
           {
             text: "Referência",
             items: [
+              { text: "Todas as flags", link: "/pt/reference/flags" },
+              { text: "O que é corrigido", link: "/pt/reference/fixes" },
               { text: "Segurança e recuperação", link: "/pt/reference/safety" },
               { text: "Cabeçalhos oficiais", link: "/pt/reference/headers" },
+              { text: "Projetos e Makefiles", link: "/pt/reference/projects" },
+              { text: "Relatórios", link: "/pt/reference/reporting" },
+              { text: "Desempenho", link: "/pt/reference/performance" },
               { text: "Limites conhecidos", link: "/pt/reference/boundaries" },
               { text: "Compatibilidade", link: "/pt/COMPATIBILITY" },
               { text: "Guia de localização", link: "/pt/LOCALIZATION" },
