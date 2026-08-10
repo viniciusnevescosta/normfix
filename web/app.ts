@@ -6,12 +6,20 @@ import {
   type Locale,
   type MessageKey,
 } from "./i18n";
-import { decodeUtf8Source } from "./source-text";
+import {
+  ImportBatchError,
+  MAX_FILES,
+  MAX_FILE_BYTES,
+  MAX_PROJECT_BYTES,
+  TarArchiveError,
+  buildTar,
+  canonicalIdentityEmail,
+  portablePathKey,
+  readImportBatch,
+  sourcePathProblem,
+  type ProjectSourceFile,
+} from "./project-files";
 
-const MAX_FILES = 128;
-const MAX_PATH_BYTES = 240;
-const MAX_FILE_BYTES = 1024 * 1024;
-const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const UTF8_ENCODER = new TextEncoder();
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
 const LOCALE_STORAGE_KEY = "normfix.locale.v1";
@@ -29,11 +37,6 @@ int main(void)
 
 type RuntimeState = "loading" | "ready" | "error";
 type Severity = "error" | "warning" | "info";
-
-interface SourceFile {
-  path: string;
-  source: string;
-}
 
 interface BrowserLocation {
   line: number;
@@ -207,13 +210,6 @@ function readStoredLocale(): Locale {
     // A blocked storage API should not prevent the playground from starting.
   }
   return detectLocale();
-}
-
-function canonicalIdentityEmail(value: string): string | null {
-  const email = value.trim().toLowerCase();
-  return /^([a-z0-9][a-z0-9._-]*)@(42\.fr|student\.42[a-z0-9-]*(?:\.[a-z0-9-]+)+)$/.test(email)
-    ? email
-    : null;
 }
 
 function loadIdentity(): void {
@@ -477,49 +473,14 @@ function fileKind(path: string): string {
 }
 
 function normalizeSourcePath(path: string): string {
-  const normalized = path.replaceAll("\\", "/").replace(/^\.\//, "");
-  const filename = normalized.split("/").at(-1)?.toLowerCase() ?? "";
-  if (filename !== "makefile" && !/\.(c|h|md)$/.test(filename)) {
-    throw new Error(t("onlySupported"));
+  const problem = sourcePathProblem(path);
+  if (!problem) return path;
+  if (problem.code === "only_supported") throw new Error(t("onlySupported"));
+  if (problem.code === "path_bytes") {
+    throw new Error(t("pathBytes", { count: problem.count }));
   }
-  const segments = normalized.split("/");
-  if (
-    normalized.length === 0 ||
-    normalized.startsWith("/") ||
-    normalized.includes(":") ||
-    normalized.normalize("NFC") !== normalized ||
-    segments.some((part) => part === "" || part === "." || part === "..") ||
-    segments.some((part) => /[. ]$/.test(part) || windowsReservedName(part)) ||
-    [...normalized].some((character) => /[\u0000-\u001f\u007f]/.test(character))
-  ) {
-    throw new Error(t("portablePath"));
-  }
-  if (UTF8_ENCODER.encode(normalized).length > MAX_PATH_BYTES) {
-    throw new Error(t("pathBytes", { count: MAX_PATH_BYTES }));
-  }
-  if (!portableTarPath(normalized)) {
-    throw new Error(t("tarPath"));
-  }
-  return normalized;
-}
-
-function windowsReservedName(segment: string): boolean {
-  const stem = segment.split(".")[0]?.toUpperCase() ?? "";
-  return /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem);
-}
-
-function portablePathKey(path: string): string {
-  return path.normalize("NFC").toLocaleLowerCase("en-US");
-}
-
-function portableTarPath(path: string): boolean {
-  if (UTF8_ENCODER.encode(path).length <= 100) return true;
-  for (let separator = path.lastIndexOf("/"); separator >= 0; separator = path.lastIndexOf("/", separator - 1)) {
-    const prefixBytes = UTF8_ENCODER.encode(path.slice(0, separator)).length;
-    const nameBytes = UTF8_ENCODER.encode(path.slice(separator + 1)).length;
-    if (prefixBytes <= 155 && nameBytes <= 100) return true;
-  }
-  return false;
+  if (problem.code === "tar_path") throw new Error(t("tarPath"));
+  throw new Error(t("portablePath"));
 }
 
 function validateProjectSources(files: ReadonlyMap<string, string>): void {
@@ -611,21 +572,24 @@ async function loadFiles(fileList: FileList | null): Promise<void> {
       throw new Error(t("projectTooLarge", { count: MAX_PROJECT_BYTES }));
     }
 
-    const proposed = new Map(state.files);
-    let selectedPath: string | null = null;
-    for (const [, [path, file]] of candidates) {
-      let source: string;
-      try {
-        source = decodeUtf8Source(await file.arrayBuffer());
-      } catch {
-        throw new Error(t("invalidUtf8", { path }));
-      }
-      if (state.revision !== startingRevision) {
+    let imported: Awaited<ReturnType<typeof readImportBatch>>;
+    try {
+      imported = await readImportBatch(
+        candidates.values(),
+        startingRevision,
+        () => state.revision,
+      );
+    } catch (error) {
+      if (error instanceof ImportBatchError && error.code === "project_changed") {
         throw new Error(t("importChanged"));
       }
-      proposed.set(path, source);
-      selectedPath = path;
+      if (error instanceof ImportBatchError && error.path) {
+        throw new Error(t("invalidUtf8", { path: error.path }));
+      }
+      throw error;
     }
+    const proposed = new Map(state.files);
+    for (const [path, source] of imported.sources) proposed.set(path, source);
     validateProjectSources(proposed);
     if (state.revision !== startingRevision) {
       throw new Error(t("importChanged"));
@@ -633,7 +597,7 @@ async function loadFiles(fileList: FileList | null): Promise<void> {
     state.files = proposed;
     state.revision += 1;
     if (candidates.size > 0) invalidateResults();
-    if (selectedPath) selectFile(selectedPath, false);
+    if (imported.selectedPath) selectFile(imported.selectedPath, false);
     renderFileList();
   } finally {
     state.importing = false;
@@ -980,69 +944,23 @@ function downloadAll(): void {
     )
     .map((file) => ({ path: file.path, source: file.formatted }));
   if (files.length === 0) return;
-  downloadBlob(new Blob([buildTar(files)], { type: "application/x-tar" }), "normfix-formatted.tar");
-}
-
-function buildTar(files: SourceFile[]): Uint8Array<ArrayBuffer> {
-  const encoder = new TextEncoder();
-  const chunks: Uint8Array<ArrayBuffer>[] = [];
-  for (const file of files) {
-    const content = encoder.encode(file.source);
-    const header = new Uint8Array(512);
-    const [name, prefix] = splitTarPath(file.path, encoder);
-    writeTarText(header, 0, 100, name, encoder);
-    writeTarText(header, 100, 8, "0000644\0", encoder);
-    writeTarText(header, 108, 8, "0000000\0", encoder);
-    writeTarText(header, 116, 8, "0000000\0", encoder);
-    writeTarText(header, 124, 12, `${content.length.toString(8).padStart(11, "0")}\0`, encoder);
-    writeTarText(header, 136, 12, "00000000000\0", encoder);
-    header.fill(32, 148, 156);
-    header[156] = "0".charCodeAt(0);
-    writeTarText(header, 257, 6, "ustar\u0000", encoder);
-    writeTarText(header, 263, 2, "00", encoder);
-    writeTarText(header, 265, 32, "normfix", encoder);
-    writeTarText(header, 297, 32, "normfix", encoder);
-    writeTarText(header, 345, 155, prefix, encoder);
-    const checksum = header.reduce((total, byte) => total + byte, 0);
-    writeTarText(header, 148, 8, `${checksum.toString(8).padStart(6, "0")}\0 `, encoder);
-    chunks.push(header, content);
-    const padding = (512 - (content.length % 512)) % 512;
-    if (padding) chunks.push(new Uint8Array(padding));
-  }
-  chunks.push(new Uint8Array(1024));
-  const size = chunks.reduce((total, chunk) => total + chunk.length, 0);
-  const archive = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    archive.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return archive;
-}
-
-function splitTarPath(path: string, encoder: TextEncoder): [string, string] {
-  if (encoder.encode(path).length <= 100) return [path, ""];
-  const separators = [...path.matchAll(/\//g)].map((match) => match.index).reverse();
-  for (const separator of separators) {
-    const prefix = path.slice(0, separator);
-    const name = path.slice(separator + 1);
-    if (encoder.encode(prefix).length <= 155 && encoder.encode(name).length <= 100) {
-      return [name, prefix];
+  try {
+    const archive = buildTar(files satisfies ProjectSourceFile[]);
+    downloadBlob(
+      new Blob([archive], { type: "application/x-tar" }),
+      "normfix-formatted.tar",
+    );
+  } catch (error) {
+    if (error instanceof TarArchiveError && error.code === "path_too_long" && error.path) {
+      setRuntime("error", t("downloadPath", { path: error.path }));
+      return;
     }
+    if (error instanceof TarArchiveError) {
+      setRuntime("error", t("archiveField"));
+      return;
+    }
+    throw error;
   }
-  throw new Error(t("downloadPath", { path }));
-}
-
-function writeTarText(
-  buffer: Uint8Array<ArrayBuffer>,
-  offset: number,
-  length: number,
-  value: string,
-  encoder: TextEncoder,
-): void {
-  const encoded = encoder.encode(value);
-  if (encoded.length > length) throw new Error(t("archiveField"));
-  buffer.set(encoded, offset);
 }
 
 elements.run.addEventListener("click", runFormatter);

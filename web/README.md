@@ -83,11 +83,12 @@ Any non-convergent result is discarded instead of exposed as a usable edit.
 
 ## 42 identity and privacy boundary
 
-The identity panel accepts 42 student addresses only. The email is kept in
-memory unless the visitor explicitly selects **Remember on this device**. In
-that case it is stored under `normfix.identity.v1` in same-origin local storage
-and can be removed with **Forget**. It is passed directly to WebAssembly to
-generate the official 42 header and is never sent to a server.
+The identity panel accepts 42 student addresses only. **Remember on this
+device** is off by default, so the email stays in memory unless the visitor
+explicitly enables persistence. When enabled, it is stored under
+`normfix.identity.v1` in same-origin local storage and can be removed with
+**Forget**. It is passed directly to WebAssembly to generate the official 42
+header and is never sent to a server.
 
 Source buffers likewise stay inside the browser process. The only external
 browser request is an unauthenticated, no-referrer fetch of the repository's
