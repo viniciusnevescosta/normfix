@@ -21,8 +21,8 @@ pub use header::{
     c_header_fits, c_header_span, ensure_c_header, identity_fits_c_header, update_c_header,
 };
 pub use identity::{
-    Identity42, IdentityResolution, IdentityResolver, canonical_42_email, identity_from_email,
-    resolve_identity,
+    Identity42, IdentityConfigError, IdentityResolution, IdentityResolver, canonical_42_email,
+    identity_from_email, persist_identity, resolve_identity,
 };
 
 /// A half-open UTF-8 byte range.
