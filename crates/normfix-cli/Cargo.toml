@@ -24,6 +24,7 @@ normfix-actions = { path = "../normfix-actions" }
 normfix-engine = { path = "../normfix-engine" }
 normfix-destructive = { path = "../normfix-destructive" }
 normfix-header = { path = "../normfix-header" }
+normfix-i18n = { path = "../normfix-i18n" }
 normfix-project = { path = "../normfix-project" }
 normfix-report = { path = "../normfix-report" }
 serde.workspace = true

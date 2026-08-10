@@ -1,0 +1,15 @@
+[package]
+name = "normfix-i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish.workspace = true
+description = "Locale selection and the human-message catalogue for normfix"
+
+[lints]
+workspace = true

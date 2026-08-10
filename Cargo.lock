@@ -733,6 +733,7 @@ dependencies = [
  "normfix-destructive",
  "normfix-engine",
  "normfix-header",
+ "normfix-i18n",
  "normfix-project",
  "normfix-report",
  "serde",
@@ -860,6 +861,10 @@ dependencies = [
  "thiserror",
  "wait-timeout",
 ]
+
+[[package]]
+name = "normfix-i18n"
+version = "1.0.0-rc.2"
 
 [[package]]
 name = "normfix-makefile"

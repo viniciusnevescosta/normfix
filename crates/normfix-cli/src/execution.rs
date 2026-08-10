@@ -2,6 +2,7 @@
 
 use std::fmt::Write as _;
 
+use normfix_i18n::Messages;
 use serde::Serialize;
 
 /// Effective, already-validated configuration announced before project work.
@@ -51,58 +52,96 @@ pub struct ExecutionStart {
 
 impl ExecutionStart {
     /// Renders a compact, color-free block suitable for a human terminal.
+    ///
+    /// The prose fields are supplied already translated by the caller, because
+    /// only the human path is localized: the JSON event keeps English values so
+    /// automation never has to select a language to stay reliable.
     #[must_use]
-    pub fn to_human(&self) -> String {
-        let mut output = String::from("normfix · starting\n");
-        field(&mut output, "action", &self.action);
-        field(&mut output, "mode", &self.mode);
-        field(&mut output, "scope", &self.scope);
-        field(&mut output, "working dir", &self.current_directory);
-        field(
-            &mut output,
-            "identity",
-            &format!("{} ({})", self.identity, self.identity_source),
-        );
-        field(&mut output, "workers", &self.workers);
-        field(
-            &mut output,
-            "checks",
-            if self.compiler_preflight {
-                "Norminette + strict compiler"
-            } else {
-                "Norminette"
-            },
-        );
-        field(&mut output, "norminette", &self.norminette);
-        field(&mut output, "version rule", &self.norminette_version_policy);
-        field(
-            &mut output,
-            "timeout",
-            &format!("{}s per file", self.timeout_seconds),
-        );
-        field(
-            &mut output,
-            "cache",
-            if self.cache { "enabled" } else { "disabled" },
-        );
-        field(
-            &mut output,
-            "gitignore",
-            if self.respect_gitignore {
-                "respected"
-            } else {
-                "not applied"
-            },
-        );
-        field(&mut output, "backups", &self.backups);
-        field(&mut output, "destructive", &self.destructive);
-        field(
-            &mut output,
-            "force",
-            if self.forced { "acknowledged" } else { "no" },
-        );
+    pub fn to_human(&self, messages: &Messages) -> String {
+        let rows = [
+            (messages.label_action, self.action.clone()),
+            (messages.label_mode, self.mode.clone()),
+            (messages.label_scope, self.scope.clone()),
+            (
+                messages.label_working_directory,
+                self.current_directory.clone(),
+            ),
+            (
+                messages.label_identity,
+                format!("{} ({})", self.identity, self.identity_source),
+            ),
+            (messages.label_workers, self.workers.clone()),
+            (
+                messages.label_checks,
+                if self.compiler_preflight {
+                    messages.checks_norminette_and_compiler
+                } else {
+                    messages.checks_norminette
+                }
+                .to_owned(),
+            ),
+            (messages.label_norminette, self.norminette.clone()),
+            (
+                messages.label_version_rule,
+                self.norminette_version_policy.clone(),
+            ),
+            (
+                messages.label_timeout,
+                normfix_i18n::fill(
+                    messages.timeout_per_file,
+                    &[("seconds", &self.timeout_seconds.to_string())],
+                ),
+            ),
+            (
+                messages.label_cache,
+                if self.cache {
+                    messages.state_enabled
+                } else {
+                    messages.state_disabled
+                }
+                .to_owned(),
+            ),
+            (
+                messages.label_gitignore,
+                if self.respect_gitignore {
+                    messages.gitignore_respected
+                } else {
+                    messages.gitignore_not_applied
+                }
+                .to_owned(),
+            ),
+            (messages.label_backups, self.backups.clone()),
+            (messages.label_destructive, self.destructive.clone()),
+            (
+                messages.label_force,
+                if self.forced {
+                    messages.force_acknowledged
+                } else {
+                    messages.force_absent
+                }
+                .to_owned(),
+            ),
+        ];
+
+        // A translated label can be longer than its English original, so the
+        // value column is measured rather than assumed.
+        let width = rows
+            .iter()
+            .map(|(label, _)| label.chars().count())
+            .chain(
+                self.advisory
+                    .iter()
+                    .map(|_| messages.label_advisory.chars().count()),
+            )
+            .max()
+            .unwrap_or(0);
+
+        let mut output = format!("{}\n", messages.starting_banner);
+        for (label, value) in &rows {
+            field(&mut output, label, value, width);
+        }
         if let Some(advisory) = &self.advisory {
-            field(&mut output, "advisory", advisory);
+            field(&mut output, messages.label_advisory, advisory, width);
         }
         output.push('\n');
         output
@@ -114,8 +153,10 @@ impl ExecutionStart {
     }
 }
 
-fn field(output: &mut String, label: &str, value: &str) {
-    let _ = writeln!(output, "  {label:<12} {}", terminal_safe_inline(value));
+fn field(output: &mut String, label: &str, value: &str, width: usize) {
+    // Padding is counted in characters so an accented label still lines up.
+    let padding = " ".repeat(width.saturating_sub(label.chars().count()));
+    let _ = writeln!(output, "  {label}{padding} {}", terminal_safe_inline(value));
 }
 
 pub(crate) fn terminal_safe_inline(value: &str) -> String {
@@ -161,9 +202,13 @@ mod tests {
         }
     }
 
+    fn english() -> &'static normfix_i18n::Messages {
+        normfix_i18n::messages(normfix_i18n::Locale::English)
+    }
+
     #[test]
     fn human_start_block_names_action_scope_and_effective_configuration() {
-        let output = event().to_human();
+        let output = event().to_human(english());
         assert!(output.starts_with("normfix · starting\n"));
         assert!(output.contains("action       format"));
         assert!(output.contains("scope        current directory (recursive)"));
@@ -174,11 +219,52 @@ mod tests {
     fn human_start_block_escapes_terminal_controls() {
         let mut unsafe_event = event();
         unsafe_event.scope = "project\u{1b}]8;;bad\u{7}\nnext".to_owned();
-        let output = unsafe_event.to_human();
+        let output = unsafe_event.to_human(english());
         assert!(!output.contains('\u{1b}'));
         assert!(!output.contains('\u{7}'));
         assert!(output.contains("\\u{1b}"));
         assert!(output.contains("\\nnext"));
+    }
+
+    #[test]
+    fn a_localized_block_translates_labels_and_derived_values() {
+        let messages = normfix_i18n::messages(normfix_i18n::Locale::Portuguese);
+        let output = event().to_human(messages);
+
+        assert!(output.starts_with("normfix · iniciando\n"));
+        assert!(output.contains("verificações"));
+        assert!(output.contains("Norminette + compilador estrito"));
+        assert!(output.contains("5s por arquivo"));
+        // A command name is an API token and stays English in every locale.
+        assert!(output.contains("format"));
+    }
+
+    #[test]
+    fn an_accented_label_still_aligns_its_value_column() {
+        // `vérifications` is longer than any English label, so a fixed width
+        // would push its value out of the column the other rows use.
+        let messages = normfix_i18n::messages(normfix_i18n::Locale::French);
+        let output = event().to_human(messages);
+
+        // `règle de version` is the longest French label, so every value must
+        // begin two spaces of indent plus that width plus one separator in.
+        let column = 2 + messages.label_version_rule.chars().count() + 1;
+        for line in output.lines().skip(1).filter(|line| !line.is_empty()) {
+            let characters = line.chars().collect::<Vec<_>>();
+            assert!(
+                characters.len() > column,
+                "row is shorter than the value column: {line:?}"
+            );
+            assert_eq!(
+                characters[column - 1],
+                ' ',
+                "value column is not preceded by the separator: {line:?}"
+            );
+            assert_ne!(
+                characters[column], ' ',
+                "value does not start at the shared column: {line:?}"
+            );
+        }
     }
 
     #[test]

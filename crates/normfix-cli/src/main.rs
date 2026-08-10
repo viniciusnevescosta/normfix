@@ -79,6 +79,13 @@ struct Cli {
     #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Human)]
     format: OutputFormat,
 
+    /// Language for human output: en, pt, es, or fr.
+    ///
+    /// JSON, rule IDs, flags, and exit codes stay language-neutral. Without
+    /// this flag the process locale is used, falling back to English.
+    #[arg(long, global = true, value_name = "CODE")]
+    lang: Option<String>,
+
     /// Disable ANSI colors even on an interactive terminal.
     #[arg(long, global = true)]
     no_color: bool,
@@ -630,48 +637,58 @@ fn announce_execution(
     options: &FixOptions,
     advisory: Option<String>,
 ) -> Result<(), String> {
-    let scope = execution_scope(cli, paths, git_scoped, &options.cwd);
+    // Only the human block is localized. The JSON event keeps English values so
+    // a script never has to select a language to parse the same run.
+    let messages = match cli.format {
+        OutputFormat::Human => normfix_i18n::messages(resolve_locale(cli).locale),
+        OutputFormat::Json => normfix_i18n::messages(normfix_i18n::Locale::English),
+    };
+    let scope = execution_scope(cli, paths, git_scoped, &options.cwd, messages);
     let identity = options.identity.as_ref().map_or_else(
-        || "unavailable (headers will be reported)".to_owned(),
+        || messages.identity_unavailable.to_owned(),
         |identity| identity.email.clone(),
     );
     let backups = match &options.backup {
-        BackupPolicy::Automatic => "automatic external backup".to_owned(),
-        BackupPolicy::Directory(path) => format!("external directory {}", path.display()),
-        BackupPolicy::Disabled => "disabled for ordinary writes".to_owned(),
+        BackupPolicy::Automatic => messages.backups_automatic.to_owned(),
+        BackupPolicy::Directory(path) => normfix_i18n::fill(
+            messages.backups_directory,
+            &[("path", &path.display().to_string())],
+        ),
+        BackupPolicy::Disabled => messages.backups_disabled.to_owned(),
     };
     let event = ExecutionStart {
         event: "execution_start",
         action: workflow_name(cli, workflow).to_owned(),
-        mode: report_mode_name(options.mode).to_owned(),
+        mode: report_mode_name(options.mode, messages).to_owned(),
         current_directory: options.cwd.display().to_string(),
         scope,
         identity,
         identity_source: options.identity_source.clone(),
-        workers: options
-            .threads
-            .map_or_else(|| "auto".to_owned(), |count| count.to_string()),
+        workers: options.threads.map_or_else(
+            || messages.workers_automatic.to_owned(),
+            |count| count.to_string(),
+        ),
         timeout_seconds: options.timeout.as_secs_f64(),
         norminette: options.norminette_executable.as_ref().map_or_else(
-            || "automatic PATH discovery".to_owned(),
+            || messages.norminette_path_discovery.to_owned(),
             |path| path.display().to_string(),
         ),
         norminette_version_policy: if options.strict_norminette_version {
-            "strict (tested release required)"
+            messages.version_policy_strict
         } else {
-            "advisory (other releases continue)"
+            messages.version_policy_advisory
         }
         .to_owned(),
         compiler_preflight: options.compiler_preflight,
         cache: options.cache,
         respect_gitignore: options.respect_gitignore,
         backups,
-        destructive: destructive_description(options),
+        destructive: destructive_description(options, messages),
         forced: cli.force,
         advisory,
     };
     match cli.format {
-        OutputFormat::Human => eprint!("{}", event.to_human()),
+        OutputFormat::Human => eprint!("{}", event.to_human(messages)),
         OutputFormat::Json => eprintln!(
             "{}",
             event
@@ -687,16 +704,29 @@ fn execution_scope(
     paths: &[PathBuf],
     git_scoped: bool,
     cwd: &std::path::Path,
+    messages: &normfix_i18n::Messages,
 ) -> String {
     if git_scoped {
-        format!(
-            "Git {} in {} ({} selected file(s))",
-            if cli.staged { "staged" } else { "changed" },
-            cwd.display(),
-            paths.len()
+        normfix_i18n::fill(
+            messages.scope_git,
+            &[
+                (
+                    "kind",
+                    if cli.staged {
+                        messages.scope_git_staged
+                    } else {
+                        messages.scope_git_changed
+                    },
+                ),
+                ("directory", &cwd.display().to_string()),
+                ("count", &paths.len().to_string()),
+            ],
         )
     } else if paths.is_empty() {
-        format!("{} (recursive)", cwd.display())
+        normfix_i18n::fill(
+            messages.scope_recursive,
+            &[("directory", &cwd.display().to_string())],
+        )
     } else {
         let mut selected = paths
             .iter()
@@ -704,37 +734,45 @@ fn execution_scope(
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>();
         if paths.len() > selected.len() {
-            selected.push(format!("+{} more", paths.len() - selected.len()));
+            selected.push(normfix_i18n::fill(
+                messages.scope_more_paths,
+                &[("count", &(paths.len() - selected.len()).to_string())],
+            ));
         }
         selected.join(", ")
     }
 }
 
-fn destructive_description(options: &FixOptions) -> String {
+fn destructive_description(options: &FixOptions, messages: &normfix_i18n::Messages) -> String {
     let mut destructive = Vec::new();
     if options.remove_invalid_comments {
-        destructive.push("invalid comments");
+        destructive.push(messages.destructive_invalid_comments);
     }
     if options.compact_null_checks {
-        destructive.push("NULL-check compaction");
+        destructive.push(messages.destructive_null_checks);
     }
     if options.remove_missing_makefile_sources {
-        destructive.push("missing or trivia-only Makefile entries");
+        destructive.push(messages.destructive_makefile_entries);
     }
     if options.remove_orphan_prototypes {
-        destructive.push("orphan header prototypes");
+        destructive.push(messages.destructive_orphan_prototypes);
     }
     if options.remove_unused_static {
-        destructive.push("unreachable static functions");
+        destructive.push(messages.destructive_unused_statics);
     }
     if options.quarantine_unexpected {
-        destructive.push("unexpected-file quarantine");
+        destructive.push(messages.destructive_quarantine);
     }
     if destructive.is_empty() {
-        "none".to_owned()
+        messages.destructive_none.to_owned()
     } else {
         destructive.join(", ")
     }
+}
+
+/// Resolves the human-output language from `--lang`, then the process locale.
+fn resolve_locale(cli: &Cli) -> normfix_i18n::Resolution {
+    normfix_i18n::resolve(cli.lang.as_deref(), |name| std::env::var(name).ok())
 }
 
 const fn workflow_name(cli: &Cli, workflow: Workflow) -> &'static str {
@@ -749,11 +787,11 @@ const fn workflow_name(cli: &Cli, workflow: Workflow) -> &'static str {
     }
 }
 
-const fn report_mode_name(mode: ReportMode) -> &'static str {
+const fn report_mode_name(mode: ReportMode, messages: &normfix_i18n::Messages) -> &'static str {
     match mode {
-        ReportMode::Fix => "write",
-        ReportMode::Check => "read-only check",
-        ReportMode::Diff => "read-only diff",
+        ReportMode::Fix => messages.mode_write,
+        ReportMode::Check => messages.mode_check,
+        ReportMode::Diff => messages.mode_diff,
     }
 }
 

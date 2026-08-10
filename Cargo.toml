@@ -9,6 +9,7 @@ members = [
     "crates/normfix-destructive",
     "crates/normfix-engine",
     "crates/normfix-header",
+    "crates/normfix-i18n",
     "crates/normfix-makefile",
     "crates/normfix-markdown",
     "crates/normfix-oracle",
