@@ -10,6 +10,126 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.0.0-rc.2] / 2026-08-10
+
+The second release candidate. It is about answering the question a student
+actually has before a defense — *will this pass as it stands?* — and about a
+run never being a surprise.
+
+### Added
+
+- **A pre-defense evaluation.** `preflight` now ends with a transparent 0–100
+  estimate, a letter band, a verdict, and exactly located hard failures. It is
+  structurally non-conclusive rather than conclusive-with-a-disclaimer:
+  `conclusive` is always `false`, coverage gaps downgrade the verdict to
+  `INCOMPLETE` instead of producing a confident grade, and the caveats travel
+  inside the JSON `notes` array so an agent relaying the result cannot drop
+  them.
+
+  The evaluation judges the bytes on disk, not the bytes normfix could write.
+  A project whose Norm and Makefile errors are all auto-fixable used to look
+  like it would pass a defense it would actually fail. On a four-file sample it
+  reports `31/100` with fourteen hard failures; after `normfix` writes the
+  fixes it had already proven, the same project reports `59/100` with one — the
+  Makefile still lists a deleted source, which is a decision, not a fix.
+
+- **Every run announces itself.** Before reading a single file, `normfix` states
+  the action, the resolved scope, and the effective safety configuration. The
+  `scope` line is the one that matters: a command typed in the wrong directory
+  looks wrong there, rather than in the summary afterwards. JSON mode emits the
+  same information as one `execution_start` event on `stderr`, leaving the
+  versioned report as the only document on `stdout`.
+
+- **Protected scopes are refused.** Filesystem roots, complete user home
+  directories, operating-system trees, and broad multi-project directories exit
+  `2` without reading anything. The decision resolves symbolic links and
+  collapses `..` first, so neither `/work/../etc` nor a link into `/etc` slips
+  past it, and a Git-scoped run is judged by the repository root rather than by
+  the thousands of files beneath it. `--force` acknowledges such a path and
+  grants nothing else.
+
+- **Orphan header prototypes.** A prototype with no implementation and no use
+  anywhere in the project is reported by default, at the prototype name.
+  Removal is available only under explicit authorization, only when the
+  selected inputs are the complete project C/header set, and only when that set
+  contains no definition, call, function-pointer reference, macro, string,
+  conditional, attribute, or token-paste evidence. A definition whose body is
+  only braces, whitespace, and comments is warning-only, because an intentional
+  no-op can be correct.
+
+- **Trivia-only Makefile sources.** A source token pointing at a file that
+  exists but holds nothing beyond whitespace and comments is now distinguished
+  from a missing one and reported through its own rule, so the reason for a
+  removal is never ambiguous.
+
+- **A verified 42 identity is remembered.** Supplying a valid identity once
+  saves it atomically in the platform's private per-user configuration, and
+  later runs stop asking.
+
+- **The browser playground.** A Monaco-based multi-file editor for C sources,
+  headers, Makefiles, and README documents, localized in English, Portuguese,
+  Spanish, and French, with the 42 header available from a locally stored
+  identity that is never sent anywhere.
+
+### Changed
+
+- **An untested Norminette release is usable by default.** Refusing to run was
+  protecting the wrong thing: the before/after regression proof compares two
+  answers from the same executable, so it stays valid whatever version that is.
+  What an untested release actually costs is the guarantee that the native
+  rules agree with it, so the run continues, says so prominently, and
+  attributes every official finding to the version that produced it.
+  `--strict-norminette-version` is there for CI that deliberately pins the
+  tested checker; `--allow-untested-norminette` remains as a hidden no-op.
+
+- **Coverage is stated instead of assumed.** A missing `normfix.toml`, an
+  unidentifiable compiler, an unselected root Makefile, an absent Makefile, and
+  a present README each produce their own advisory. A README is never a
+  preflight failure — its presence only raises a 42-criteria review the tool
+  cannot decide automatically.
+
+- **Preflight runs the bounded analyzer without a second flag**, and carries the
+  AddressSanitizer/UndefinedBehaviorSanitizer recipe, the LeakSanitizer caveat,
+  and `clang-tidy` availability as guidance for the manual pass it will not run
+  for you.
+
+- **The JSON schema version moves to 2**, adding the optional `evaluation`
+  object.
+
+- **Releases are append-only.** A tag must be annotated and contained in `main`,
+  an existing release is now a hard failure instead of an asset re-upload, and a
+  pre-release passes `--latest=false` so a stable install can never resolve to
+  it. Every workflow that can publish proves the npm dependency tree carries no
+  known advisory first.
+
+### Fixed
+
+- **A function typedef is no longer recorded as a prototype.** Tree-sitter puts
+  a `function_declarator` inside both `typedef int t_callback(void);` and a
+  function-pointer typedef, so a type alias was collected as if it declared a
+  callable symbol. Any proof that a declaration has no implementation would have
+  accused the alias. The exclusion now lives at the fact boundary, where no
+  consumer can miss it.
+
+- **A closed-world removal is bound to the source set it was proven against.**
+  Nothing stopped a file from appearing or disappearing between analysis and
+  commit, which would let a removal land against a project that no longer
+  matched its own proof. The transaction now revalidates that membership and
+  refuses on any mismatch.
+
+- **A guarded multi-file transaction is preserved** rather than partially
+  applied, and `upgrade` keeps a stable install off prereleases.
+
+### Notes
+
+Documentation now shows what commands emit instead of only describing it. The
+announcement banner, both protected-scope refusals with their exit status, the
+estimate before and after a fix, and the `evaluation` JSON object are captured
+from real runs.
+
+Splitting `crates/normfix-engine/src/pipeline.rs` remains the first change
+after 1.0.0.
+
 ## [1.0.0-rc.1] / 2026-08-06
 
 The first release candidate for 1.0.0. It is about one thing: seeing where an
@@ -382,6 +502,7 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[1.0.0-rc.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.1
 [0.4.0-beta.5]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.5
 [0.4.0-beta.4]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.4
