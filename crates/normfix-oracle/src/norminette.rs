@@ -20,13 +20,13 @@ pub struct NorminetteConfig {
     pub executable: Option<PathBuf>,
     /// Exact version required from `norminette --version`.
     pub expected_version: String,
-    /// Proceed with a different release instead of refusing.
+    /// Refuse a different release instead of continuing with an advisory.
     ///
     /// The before/after regression proof compares two answers from the same
     /// executable, so it stays valid whatever version that is. What an untested
     /// release costs is the guarantee that the native rules agree with it, so
-    /// this is opt-in and the run says so.
-    pub allow_untested_version: bool,
+    /// strict mode is useful for reproducible CI that pins the official checker.
+    pub strict_version: bool,
     /// Limits applied independently to version checks and lint calls.
     pub limits: ProcessLimits,
 }
@@ -36,7 +36,7 @@ impl Default for NorminetteConfig {
         Self {
             executable: None,
             expected_version: SUPPORTED_NORMINETTE_VERSION.to_owned(),
-            allow_untested_version: false,
+            strict_version: false,
             limits: ProcessLimits::per_file_default(),
         }
     }
@@ -134,8 +134,9 @@ pub struct NorminetteOracle {
 }
 
 impl NorminetteOracle {
-    /// Locates the command, executes `--version` without a shell and verifies
-    /// the exact supported release.
+    /// Locates the command, executes `--version` without a shell, and
+    /// fingerprints the release. Strict mode additionally requires the tested
+    /// release.
     ///
     /// # Errors
     ///
@@ -154,7 +155,7 @@ impl NorminetteOracle {
         let version_output = normalized_output(&output);
         let version = parse_version(&version_output)?;
         let untested = version != config.expected_version;
-        if untested && !config.allow_untested_version {
+        if untested && config.strict_version {
             return Err(NorminetteError::VersionMismatch {
                 expected: config.expected_version,
                 found: version,
@@ -513,7 +514,7 @@ mod tests {
             NorminetteOracle::locate(NorminetteConfig {
                 executable: Some(script.to_path_buf()),
                 expected_version: SUPPORTED_NORMINETTE_VERSION.to_owned(),
-                allow_untested_version: false,
+                strict_version: false,
                 limits: ProcessLimits {
                     // Version verification is setup, not the per-lint timeout
                     // exercised by these tests. Keep it robust under parallel CI.
@@ -641,7 +642,28 @@ echo "malformed"
 
     #[cfg(unix)]
     #[test]
-    fn version_mismatch_is_an_operational_failure() {
+    fn untested_version_continues_and_is_fingerprinted_by_default() {
+        let directory = TempDir::new().expect("temporary script directory");
+        let script = executable_script(
+            &directory,
+            r#"
+if [ "$1" = "--version" ]; then echo "norminette 4.0.0"; exit 0; fi
+"#,
+        );
+
+        let oracle = NorminetteOracle::locate(NorminetteConfig {
+            executable: Some(script),
+            ..NorminetteConfig::default()
+        })
+        .expect("untested versions are advisory by default");
+
+        assert!(oracle.fingerprint().untested);
+        assert_eq!(oracle.fingerprint().version, "4.0.0");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn strict_version_mode_rejects_an_untested_release() {
         let directory = TempDir::new().expect("temporary script directory");
         let script = executable_script(
             &directory,
@@ -652,9 +674,10 @@ if [ "$1" = "--version" ]; then echo "norminette 4.0.0"; exit 0; fi
 
         let error = NorminetteOracle::locate(NorminetteConfig {
             executable: Some(script),
+            strict_version: true,
             ..NorminetteConfig::default()
         })
-        .expect_err("wrong version must fail");
+        .expect_err("strict version policy must fail");
 
         assert!(matches!(error, NorminetteError::VersionMismatch { .. }));
     }

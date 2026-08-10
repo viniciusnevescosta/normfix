@@ -16,6 +16,14 @@ use tempfile::TempDir;
 
 const CLEAN_SOURCE: &str = "int\tanswer(void)\n{\n\treturn (42);\n}\n";
 
+/// Minimal compiler stub: preflight identifies the compiler before use.
+const CC_VERSION_ONLY: &str = r#"
+if [ "$1" = "--version" ]; then
+    echo "gcc (fixture) 14.1"
+fi
+exit 0
+"#;
+
 struct Fixture {
     project: TempDir,
     _tools: TempDir,
@@ -452,10 +460,26 @@ echo "$1: OK!"
         "{header}\n\ntypedef enum e_operation\n{{\n\tOP_ZERO,\n\tOP_TOTAL\n}}\tt_operation;\n\nint\tg_values[OP_TOTAL];\n"
     );
     fs::write(&source_path, source).expect("write enum fixture");
+    fs::write(
+        fixture.project.path().join("normfix.toml"),
+        "[project]\nname = \"fixture\"\nallowed = []\n",
+    )
+    .expect("policy fixture");
+    let tools = TempDir::new().expect("compiler tools");
+    let compiler = executable_script(&tools, "cc", CC_VERSION_ONLY);
+    let mut options = fixture.options(ReportMode::Check);
+    options.preflight = true;
+    options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &fixture.options(ReportMode::Check)).expect("VLA pipeline");
+    let report = run_fixes(&[], &options).expect("VLA pipeline");
 
+    let before = &report.files[0].before;
     let after = &report.files[0].after;
+    assert!(
+        before
+            .iter()
+            .all(|diagnostic| diagnostic.rule_id != "VLA_FORBIDDEN")
+    );
     assert!(
         after
             .iter()
@@ -467,7 +491,15 @@ echo "$1: OK!"
             .all(|diagnostic| diagnostic.rule_id != "VLA_FORBIDDEN")
     );
     assert_eq!(report.summary.remaining, 0);
-    assert_eq!(report.summary.advisories, 1);
+    assert!(
+        report
+            .evaluation
+            .as_ref()
+            .expect("preflight evaluation")
+            .hard_failures
+            .iter()
+            .all(|finding| finding.rule_id != "VLA_FORBIDDEN")
+    );
 }
 
 #[test]
@@ -793,6 +825,609 @@ fn makefile_source_removal_refuses_paths_through_symbolic_links() {
             .iter()
             .all(|diagnostic| diagnostic.rule_id != "MAKEFILE_SOURCE_NOT_FOUND")
     );
+}
+
+#[test]
+fn untested_norminette_warns_once_for_a_header_only_scope() {
+    let fixture = Fixture::new(
+        r#"
+if [ "$1" = "--version" ]; then
+    echo "norminette 3.3.60"
+    exit 0
+fi
+echo "$1: OK!"
+"#,
+    );
+    fs::write(fixture.project.path().join("a.h"), "int\ta(void);\n").expect("first header");
+    fs::write(fixture.project.path().join("b.h"), "int\tb(void);\n").expect("second header");
+    let mut options = fixture.options(ReportMode::Check);
+    options.lint_only = true;
+
+    let report = run_fixes(&[], &options).expect("header-only compatibility run");
+    let warnings = report
+        .files
+        .iter()
+        .flat_map(|file| &file.after)
+        .filter(|diagnostic| diagnostic.rule_id == "NORMINETTE_VERSION_UNTESTED")
+        .count();
+
+    assert_eq!(warnings, 1);
+}
+
+#[test]
+fn official_findings_use_the_detected_untested_norminette_version() {
+    let fixture = Fixture::new(
+        r#"
+if [ "$1" = "--version" ]; then
+    echo "norminette 3.3.60"
+    exit 0
+fi
+echo "$1: Error!"
+echo "Error: TOO_MANY_LINES (line: 1, col: 1): Function has more than 25 lines"
+exit 1
+"#,
+    );
+    fs::write(
+        fixture.project.path().join("answer.h"),
+        "int\tanswer(void);\n",
+    )
+    .expect("source fixture");
+    let mut options = fixture.options(ReportMode::Check);
+    options.lint_only = true;
+
+    let report = run_fixes(&[], &options).expect("untested-version lint");
+    let source = &report.files[0].after;
+
+    assert!(source.iter().any(|diagnostic| {
+        diagnostic.rule_id == "TOO_MANY_LINES"
+            && diagnostic.source == DiagnosticSource::NorminetteCompat("3.3.60".to_owned())
+    }));
+    assert!(source.iter().any(|diagnostic| {
+        diagnostic.rule_id == "NORMINETTE_VERSION_UNTESTED"
+            && diagnostic.source == DiagnosticSource::NorminetteCompat("3.3.60".to_owned())
+    }));
+}
+
+#[test]
+fn native_rule_overlap_preserves_distinct_official_locations() {
+    let fixture = Fixture::new(
+        r#"
+if [ "$1" = "--version" ]; then
+    echo "norminette 3.3.59"
+    exit 0
+fi
+echo "$1: Error!"
+echo "Error: TOO_MANY_LINES (line: 1, col: 1): First official occurrence"
+echo "Error: TOO_MANY_LINES (line: 20, col: 1): Second official occurrence"
+exit 1
+"#,
+    );
+    let tools = TempDir::new().expect("compiler tools");
+    let compiler = executable_script(&tools, "cc", "exit 0");
+    let source = format!(
+        "int\tlong_function(void)\n{{\n{}\treturn (0);\n}}\n",
+        "\t(void)0;\n".repeat(26)
+    );
+    fs::write(fixture.project.path().join("long.c"), source).expect("long function");
+    let mut options = fixture.options(ReportMode::Check);
+    options.lint_only = true;
+    options.preflight = true;
+    options.compiler_executable = Some(compiler);
+
+    let report = run_fixes(&[], &options).expect("multi-location lint");
+    let official = report.files[0]
+        .after
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.rule_id == "TOO_MANY_LINES"
+                && matches!(diagnostic.source, DiagnosticSource::NorminetteCompat(_))
+        })
+        .collect::<Vec<_>>();
+    let locations = official
+        .iter()
+        .map(|diagnostic| diagnostic.range.start())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(official.len(), 2);
+    assert_eq!(locations.len(), 2);
+}
+
+#[test]
+fn unproven_variable_array_bound_remains_an_on_disk_norm_failure() {
+    let fixture = Fixture::new(
+        r#"
+if [ "$1" = "--version" ]; then
+    echo "norminette 3.3.59"
+    exit 0
+fi
+line_number=$(awk '/values\[count\]/{ print NR; exit }' "$1")
+if [ -n "$line_number" ]; then
+    echo "$1: Error!"
+    echo "Error: VLA_FORBIDDEN (line: $line_number, col: 5): Variable length array forbidden"
+    exit 1
+fi
+echo "$1: OK!"
+"#,
+    );
+    let source_path = fixture.project.path().join("variable_array.c");
+    let source =
+        "int\tfirst_value(int count)\n{\n\tint\tvalues[count];\n\n\treturn (values[0]);\n}\n";
+    fs::write(&source_path, source).expect("write variable VLA fixture");
+    let tools = TempDir::new().expect("compiler tools");
+    let compiler = executable_script(&tools, "cc", CC_VERSION_ONLY);
+    let mut options = fixture.options(ReportMode::Check);
+    options.lint_only = true;
+    options.preflight = true;
+    options.compiler_executable = Some(compiler);
+
+    let report = run_fixes(&[], &options).expect("unproven VLA pipeline");
+    let file = &report.files[0];
+
+    assert!(file.before.iter().any(|diagnostic| {
+        diagnostic.rule_id == "VLA_FORBIDDEN"
+            && matches!(diagnostic.source, DiagnosticSource::NorminetteCompat(_))
+    }));
+    assert!(
+        file.after
+            .iter()
+            .any(|diagnostic| diagnostic.rule_id == "VLA_FORBIDDEN")
+    );
+    assert!(
+        file.after
+            .iter()
+            .all(|diagnostic| diagnostic.rule_id != "VLA_COMPAT_FALSE_POSITIVE")
+    );
+    assert!(
+        report
+            .evaluation
+            .as_ref()
+            .expect("preflight evaluation")
+            .hard_failures
+            .iter()
+            .any(|finding| finding.rule_id == "VLA_FORBIDDEN")
+    );
+}
+
+#[test]
+fn preflight_runs_the_bounded_analyzer_without_an_extra_flag() {
+    let fixture = Fixture::clean_oracle();
+    let tools = TempDir::new().expect("compiler tools");
+    let compiler = executable_script(
+        &tools,
+        "cc",
+        r#"
+if [ "$1" = "--version" ]; then
+    echo "gcc (fixture) 14.1"
+    exit 0
+fi
+case " $* " in
+    *" -fanalyzer "*)
+        last=""
+        for argument in "$@"; do
+            last="$argument"
+        done
+        echo "$last:2:1: warning: leak of 'value' [-Wanalyzer-malloc-leak]" >&2
+        ;;
+esac
+exit 0
+"#,
+    );
+    fs::write(fixture.project.path().join("answer.c"), CLEAN_SOURCE).expect("source fixture");
+    let mut options = fixture.options(ReportMode::Check);
+    options.preflight = true;
+    options.compiler_executable = Some(compiler);
+
+    let report = run_fixes(&[], &options).expect("automatic analyzer preflight");
+
+    assert!(report.files[0].after.iter().any(|diagnostic| {
+        diagnostic.rule_id == "CC_ANALYZER_MALLOC_LEAK"
+            && diagnostic.source == DiagnosticSource::Compiler
+            && diagnostic.severity == Severity::Info
+    }));
+}
+
+#[test]
+fn readme_advisory_is_present_only_when_a_readme_exists_and_never_hard_fails() {
+    let fixture = Fixture::clean_oracle();
+    let readme = fixture.project.path().join("README.md");
+    fs::write(&readme, "# Demo\n").expect("README");
+    let mut options = fixture.options(ReportMode::Check);
+    options.preflight = true;
+
+    let with_readme = run_fixes(&[], &options).expect("README preflight");
+
+    assert!(with_readme.files[0].after.iter().any(|diagnostic| {
+        diagnostic.rule_id == "README_42_CRITERIA_REVIEW" && diagnostic.severity == Severity::Info
+    }));
+    assert!(
+        with_readme
+            .evaluation
+            .as_ref()
+            .expect("evaluation")
+            .hard_failures
+            .iter()
+            .all(|finding| finding.rule_id != "README_42_CRITERIA_REVIEW")
+    );
+
+    fs::remove_file(&readme).expect("remove README fixture");
+    let without_readme = run_fixes(&[], &options).expect("no README preflight");
+
+    assert!(without_readme.files.is_empty());
+}
+
+#[test]
+fn missing_makefile_is_an_advisory_until_subject_policy_can_require_one() {
+    let fixture = Fixture::clean_oracle();
+    fs::write(fixture.project.path().join("answer.c"), CLEAN_SOURCE).expect("source fixture");
+    let mut options = fixture.options(ReportMode::Check);
+    options.preflight = true;
+
+    let absent = run_fixes(&[], &options).expect("preflight without Makefile");
+
+    assert!(
+        absent
+            .files
+            .iter()
+            .flat_map(|file| &file.after)
+            .any(|diagnostic| diagnostic.rule_id == "MAKEFILE_NOT_FOUND"
+                && diagnostic.severity == Severity::Info)
+    );
+    assert!(
+        absent
+            .evaluation
+            .as_ref()
+            .expect("evaluation")
+            .hard_failures
+            .is_empty()
+    );
+
+    fs::write(fixture.project.path().join("Makefile"), "all:\n").expect("Makefile fixture");
+    let present = run_fixes(&[], &options).expect("preflight with Makefile");
+
+    assert!(
+        present
+            .files
+            .iter()
+            .flat_map(|file| &file.after)
+            .all(|diagnostic| diagnostic.rule_id != "MAKEFILE_NOT_FOUND")
+    );
+}
+
+#[test]
+fn explicit_header_preflight_reports_an_existing_unselected_root_makefile() {
+    let fixture = Fixture::clean_oracle();
+    let header = fixture.project.path().join("api.h");
+    fs::write(&header, "int\tanswer(void);\n").expect("header");
+    let makefile = fixture.project.path().join("Makefile");
+    fs::write(&makefile, "all:\n").expect("Makefile fixture");
+    let mut options = fixture.options(ReportMode::Check);
+    options.preflight = true;
+
+    let partial =
+        run_fixes(std::slice::from_ref(&header), &options).expect("explicit header-only preflight");
+
+    assert!(partial.files.iter().all(|file| file.path != "Makefile"));
+    assert!(
+        partial
+            .files
+            .iter()
+            .flat_map(|file| &file.after)
+            .any(|diagnostic| diagnostic.rule_id == "MAKEFILE_NOT_EVALUATED"
+                && diagnostic.severity == Severity::Warning)
+    );
+
+    let complete = run_fixes(&[header, makefile], &options).expect("Makefile-selected preflight");
+
+    assert!(complete.files.iter().any(|file| file.path == "Makefile"));
+    assert!(
+        complete
+            .files
+            .iter()
+            .flat_map(|file| &file.after)
+            .all(|diagnostic| diagnostic.rule_id != "MAKEFILE_NOT_EVALUATED")
+    );
+}
+
+#[test]
+fn trivia_only_makefile_source_is_reported_then_removed_only_with_authorization() {
+    let fixture = Fixture::clean_oracle();
+    let makefile = fixture.project.path().join("Makefile");
+    fs::write(
+        &makefile,
+        "NAME = demo\nSRC = live.c placeholder.c\nall: $(NAME)\n$(NAME):\nclean:\nfclean: clean\nre: fclean all\n",
+    )
+    .expect("Makefile fixture");
+    fs::write(fixture.project.path().join("live.c"), CLEAN_SOURCE).expect("live source");
+    fs::write(
+        fixture.project.path().join("placeholder.c"),
+        "/* TODO: implement this source */\n",
+    )
+    .expect("placeholder source");
+
+    let report = run_fixes(&[], &fixture.options(ReportMode::Check)).expect("empty source check");
+    let make_report = report
+        .files
+        .iter()
+        .find(|file| file.path == "Makefile")
+        .expect("Makefile report");
+
+    assert!(make_report.after.iter().any(|diagnostic| {
+        diagnostic.rule_id == "MAKEFILE_SOURCE_EMPTY"
+            && diagnostic.message.contains("placeholder.c")
+    }));
+    assert!(
+        fs::read_to_string(&makefile)
+            .expect("unchanged")
+            .contains("placeholder.c")
+    );
+
+    let mut authorized = fixture.options(ReportMode::Fix);
+    authorized.remove_missing_makefile_sources = true;
+    authorized.destructive_authorization = Some(
+        DestructiveRequest::one(DestructiveCapability::RemoveMissingMakefileSources)
+            .authorize_forced(true, true)
+            .expect("explicit destructive authorization"),
+    );
+
+    let removed = run_fixes(&[], &authorized).expect("empty source removal");
+    let make_report = removed
+        .files
+        .iter()
+        .find(|file| file.path == "Makefile")
+        .expect("Makefile report");
+
+    assert!(
+        make_report
+            .fixes
+            .iter()
+            .any(|fix| fix.rule_id == "MAKEFILE_REMOVE_EMPTY_SOURCE")
+    );
+    assert!(
+        !fs::read_to_string(&makefile)
+            .expect("fixed")
+            .contains("placeholder.c")
+    );
+}
+
+#[test]
+fn default_check_reports_header_prototype_without_project_implementation_at_the_name() {
+    let fixture = Fixture::clean_oracle();
+    let header = fixture.project.path().join("api.h");
+    let header_source = "int\tmissing_api(void);\n";
+    fs::write(&header, header_source).expect("header");
+
+    let report = run_fixes(&[], &fixture.options(ReportMode::Check))
+        .expect("missing implementation warning");
+    let header_report = report
+        .files
+        .iter()
+        .find(|file| file.path == "api.h")
+        .expect("header report");
+    let diagnostic = header_report
+        .after
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "HEADER_PROTOTYPE_IMPLEMENTATION_MISSING")
+        .expect("missing implementation diagnostic");
+    let planned = header_report
+        .fixed
+        .as_deref()
+        .map_or_else(|| header_source.to_owned(), ToOwned::to_owned);
+    let name = planned.find("missing_api").expect("prototype name");
+
+    assert_eq!(
+        u32::from(diagnostic.range.start()),
+        u32::try_from(name).expect("in-range prototype offset")
+    );
+    assert!(report.evaluation.is_none());
+}
+
+#[test]
+fn default_check_reports_a_trivia_only_implementation_without_removing_it() {
+    let fixture = Fixture::clean_oracle();
+    let header = fixture.project.path().join("api.h");
+    fs::write(&header, "void\tplaceholder(void);\n").expect("shadow header");
+    let implementation = fixture.project.path().join("placeholder.c");
+    fs::write(
+        &implementation,
+        "void\tplaceholder(void)\n{\n\t/* TODO */\n}\n",
+    )
+    .expect("implementation");
+
+    let report =
+        run_fixes(&[], &fixture.options(ReportMode::Check)).expect("empty implementation warning");
+    let header_report = report
+        .files
+        .iter()
+        .find(|file| file.path == "api.h")
+        .expect("header report");
+
+    assert!(
+        header_report
+            .after
+            .iter()
+            .any(|diagnostic| diagnostic.rule_id == "HEADER_PROTOTYPE_IMPLEMENTATION_EMPTY")
+    );
+    assert!(
+        header_report
+            .fixes
+            .iter()
+            .all(|fix| fix.rule_id != "UNSAFE_REMOVE_ORPHAN_PROTOTYPE")
+    );
+    assert!(
+        fs::read_to_string(&implementation)
+            .expect("unchanged implementation")
+            .contains("TODO")
+    );
+}
+
+#[test]
+fn authorized_unsafe_mode_removes_only_an_unused_orphan_header_prototype() {
+    let fixture = Fixture::clean_oracle();
+    let backups = TempDir::new().expect("external recovery");
+    let header = fixture.project.path().join("api.h");
+    fs::write(&header, "int\tmissing_api(void);\nint\tanswer(void);\n").expect("header");
+    fs::write(fixture.project.path().join("answer.c"), CLEAN_SOURCE).expect("implementation");
+    let mut options = fixture.options(ReportMode::Fix);
+    options.backup = BackupPolicy::Directory(backups.path().to_path_buf());
+    options.remove_orphan_prototypes = true;
+    options.destructive_authorization = Some(
+        DestructiveRequest::one(DestructiveCapability::RemoveOrphanPrototypes)
+            .authorize_forced(true, true)
+            .expect("explicit destructive authorization"),
+    );
+
+    let report = run_fixes(&[], &options).expect("orphan removal");
+    let header_report = report
+        .files
+        .iter()
+        .find(|file| file.path == "api.h")
+        .expect("header report");
+
+    assert!(header_report.written);
+    assert!(
+        header_report
+            .fixes
+            .iter()
+            .any(|fix| fix.rule_id == "UNSAFE_REMOVE_ORPHAN_PROTOTYPE")
+    );
+    assert!(header_report.backup.is_some());
+    let fixed = fs::read_to_string(&header).expect("fixed header");
+    assert!(!fixed.contains("missing_api"));
+    assert!(fixed.contains("answer"));
+}
+
+#[test]
+fn unsafe_orphan_removal_is_blocked_when_project_code_references_the_api() {
+    let fixture = Fixture::clean_oracle();
+    let backups = TempDir::new().expect("external recovery");
+    let header = fixture.project.path().join("api.h");
+    fs::write(&header, "int\tmissing_api(void);\n").expect("header");
+    fs::write(
+        fixture.project.path().join("main.c"),
+        "int\tmain(void)\n{\n\treturn (missing_api());\n}\n",
+    )
+    .expect("caller");
+    let mut options = fixture.options(ReportMode::Fix);
+    options.backup = BackupPolicy::Directory(backups.path().to_path_buf());
+    options.remove_orphan_prototypes = true;
+    options.destructive_authorization = Some(
+        DestructiveRequest::one(DestructiveCapability::RemoveOrphanPrototypes)
+            .authorize_forced(true, true)
+            .expect("explicit destructive authorization"),
+    );
+
+    let report = run_fixes(&[], &options).expect("blocked orphan removal");
+    let header_report = report
+        .files
+        .iter()
+        .find(|file| file.path == "api.h")
+        .expect("header report");
+
+    assert!(
+        header_report
+            .after
+            .iter()
+            .any(|diagnostic| diagnostic.rule_id == "UNSAFE_ORPHAN_PROTOTYPE_PROOF_BLOCKED")
+    );
+    assert!(
+        header_report
+            .fixed
+            .as_deref()
+            .is_some_and(|source| source.contains("missing_api"))
+    );
+    assert!(
+        fs::read_to_string(&header)
+            .expect("unchanged disk source")
+            .contains("missing_api")
+    );
+}
+
+#[test]
+fn orphan_prototype_removal_refuses_a_partial_path_scope() {
+    let fixture = Fixture::clean_oracle();
+    let header = fixture.project.path().join("api.h");
+    fs::write(&header, "int\tmissing_api(void);\n").expect("header");
+    fs::write(fixture.project.path().join("other.c"), CLEAN_SOURCE).expect("other source");
+    let mut options = fixture.options(ReportMode::Check);
+    options.remove_orphan_prototypes = true;
+    options.destructive_authorization = Some(
+        DestructiveRequest::one(DestructiveCapability::RemoveOrphanPrototypes)
+            .authorize_forced(true, true)
+            .expect("authorization"),
+    );
+
+    let report = run_fixes(std::slice::from_ref(&header), &options).expect("partial scope");
+
+    assert!(report.files[0].after.iter().any(
+        |diagnostic| diagnostic.rule_id == "UNSAFE_ORPHAN_PROTOTYPE_CLOSED_SET_INCOMPLETE"
+    ));
+    assert!(
+        report.files[0]
+            .fixes
+            .iter()
+            .all(|fix| fix.rule_id != "UNSAFE_REMOVE_ORPHAN_PROTOTYPE")
+    );
+    assert!(
+        report.files[0]
+            .fixed
+            .as_deref()
+            .is_some_and(|source| source.contains("missing_api"))
+    );
+    assert!(
+        fs::read_to_string(&header)
+            .expect("unchanged disk source")
+            .contains("missing_api")
+    );
+}
+
+#[test]
+fn preflight_hard_fails_original_norm_and_makefile_errors_even_when_shadow_fixes_them() {
+    let fixture = Fixture::new(
+        r#"
+if [ "$1" = "--version" ]; then
+    echo "norminette 3.3.59"
+    exit 0
+fi
+if [ "$(head -n 1 "$1")" = "/* ************************************************************************** */" ]; then
+    echo "$1: OK!"
+    exit 0
+fi
+echo "$1: Error!"
+echo "Error: TOO_MANY_LINES (line: 1, col: 1): Function has more than 25 lines"
+exit 1
+"#,
+    );
+    let tools = TempDir::new().expect("compiler tools");
+    let compiler = executable_script(&tools, "cc", CC_VERSION_ONLY);
+    fs::write(fixture.project.path().join("main.c"), CLEAN_SOURCE).expect("source fixture");
+    fs::write(
+        fixture.project.path().join("Makefile"),
+        "NAME = demo\nall: $(NAME)\n$(NAME):\nclean:\nfclean: clean\nre: fclean all\n",
+    )
+    .expect("Makefile fixture");
+    let mut options = fixture.options(ReportMode::Check);
+    options.preflight = true;
+    options.compiler_executable = Some(compiler);
+
+    let report = run_fixes(&[], &options).expect("snapshot-based preflight");
+    let evaluation = report.evaluation.as_ref().expect("evaluation");
+
+    assert!(!evaluation.conclusive);
+    assert!(evaluation.hard_failures.iter().any(|finding| {
+        finding.rule_id == "TOO_MANY_LINES"
+            && finding.path == "main.c"
+            && (finding.line, finding.column) == (Some(1), Some(1))
+    }));
+    assert!(evaluation.hard_failures.iter().any(|finding| {
+        finding.rule_id == "INVALID_HEADER"
+            && finding.path == "Makefile"
+            && (finding.line, finding.column) == (Some(1), Some(1))
+    }));
+    assert!(report.files.iter().all(|file| {
+        file.after.iter().all(|diagnostic| {
+            diagnostic.rule_id != "TOO_MANY_LINES" && diagnostic.rule_id != "INVALID_HEADER"
+        })
+    }));
 }
 
 fn only_child_directory(root: &Path) -> PathBuf {

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "tool_version": "1.0.0-rc.0",
+  "mode": "check",
+  "identity": {
+    "login": "",
+    "email": "",
+    "source": "No verified identity",
+    "inferred": false,
+    "available": false
+  },
+  "discovery_errors": [],
+  "unexpected_files": [],
+  "quarantine_candidates": [],
+  "quarantined_files": [],
+  "quarantine_errors": [],
+  "files": [],
+  "summary": {
+    "files": 0,
+    "changed": 0,
+    "written": 0,
+    "fixes": 0,
+    "remaining": 0,
+    "advisories": 0,
+    "failed": 0,
+    "unexpected_files": 0,
+    "quarantine_candidates": 0,
+    "quarantined": 0
+  },
+  "duration_seconds": 0.0
+}

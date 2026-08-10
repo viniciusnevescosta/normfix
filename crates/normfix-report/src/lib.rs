@@ -14,12 +14,12 @@ use std::time::Duration;
 
 use annotate_snippets::{Annotation, AnnotationKind, Group, Level, Origin, Renderer, Snippet};
 use camino::{Utf8Path, Utf8PathBuf};
-use normfix_core::{Diagnostic, DiagnosticSource, FixRecord, Severity};
+use normfix_core::{Diagnostic, DiagnosticSource, FixRecord, LineIndex, Severity};
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 
 /// Version of the stable JSON report schema.
-pub const REPORT_SCHEMA_VERSION: u32 = 1;
+pub const REPORT_SCHEMA_VERSION: u32 = 2;
 
 /// Fixed width every snippet is rendered against.
 ///
@@ -144,6 +144,68 @@ pub struct ReportSummary {
     pub quarantined: usize,
 }
 
+/// Non-conclusive pre-defense grade shown only by the evaluation workflow.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluationGrade {
+    /// Coverage failed before a meaningful grade could be computed.
+    Incomplete,
+    /// At least 90 heuristic points and no hard-fail rule.
+    A,
+    /// At least 80 heuristic points and no hard-fail rule.
+    B,
+    /// At least 70 heuristic points and no hard-fail rule.
+    C,
+    /// Fewer than 70 heuristic points without a hard-fail rule.
+    D,
+    /// One or more objective hard-fail rules matched.
+    Fail,
+}
+
+/// Whether objective preflight rules rejected this snapshot.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluationVerdict {
+    /// Required project input or analysis failed, so no pass/fail claim is made.
+    Incomplete,
+    /// No configured hard-fail rule matched; manual evaluation is still required.
+    AdvisoryPass,
+    /// At least one configured hard-fail rule matched.
+    HardFail,
+}
+
+/// One exactly located reason for an evaluation hard fail.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct EvaluationFinding {
+    /// Stable rule identifier.
+    pub rule_id: String,
+    /// Project-relative path.
+    pub path: Utf8PathBuf,
+    /// One-based physical line when source bytes are available.
+    pub line: Option<u32>,
+    /// One-based display column when source bytes are available.
+    pub column: Option<u32>,
+    /// Concise English explanation.
+    pub message: String,
+}
+
+/// Heuristic, explicitly non-conclusive pre-defense assessment.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct EvaluationReport {
+    /// Always false: only the official evaluation can be conclusive.
+    pub conclusive: bool,
+    /// Transparent 0–100 heuristic, capped below 60 on hard fail.
+    pub score: u8,
+    /// Letter band or hard-fail grade.
+    pub grade: EvaluationGrade,
+    /// Objective hard-fail outcome.
+    pub verdict: EvaluationVerdict,
+    /// Exact evidence for hard-fail rules.
+    pub hard_failures: Vec<EvaluationFinding>,
+    /// Stable caveats for machine and human consumers.
+    pub notes: Vec<String>,
+}
+
 /// Versioned output of one complete run.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RunReport {
@@ -169,6 +231,9 @@ pub struct RunReport {
     pub files: Vec<FileReport>,
     /// Aggregate counts.
     pub summary: ReportSummary,
+    /// Non-conclusive assessment, present only for preflight/evaluation runs.
+    #[serde(default)]
+    pub evaluation: Option<EvaluationReport>,
     /// Wall-clock duration; the only intentionally nondeterministic field.
     pub duration_seconds: f64,
 }
@@ -229,6 +294,7 @@ impl RunReport {
             quarantine_errors: Vec::new(),
             files,
             summary,
+            evaluation: None,
             duration_seconds: duration.as_secs_f64(),
         }
     }
@@ -239,16 +305,29 @@ impl RunReport {
         if !self.discovery_errors.is_empty()
             || !self.quarantine_errors.is_empty()
             || self.summary.failed > 0
+            || self
+                .evaluation
+                .as_ref()
+                .is_some_and(|evaluation| evaluation.verdict == EvaluationVerdict::Incomplete)
         {
             return 2;
         }
         if self.summary.remaining > 0
+            || self
+                .evaluation
+                .as_ref()
+                .is_some_and(|evaluation| evaluation.verdict == EvaluationVerdict::HardFail)
             || (self.mode != ReportMode::Fix
                 && (self.summary.changed > 0 || self.summary.quarantine_candidates > 0))
         {
             return 1;
         }
         0
+    }
+
+    /// Computes the deterministic, non-conclusive pre-defense assessment.
+    pub fn enable_preflight_evaluation(&mut self) {
+        self.evaluation = Some(build_preflight_evaluation(self));
     }
 
     /// Attaches one deterministic recoverable-quarantine outcome.
@@ -342,8 +421,240 @@ pub fn render_human(report: &RunReport, options: RenderOptions) -> String {
     if options.show_diff {
         render_diffs(&mut output, &report.files);
     }
+    render_evaluation(&mut output, &paint, report.evaluation.as_ref());
     render_summary(&mut output, &paint, report);
     output
+}
+
+fn render_evaluation(output: &mut String, paint: &Paint, evaluation: Option<&EvaluationReport>) {
+    let Some(evaluation) = evaluation else {
+        return;
+    };
+    let verdict = match evaluation.verdict {
+        EvaluationVerdict::Incomplete => "INCOMPLETE",
+        EvaluationVerdict::AdvisoryPass => "ADVISORY PASS",
+        EvaluationVerdict::HardFail => "HARD FAIL",
+    };
+    let grade = match evaluation.grade {
+        EvaluationGrade::Incomplete => "—",
+        EvaluationGrade::A => "A",
+        EvaluationGrade::B => "B",
+        EvaluationGrade::C => "C",
+        EvaluationGrade::D => "D",
+        EvaluationGrade::Fail => "FAIL",
+    };
+    let style = match evaluation.verdict {
+        EvaluationVerdict::Incomplete => paint.bold_yellow,
+        EvaluationVerdict::HardFail => paint.bold_red,
+        EvaluationVerdict::AdvisoryPass => paint.bold_blue,
+    };
+    let _ = writeln!(
+        output,
+        "\n{}Pre-defense estimate:{} {verdict} | grade {grade} | {}/100",
+        style, paint.reset, evaluation.score
+    );
+    output.push_str("This estimate is heuristic and never replaces the official evaluation.\n");
+    if !evaluation.hard_failures.is_empty() {
+        output.push_str("Hard-fail evidence\n");
+        for finding in &evaluation.hard_failures {
+            let location = match (finding.line, finding.column) {
+                (Some(line), Some(column)) => {
+                    format!("{}:{line}:{column}", safe_path(&finding.path))
+                }
+                _ => safe_path(&finding.path),
+            };
+            let _ = writeln!(
+                output,
+                "  {} [{}] {}",
+                location,
+                terminal_safe_inline(&finding.rule_id),
+                terminal_safe_inline(&finding.message)
+            );
+        }
+    }
+}
+
+// Keeping current-snapshot evidence, shadow-only additions, bounded scoring,
+// and the non-conclusive verdict together makes the grading boundary auditable.
+#[allow(clippy::too_many_lines)]
+fn build_preflight_evaluation(report: &RunReport) -> EvaluationReport {
+    let mut hard_failures = report
+        .unexpected_files
+        .iter()
+        .map(|path| EvaluationFinding {
+            rule_id: "UNEXPECTED_PROJECT_FILE".to_owned(),
+            path: path.clone(),
+            line: None,
+            column: None,
+            message: "Unexpected project file is present in the evaluated scope.".to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let mut norm_count = 0_usize;
+    let mut makefile_count = 0_usize;
+    let mut other_blocking = 0_usize;
+    for file in &report.files {
+        if file.failure.is_some() && is_makefile_path(&file.path) {
+            makefile_count += 1;
+            hard_failures.push(EvaluationFinding {
+                rule_id: "MAKEFILE_OPERATION_FAILED".to_owned(),
+                path: file.path.clone(),
+                line: None,
+                column: None,
+                message: "The Makefile could not be evaluated completely.".to_owned(),
+            });
+        }
+        let mut original_counts = BTreeMap::<(EvaluationFailureKind, String), usize>::new();
+        for diagnostic in &file.before {
+            let Some(kind) = evaluation_failure_kind(diagnostic) else {
+                continue;
+            };
+            *original_counts
+                .entry((kind, diagnostic.rule_id.clone()))
+                .or_default() += 1;
+            increment_evaluation_count(kind, &mut norm_count, &mut makefile_count);
+            push_evaluation_finding(&mut hard_failures, diagnostic, file.original.as_deref());
+        }
+        let mut shadow_counts = BTreeMap::<(EvaluationFailureKind, String), usize>::new();
+        for diagnostic in &file.after {
+            let Some(kind) = evaluation_failure_kind(diagnostic) else {
+                if diagnostic.severity != Severity::Info {
+                    other_blocking += 1;
+                }
+                continue;
+            };
+            let key = (kind, diagnostic.rule_id.clone());
+            let occurrence = shadow_counts.entry(key.clone()).or_default();
+            let represented_by_original =
+                *occurrence < original_counts.get(&key).copied().unwrap_or_default();
+            *occurrence += 1;
+            if represented_by_original {
+                continue;
+            }
+            increment_evaluation_count(kind, &mut norm_count, &mut makefile_count);
+            push_evaluation_finding(&mut hard_failures, diagnostic, file.fixed.as_deref());
+        }
+    }
+    hard_failures.sort();
+    hard_failures.dedup();
+
+    let operational =
+        report.discovery_errors.len() + report.quarantine_errors.len() + report.summary.failed;
+    let mut deduction = norm_count.saturating_mul(8).min(45)
+        + makefile_count.saturating_mul(8).min(30)
+        + report.unexpected_files.len().saturating_mul(5).min(25)
+        + other_blocking.saturating_mul(2).min(20)
+        + operational.saturating_mul(10).min(30);
+    if report.mode != ReportMode::Fix {
+        deduction = deduction.saturating_add(report.summary.changed.min(10));
+    }
+    let mut score = u8::try_from(100_usize.saturating_sub(deduction).min(100))
+        .expect("the preflight score is capped at 100");
+    let coverage_incomplete = report.files.is_empty()
+        || !report.discovery_errors.is_empty()
+        || !report.quarantine_errors.is_empty()
+        || report.summary.failed > 0;
+    let verdict = if !hard_failures.is_empty() {
+        score = score.min(59);
+        EvaluationVerdict::HardFail
+    } else if coverage_incomplete {
+        score = 0;
+        EvaluationVerdict::Incomplete
+    } else {
+        EvaluationVerdict::AdvisoryPass
+    };
+    let grade = match verdict {
+        EvaluationVerdict::Incomplete => EvaluationGrade::Incomplete,
+        EvaluationVerdict::HardFail => EvaluationGrade::Fail,
+        EvaluationVerdict::AdvisoryPass => match score {
+            90..=100 => EvaluationGrade::A,
+            80..=89 => EvaluationGrade::B,
+            70..=79 => EvaluationGrade::C,
+            _ => EvaluationGrade::D,
+        },
+    };
+    EvaluationReport {
+        conclusive: false,
+        score,
+        grade,
+        verdict,
+        hard_failures,
+        notes: vec![
+            "Incomplete means discovery or file analysis failed, or no processable file was covered; no grade can be inferred from that run."
+                .to_owned(),
+            "Hard fail: an unexpected project file, a finding corroborated by the installed official Norminette, or a Makefile finding was present."
+                .to_owned(),
+            "The score deducts bounded category weights for those findings, other warnings, operational failures, and pending edits; it is not a 42 grade."
+                .to_owned(),
+            "Runtime behavior, subject-specific tests, peer judgment, leaks, and defense questions remain outside this estimate."
+                .to_owned(),
+        ],
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum EvaluationFailureKind {
+    OfficialNorm,
+    Makefile,
+}
+
+fn evaluation_failure_kind(diagnostic: &Diagnostic) -> Option<EvaluationFailureKind> {
+    if diagnostic.severity == Severity::Info {
+        return None;
+    }
+    if diagnostic.source == DiagnosticSource::Makefile {
+        return Some(EvaluationFailureKind::Makefile);
+    }
+    (matches!(diagnostic.source, DiagnosticSource::NorminetteCompat(_))
+        && diagnostic.rule_id != "NORMINETTE_VERSION_UNTESTED")
+        .then_some(EvaluationFailureKind::OfficialNorm)
+}
+
+const fn increment_evaluation_count(
+    kind: EvaluationFailureKind,
+    norm_count: &mut usize,
+    makefile_count: &mut usize,
+) {
+    match kind {
+        EvaluationFailureKind::OfficialNorm => *norm_count += 1,
+        EvaluationFailureKind::Makefile => *makefile_count += 1,
+    }
+}
+
+fn push_evaluation_finding(
+    hard_failures: &mut Vec<EvaluationFinding>,
+    diagnostic: &Diagnostic,
+    source: Option<&str>,
+) {
+    let (line, column) = diagnostic_location(source, diagnostic);
+    hard_failures.push(EvaluationFinding {
+        rule_id: diagnostic.rule_id.clone(),
+        path: diagnostic.path.clone(),
+        line,
+        column,
+        message: diagnostic.message.clone(),
+    });
+}
+
+fn diagnostic_location(
+    source: Option<&str>,
+    diagnostic: &Diagnostic,
+) -> (Option<u32>, Option<u32>) {
+    let Some(source) = source else {
+        return (None, None);
+    };
+    let Ok(index) = LineIndex::new(Arc::from(source)) else {
+        return (None, None);
+    };
+    index
+        .line_column(diagnostic.range.start())
+        .map_or((None, None), |location| {
+            (Some(location.line), Some(location.visual_column))
+        })
+}
+
+fn is_makefile_path(path: &Utf8Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case("makefile"))
 }
 
 fn render_identity(output: &mut String, paint: &Paint, identity: &ReportIdentity) {
@@ -941,12 +1252,16 @@ fn terminal_safe_inline(input: &str) -> String {
 
 fn terminal_safe_multiline(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
-    for segment in input.split_inclusive('\n') {
-        if let Some(line) = segment.strip_suffix('\n') {
-            output.push_str(&terminal_safe_inline(line));
-            output.push('\n');
-        } else {
-            output.push_str(&terminal_safe_inline(segment));
+    for character in input.chars() {
+        match character {
+            // Newlines and tabs are meaningful bytes in a unified diff. They
+            // are safe terminal controls and must remain copyable as-is.
+            '\n' | '\t' => output.push(character),
+            '\r' => output.push_str("\\r"),
+            character if character.is_control() => {
+                let _ = write!(output, "\\u{{{:x}}}", u32::from(character));
+            }
+            character => output.push(character),
         }
     }
     output
@@ -1039,8 +1354,8 @@ mod tests {
     use normfix_core::{Diagnostic, DiagnosticSource, FixRecord, Severity, TextRange, TextSize};
 
     use super::{
-        FileReport, GROUPED_OCCURRENCE_LIMIT, RenderOptions, ReportIdentity, ReportMode, RunReport,
-        render_human,
+        EvaluationGrade, EvaluationVerdict, FileReport, GROUPED_OCCURRENCE_LIMIT, RenderOptions,
+        ReportIdentity, ReportMode, RunReport, render_human,
     };
 
     fn diagnostic() -> Diagnostic {
@@ -1338,12 +1653,219 @@ mod tests {
         );
         let json = report.to_pretty_json().expect("JSON");
 
-        assert!(json.contains("\"schema_version\": 1"));
+        assert!(json.contains("\"schema_version\": 2"));
         assert!(json.contains("\"mode\": \"diff\""));
         assert!(!json.contains("\"original\""));
         assert!(!json.contains("\"fixed\""));
         assert!(json.find("\"a\"").expect("a") < json.find("\"z\"").expect("z"));
         assert_eq!(report.exit_code(), 2);
+    }
+
+    #[test]
+    fn report_schema_one_without_evaluation_still_deserializes() {
+        let fixture = include_str!("../tests/fixtures/report-schema-v1.json");
+        let decoded: RunReport = serde_json::from_str(fixture).expect("schema-one report");
+
+        assert_eq!(decoded.schema_version, 1);
+        assert!(decoded.evaluation.is_none());
+        assert_eq!(decoded.tool_version, "1.0.0-rc.0");
+    }
+
+    #[test]
+    fn failed_or_empty_coverage_is_incomplete_instead_of_an_a_grade() {
+        for discovery_errors in [
+            Vec::new(),
+            vec!["missing.c: could not read file".to_owned()],
+        ] {
+            let mut report = RunReport::new(
+                "1.0.0",
+                ReportMode::Check,
+                ReportIdentity::default(),
+                discovery_errors,
+                Vec::new(),
+                Vec::new(),
+                Duration::ZERO,
+            );
+            report.enable_preflight_evaluation();
+
+            let evaluation = report.evaluation.as_ref().expect("evaluation");
+            assert_eq!(evaluation.verdict, EvaluationVerdict::Incomplete);
+            assert_eq!(evaluation.grade, EvaluationGrade::Incomplete);
+            assert_eq!(evaluation.score, 0);
+            assert_eq!(report.exit_code(), 2);
+            let rendered = render_human(
+                &report,
+                RenderOptions {
+                    color: false,
+                    verbose: false,
+                    show_diff: false,
+                },
+            );
+            assert!(rendered.contains("Pre-defense estimate: INCOMPLETE | grade — | 0/100"));
+            assert!(!rendered.contains("grade A"));
+        }
+    }
+
+    #[test]
+    fn preflight_evaluation_hard_fails_unexpected_files_without_claiming_conclusiveness() {
+        let mut report = RunReport::new(
+            "1.0.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            vec![Utf8PathBuf::from("notes.txt")],
+            Vec::new(),
+            Duration::ZERO,
+        );
+        report.enable_preflight_evaluation();
+
+        let evaluation = report.evaluation.as_ref().expect("evaluation");
+        assert!(!evaluation.conclusive);
+        assert_eq!(evaluation.verdict, EvaluationVerdict::HardFail);
+        assert_eq!(evaluation.grade, EvaluationGrade::Fail);
+        assert!(evaluation.score <= 59);
+        assert_eq!(evaluation.hard_failures[0].path, "notes.txt");
+        assert_eq!(report.exit_code(), 1);
+    }
+
+    #[test]
+    fn installed_norminette_finding_is_a_located_hard_fail() {
+        let mut source_file = file();
+        source_file.changed = false;
+        source_file.fixes.clear();
+        source_file.after[0].source = DiagnosticSource::NorminetteCompat("3.3.59".to_owned());
+        let mut report = RunReport::new(
+            "1.0.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![source_file],
+            Duration::ZERO,
+        );
+        report.enable_preflight_evaluation();
+
+        let evaluation = report.evaluation.as_ref().expect("evaluation");
+        assert_eq!(evaluation.verdict, EvaluationVerdict::HardFail);
+        let finding = evaluation.hard_failures.first().expect("Norm finding");
+        assert_eq!(finding.rule_id, "TOO_MANY_LINES");
+        assert_eq!(finding.path, "src/main.c");
+        assert_eq!((finding.line, finding.column), (Some(1), Some(6)));
+    }
+
+    #[test]
+    fn untested_norminette_version_warning_is_not_an_official_rule_failure() {
+        let mut source_file = file();
+        source_file.changed = false;
+        source_file.fixes.clear();
+        source_file.after[0].rule_id = "NORMINETTE_VERSION_UNTESTED".to_owned();
+        source_file.after[0].source = DiagnosticSource::NorminetteCompat("3.3.60".to_owned());
+        source_file.after[0].severity = Severity::Info;
+        let mut report = RunReport::new(
+            "1.0.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![source_file],
+            Duration::ZERO,
+        );
+        report.enable_preflight_evaluation();
+
+        let evaluation = report.evaluation.as_ref().expect("evaluation");
+        assert_eq!(evaluation.verdict, EvaluationVerdict::AdvisoryPass);
+        assert!(evaluation.hard_failures.is_empty());
+        assert_eq!(report.exit_code(), 0);
+    }
+
+    #[test]
+    fn makefile_hard_fail_preserves_the_exact_source_location() {
+        let source: Arc<str> = Arc::from("NAME = app\nSRCS = missing.c\n");
+        let start = source.find("missing.c").expect("token");
+        let makefile = FileReport {
+            path: Utf8PathBuf::from("Makefile"),
+            changed: false,
+            written: false,
+            backup: None,
+            failure: None,
+            fixes: Vec::new(),
+            before: Vec::new(),
+            after: vec![Diagnostic {
+                rule_id: "MAKEFILE_SOURCE_NOT_FOUND".to_owned(),
+                path: Utf8PathBuf::from("Makefile"),
+                range: TextRange::new(
+                    TextSize::new(u32::try_from(start).expect("test offset")),
+                    TextSize::new(u32::try_from(start + "missing.c".len()).expect("test offset")),
+                )
+                .expect("range"),
+                severity: Severity::Warning,
+                message: "The literal source is missing.".to_owned(),
+                source: DiagnosticSource::Makefile,
+                notes: Vec::new(),
+                help: None,
+            }],
+            original: Some(Arc::clone(&source)),
+            fixed: Some(source),
+        };
+        let mut report = RunReport::new(
+            "1.0.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![makefile],
+            Duration::ZERO,
+        );
+        report.enable_preflight_evaluation();
+
+        let finding = &report
+            .evaluation
+            .as_ref()
+            .expect("evaluation")
+            .hard_failures[0];
+        assert_eq!((finding.line, finding.column), (Some(2), Some(8)));
+        let rendered = render_human(
+            &report,
+            RenderOptions {
+                color: false,
+                verbose: false,
+                show_diff: false,
+            },
+        );
+        assert!(rendered.contains("Pre-defense estimate: HARD FAIL"));
+        assert!(rendered.contains("Makefile:2:8 [MAKEFILE_SOURCE_NOT_FOUND]"));
+        assert!(rendered.contains("never replaces the official evaluation"));
+    }
+
+    #[test]
+    fn makefile_operational_failure_is_a_hard_fail_at_the_file_boundary() {
+        let mut makefile = file();
+        makefile.path = Utf8PathBuf::from("libft/Makefile");
+        makefile.failure = Some("could not read Makefile".to_owned());
+        makefile.after.clear();
+        makefile.original = None;
+        makefile.fixed = None;
+        let mut report = RunReport::new(
+            "1.0.0",
+            ReportMode::Check,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![makefile],
+            Duration::ZERO,
+        );
+        report.enable_preflight_evaluation();
+
+        let evaluation = report.evaluation.as_ref().expect("evaluation");
+        assert_eq!(evaluation.verdict, EvaluationVerdict::HardFail);
+        assert_eq!(evaluation.hard_failures.len(), 1);
+        assert_eq!(
+            evaluation.hard_failures[0].rule_id,
+            "MAKEFILE_OPERATION_FAILED"
+        );
+        assert_eq!(evaluation.hard_failures[0].path, "libft/Makefile");
+        assert_eq!(evaluation.hard_failures[0].line, None);
+        assert_eq!(evaluation.hard_failures[0].column, None);
     }
 
     #[test]
@@ -1380,5 +1902,7 @@ mod tests {
         assert!(rendered.contains("\\u{1b}"));
         assert!(rendered.contains("message\\u{1b}[2J\\nforged"));
         assert!(rendered.contains("note\\r\\u{7}"));
+        assert!(rendered.contains("int\tmain(void)"));
+        assert!(!rendered.contains("int\\tmain(void)"));
     }
 }

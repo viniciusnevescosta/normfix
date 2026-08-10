@@ -52,6 +52,18 @@ pub enum ReadPrecondition {
         /// Project path whose absence authorized an edit.
         path: PathBuf,
     },
+    /// The complete non-symlink project `.c`/`.h` path set must stay exact.
+    ///
+    /// This protects closed-world source proofs against files created or
+    /// removed after analysis. The validator follows the same structural
+    /// exclusions as project discovery: `.git`, `.claude`, `.codex`, nested
+    /// Git repositories and symbolic links are not traversed.
+    ProjectSources {
+        /// Project directory whose source membership was observed.
+        root: PathBuf,
+        /// Sorted absolute paths of every observed regular `.c`/`.h` file.
+        paths: Vec<PathBuf>,
+    },
 }
 
 impl ReadPrecondition {
@@ -68,6 +80,21 @@ impl ReadPrecondition {
     #[must_use]
     pub fn absent(path: impl Into<PathBuf>) -> Self {
         Self::Absent { path: path.into() }
+    }
+
+    /// Creates a closed project C/header membership observation.
+    #[must_use]
+    pub fn project_sources(
+        root: impl Into<PathBuf>,
+        paths: impl IntoIterator<Item = PathBuf>,
+    ) -> Self {
+        let mut paths = paths.into_iter().collect::<Vec<_>>();
+        paths.sort();
+        paths.dedup();
+        Self::ProjectSources {
+            root: root.into(),
+            paths,
+        }
     }
 }
 
@@ -1069,6 +1096,7 @@ fn validate_read_preconditions_except(
     for precondition in preconditions {
         let path = match precondition {
             ReadPrecondition::Matches { path, .. } | ReadPrecondition::Absent { path } => path,
+            ReadPrecondition::ProjectSources { root, .. } => root,
         };
         if ignored_paths.contains(&absolute_lexical(path)) {
             continue;
@@ -1114,9 +1142,112 @@ fn validate_read_preconditions_except(
                     }
                 }
             }
+            ReadPrecondition::ProjectSources { root, paths } => {
+                validate_project_source_membership(root, paths, root_input, canonical_root)?;
+            }
         }
     }
     Ok(())
+}
+
+const MAX_PROJECT_TREE_ENTRIES: usize = 1_000_000;
+
+fn validate_project_source_membership(
+    observed_root: &Path,
+    expected_paths: &[PathBuf],
+    transaction_root_input: &Path,
+    canonical_transaction_root: &Path,
+) -> Result<(), TransactionError> {
+    let (absolute_root, resolved_root) = resolve_transaction_path(
+        observed_root,
+        transaction_root_input,
+        canonical_transaction_root,
+    )?;
+    reject_symlink_components(canonical_transaction_root, &resolved_root)?;
+    let metadata = fs::symlink_metadata(&absolute_root).map_err(|source| {
+        if source.kind() == io::ErrorKind::NotFound {
+            TransactionError::ConcurrentModification(absolute_root.clone())
+        } else {
+            TransactionError::Inspect {
+                path: absolute_root.clone(),
+                source,
+            }
+        }
+    })?;
+    if !metadata.file_type().is_dir() {
+        return Err(TransactionError::ConcurrentModification(absolute_root));
+    }
+
+    let mut expected = BTreeSet::new();
+    for path in expected_paths {
+        let (absolute, resolved) =
+            resolve_transaction_path(path, transaction_root_input, canonical_transaction_root)?;
+        if !resolved.starts_with(&resolved_root)
+            || !matches!(
+                absolute.extension().and_then(std::ffi::OsStr::to_str),
+                Some("c" | "h")
+            )
+            || !expected.insert(absolute_lexical(&absolute))
+        {
+            return Err(TransactionError::ConcurrentModification(absolute));
+        }
+    }
+    let actual =
+        collect_project_sources(&absolute_root).map_err(|source| TransactionError::Inspect {
+            path: absolute_root.clone(),
+            source,
+        })?;
+    if actual != expected {
+        let changed = actual
+            .symmetric_difference(&expected)
+            .next()
+            .cloned()
+            .unwrap_or(absolute_root);
+        return Err(TransactionError::ConcurrentModification(changed));
+    }
+    Ok(())
+}
+
+fn collect_project_sources(root: &Path) -> io::Result<BTreeSet<PathBuf>> {
+    let mut sources = BTreeSet::new();
+    let mut pending = vec![root.to_path_buf()];
+    let mut visited = 0_usize;
+    while let Some(directory) = pending.pop() {
+        let mut entries = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
+        entries.sort_by_key(fs::DirEntry::path);
+        for entry in entries.into_iter().rev() {
+            visited = visited.saturating_add(1);
+            if visited > MAX_PROJECT_TREE_ENTRIES {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "project source membership exceeds the transaction safety limit",
+                ));
+            }
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                let name = entry.file_name();
+                if name == ".git"
+                    || matches!(name.to_str(), Some(".claude" | ".codex"))
+                    || fs::symlink_metadata(path.join(".git")).is_ok()
+                {
+                    continue;
+                }
+                pending.push(path);
+            } else if file_type.is_file()
+                && matches!(
+                    path.extension().and_then(std::ffi::OsStr::to_str),
+                    Some("c" | "h")
+                )
+            {
+                sources.insert(absolute_lexical(&path));
+            }
+        }
+    }
+    Ok(sources)
 }
 
 fn resolve_transaction_path(
@@ -1424,7 +1555,7 @@ fn set_private_directory_permissions(_path: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::BTreeSet, fs};
 
     use normfix_core::FixRecord;
     use tempfile::TempDir;
@@ -1432,7 +1563,7 @@ mod tests {
     use super::{
         PlannedFile, ReadPrecondition, TransactionError, TransactionOptions, UndoError,
         commit_files, commit_files_guarded, list_undo_runs, read_journal, sha256_hex, undo_run,
-        validate_committed_replacements, write_journal,
+        validate_committed_replacements, validate_read_preconditions_except, write_journal,
     };
 
     fn plan(path: &std::path::Path, replacement: &[u8]) -> PlannedFile {
@@ -1545,6 +1676,62 @@ mod tests {
             Err(TransactionError::ConcurrentModification(path)) if path == missing
         ));
         assert_eq!(fs::read(&target).expect("Makefile"), b"SRCS = missing.c\n");
+    }
+
+    #[test]
+    fn new_project_source_aborts_a_closed_world_commit() {
+        let project = TempDir::new().expect("project");
+        let target = project.path().join("main.c");
+        let header = project.path().join("public.h");
+        fs::write(&target, "int main(void) { return (0); }\n").expect("target");
+        fs::write(&header, "int old_api(void);\n").expect("header");
+        let precondition =
+            ReadPrecondition::project_sources(project.path(), vec![target.clone(), header.clone()]);
+        let introduced = project.path().join("late.c");
+        fs::write(&introduced, "int old_api(void) { return (1); }\n").expect("late source");
+        let options = TransactionOptions {
+            project_root: project.path().to_path_buf(),
+            run_id: "run-project-membership".to_owned(),
+            backup_root: None,
+        };
+
+        assert!(matches!(
+            commit_files_guarded(
+                vec![plan(&header, b"\n")],
+                &options,
+                &[precondition],
+            ),
+            Err(TransactionError::ConcurrentModification(path)) if path == introduced
+        ));
+        assert_eq!(fs::read(&header).expect("header"), b"int old_api(void);\n");
+    }
+
+    #[test]
+    fn project_source_membership_is_rechecked_after_a_prior_replacement() {
+        let project = TempDir::new().expect("project");
+        let first = project.path().join("first.c");
+        let second = project.path().join("second.h");
+        fs::write(&first, "int first(void) { return (1); }\n").expect("first");
+        fs::write(&second, "int second(void);\n").expect("second");
+        let precondition =
+            ReadPrecondition::project_sources(project.path(), vec![first.clone(), second.clone()]);
+        let mut prepared =
+            super::prepare_file(plan(&first, b"int first(void) { return (2); }\n"), None)
+                .expect("prepare first replacement");
+        super::persist_staged(&mut prepared).expect("commit first replacement");
+        let introduced = project.path().join("late.h");
+        fs::write(&introduced, "int late(void);\n").expect("late header");
+        let canonical = project.path().canonicalize().expect("canonical project");
+
+        assert!(matches!(
+            validate_read_preconditions_except(
+                &[precondition],
+                project.path(),
+                &canonical,
+                &BTreeSet::new(),
+            ),
+            Err(TransactionError::ConcurrentModification(path)) if path == introduced
+        ));
     }
 
     #[test]

@@ -13,18 +13,18 @@ pub(crate) fn explain(rule: &str) -> Option<String> {
         return Some(formatted(
             &canonical,
             "The requested analyzer is not available",
-            "--analyzer was requested, but the selected compiler ships neither GCC -fanalyzer nor the Clang analyzer, so the deep pass was skipped. Nothing was analyzed and nothing failed.",
-            "Point --cc at a real GCC or Clang, or drop --analyzer. On macOS, /usr/bin/gcc is Clang under another name, and normfix already uses the Clang analyzer for it.",
+            "Preflight or --analyzer requested a deep pass, but the selected compiler ships neither GCC -fanalyzer nor the Clang analyzer, so that pass was skipped. Nothing was analyzed and nothing failed.",
+            "Point --cc at a real GCC or Clang. Outside preflight, omit --analyzer to skip the attempt; preflight always tries the bounded analyzer. On macOS, /usr/bin/gcc is Clang under another name.",
             "This is informational and fail-open: a missing analyzer never changes the exit status and never blocks a fix.",
         ));
     }
     if canonical.starts_with("CC_ANALYZER_") {
         return Some(formatted(
             &canonical,
-            "Optional static-analyzer finding",
+            "Static-analyzer finding",
             "GCC -fanalyzer found a path worth investigating; it is not a complete proof of a leak or invalid access.",
             "Inspect the compiler location, reproduce the path with tests, and confirm ownership with a runtime tool when available.",
-            "Analyzer output is opt-in, informational, fail-open, and never authorizes a rewrite.",
+            "Analyzer output is automatic in preflight (or requested with --analyzer), informational, fail-open, and never authorizes a rewrite.",
         ));
     }
     if canonical.starts_with("CC_") {
@@ -106,8 +106,8 @@ fn structural_article(canonical: &str) -> Option<Article> {
         ),
         "NORMINETTE_VERSION_UNTESTED" => (
             "The official checker is a release this version has not been verified against",
-            "normfix is verified against one exact Norminette release, because the official rule names, locations and accepted layouts are inputs to its before/after proof. You passed --allow-untested-norminette, so the run continued with a different one.",
-            "Install the supported release when you can. Until then, read the diff before accepting it, and report any disagreement so the supported version can move deliberately.",
+            "normfix is verified against one exact Norminette release, because the official rule names, locations and accepted layouts are inputs to its before/after proof. The default remains usable with a different release but names the reduced compatibility assurance explicitly.",
+            "Install the supported release when you can, or use --strict-norminette-version in pinned CI. Until then, read the diff before accepting it and report any disagreement so the supported version can move deliberately.",
             "The before/after proof still compares two answers from this same checker, so a run cannot make its own official result worse. What is not guaranteed is that the native rules agree with this release.",
         ),
         "INCLUDE_ORDER" | "INCLUDE_ORDER_REVIEW" => (
@@ -123,11 +123,35 @@ fn structural_article(canonical: &str) -> Option<Article> {
 /// Explanations for findings produced by the toolchain and project policy.
 fn toolchain_article(canonical: &str) -> Option<Article> {
     Some(match canonical {
-        "MAKEFILE_SOURCE_NOT_FOUND" | "MISSING_MAKEFILE_SOURCE" => (
-            "Makefile references a missing C source",
-            "A literal source listed in SRCS/SRC must resolve inside the project or the build will fail.",
-            "Restore the file or remove the exact literal token. Dynamic Make expressions are intentionally not guessed.",
+        "MAKEFILE_NOT_FOUND" => (
+            "No project-root Makefile was available for preflight",
+            "No regular Makefile was selected or found at the project root, so build-target and source-list checks are incomplete.",
+            "Read the current subject and evaluation sheet. Add or select the required Makefile when the subject expects one.",
+            "Some subjects do not require a Makefile, so absence remains an advisory until project policy can prove that requirement.",
+        ),
+        "MAKEFILE_NOT_EVALUATED" => (
+            "The project-root Makefile was outside the preflight scope",
+            "A regular Makefile exists at the project root, but the explicit file scope did not select it, so its header, targets, recipes, and source references were not evaluated.",
+            "Include the root Makefile explicitly, or run preflight from the project root without a partial file scope.",
+            "normfix reports the incomplete coverage instead of treating an existing but uninspected Makefile as evaluated.",
+        ),
+        "MAKEFILE_SOURCE_NOT_FOUND" | "MISSING_MAKEFILE_SOURCE" | "MAKEFILE_SOURCE_EMPTY" => (
+            "Makefile references a missing or trivia-only C source",
+            "A literal source listed in SRCS/SRC must resolve inside the project and contain an implementation rather than only whitespace/comments.",
+            "Implement or restore the file, or remove the exact literal token. Dynamic Make expressions are intentionally not guessed.",
             "Removal is destructive and therefore requires --unsafe plus confirmation or --force.",
+        ),
+        "HEADER_PROTOTYPE_IMPLEMENTATION_MISSING" | "UNSAFE_ORPHAN_PROTOTYPE_PROOF_BLOCKED" => (
+            "Header prototype has no project implementation",
+            "A non-static prototype in a project header has no matching non-static definition in the complete lossless project C/header set. Generated code or an external library may still provide it.",
+            "Implement the function or verify the subject and linkage. Unsafe mode removes it only when the identifier has no project use and no macro, string, conditional, attribute, or token-paste ambiguity.",
+            "Removing a public declaration changes the project API, so it is capability-gated, transactionally backed up, and refused on incomplete proof.",
+        ),
+        "HEADER_PROTOTYPE_IMPLEMENTATION_EMPTY" => (
+            "Header prototype resolves to a trivia-only implementation",
+            "The project contains a matching non-static definition, but its body has no C token beyond braces, whitespace, and comments.",
+            "Implement the required behavior or verify against the subject that an intentional no-op is valid.",
+            "normfix only warns: it does not remove an existing definition or its public prototype because an empty body can be intentional.",
         ),
         "COMPILER_WARNING" | "COMPILER_PREFLIGHT" => (
             "Strict compiler preflight failed",

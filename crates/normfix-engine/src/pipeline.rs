@@ -11,6 +11,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt as _;
+
 use camino::Utf8PathBuf;
 use normfix_actions::{PlannedFile, ReadPrecondition, TransactionOptions, commit_files_guarded};
 use normfix_c_actions::{
@@ -25,8 +28,9 @@ use normfix_core::{
     apply_source_edits,
 };
 use normfix_destructive::{
-    ClosedCSourceSet, DestructiveAuthorization, DestructiveCapability, QuarantineItem,
-    QuarantineRequest, StaticRemovalPlan, plan_quarantine, plan_unused_static_functions,
+    ClosedCSourceSet, DestructiveAuthorization, DestructiveCapability, OrphanPrototypePlan,
+    QuarantineItem, QuarantineRequest, StaticRemovalPlan, plan_orphan_prototypes, plan_quarantine,
+    plan_unused_static_functions,
 };
 use normfix_header::{
     ByteRange, Identity42, RunClock, c_header_filename_matches, ensure_c_header, update_c_header,
@@ -136,8 +140,8 @@ pub struct FixOptions {
     pub compiler_executable: Option<PathBuf>,
     /// Run GCC `-fanalyzer` as an informational, fail-open advisory backend.
     pub analyzer: bool,
-    /// Continue with a Norminette release the project has not verified.
-    pub allow_untested_norminette: bool,
+    /// Refuse a Norminette release the project has not verified.
+    pub strict_norminette_version: bool,
     /// Per-file official-tool timeout.
     pub timeout: Duration,
     /// Enable the external content-addressed cache.
@@ -149,8 +153,10 @@ pub struct FixOptions {
     /// Reorder contiguous include blocks: system headers before project
     /// headers, alphabetically inside each category.
     pub reorder_includes: bool,
-    /// Remove proven-missing paths from simple literal Makefile source lists.
+    /// Remove proven-missing or trivia-only paths from literal Makefile source lists.
     pub remove_missing_makefile_sources: bool,
+    /// Remove project-local prototypes proven to have no definition or use.
+    pub remove_orphan_prototypes: bool,
     /// Remove only unreachable `static` functions under explicit authorization.
     pub remove_unused_static: bool,
     /// Quarantine unexpected files under explicit authorization.
@@ -188,13 +194,14 @@ impl FixOptions {
             compiler_preflight: true,
             compiler_executable: None,
             analyzer: false,
-            allow_untested_norminette: false,
+            strict_norminette_version: false,
             timeout: Duration::from_secs(5),
             cache: true,
             remove_invalid_comments: false,
             compact_null_checks: false,
             reorder_includes: true,
             remove_missing_makefile_sources: false,
+            remove_orphan_prototypes: false,
             remove_unused_static: false,
             quarantine_unexpected: false,
             destructive_authorization: None,
@@ -224,10 +231,11 @@ pub enum FixRunError {
 
 struct OracleContext {
     oracle: NorminetteOracle,
+    norminette_notice_path: PathBuf,
     compiler: Option<CompilerValidator>,
     compiler_unavailable: Option<String>,
     compiler_notice_path: Option<PathBuf>,
-    compiler_project_fingerprint: [u8; 32],
+    compiler_project_fingerprint: Option<[u8; 32]>,
     compiler_include_directories: Vec<PathBuf>,
     cache: Option<PersistentCache>,
     project_root: PathBuf,
@@ -280,17 +288,19 @@ impl OracleContext {
         } else {
             "cc-wall-wextra-werror-v3"
         };
-        let mut configuration = Vec::with_capacity(33);
-        configuration.extend_from_slice(&self.compiler_project_fingerprint);
-        configuration.push(u8::from(analyzer));
-        let key = CacheKey::derive(
-            namespace,
-            &relative,
-            source.as_bytes(),
-            &configuration,
-            &compiler.fingerprint().digest,
-        );
-        if let Some(cache) = &self.cache {
+        let key = self.compiler_project_fingerprint.map(|fingerprint| {
+            let mut configuration = Vec::with_capacity(33);
+            configuration.extend_from_slice(&fingerprint);
+            configuration.push(u8::from(analyzer));
+            CacheKey::derive(
+                namespace,
+                &relative,
+                source.as_bytes(),
+                &configuration,
+                &compiler.fingerprint().digest,
+            )
+        });
+        if let (Some(cache), Some(key)) = (&self.cache, key) {
             let cached = cache.lookup::<CompilerReport>(key);
             if let Some(report) = cached.value {
                 return Ok(Some(report));
@@ -322,7 +332,7 @@ impl OracleContext {
                 path.display()
             )));
         }
-        if let Some(cache) = &self.cache {
+        if let (Some(cache), Some(key)) = (&self.cache, key) {
             if let Ok(entry) = PreparedCacheEntry::new(key, &report) {
                 let _ = cache.store(&entry);
             }
@@ -340,10 +350,21 @@ struct FileWork {
 
 #[derive(Clone, Debug)]
 struct DestructivePrelude {
-    source: String,
+    source: Option<String>,
+    original_blake3: Option<[u8; 32]>,
     fixes: Vec<FixRecord>,
     diagnostics: Vec<Diagnostic>,
     read_preconditions: Vec<ReadPrecondition>,
+}
+
+impl DestructivePrelude {
+    fn confirmed_source(&self, original: &[u8]) -> Option<&str> {
+        if self.original_blake3 == Some(*blake3::hash(original).as_bytes()) {
+            self.source.as_deref()
+        } else {
+            None
+        }
+    }
 }
 
 struct ClosedSourcePreparationError {
@@ -417,6 +438,9 @@ pub fn run_fixes(inputs: &[PathBuf], options: &FixOptions) -> Result<RunReport, 
             started.elapsed(),
         );
         report.set_quarantine_outcome(quarantine_candidates, quarantined, quarantine_errors);
+        if options.preflight {
+            report.enable_preflight_evaluation();
+        }
         return Ok(report);
     }
     let clock = options
@@ -454,6 +478,7 @@ pub fn run_fixes(inputs: &[PathBuf], options: &FixOptions) -> Result<RunReport, 
     let guard_failure = guard_failure.or(insertion_failure);
     let destructive_preludes =
         plan_destructive_preludes(inputs, &discovery.processable_files, options);
+    let dependent_destructive_bundle = dependent_destructive_bundle_paths(&destructive_preludes);
     let mut policy_plan = plan_policy_diagnostics(&discovery.processable_files, options);
     append_preflight_diagnostics(
         &mut policy_plan.diagnostics,
@@ -492,7 +517,8 @@ pub fn run_fixes(inputs: &[PathBuf], options: &FixOptions) -> Result<RunReport, 
     work.sort_by(|left, right| left.absolute_path.cmp(&right.absolute_path));
     append_function_policy_diagnostics(&mut work, policy_plan.proof.as_ref(), &options.cwd);
 
-    let commit_succeeded = options.mode != ReportMode::Fix || commit_work(&mut work, options);
+    let commit_succeeded = options.mode != ReportMode::Fix
+        || commit_work(&mut work, options, &dependent_destructive_bundle);
     let quarantine_candidates = if options.quarantine_unexpected {
         discovered_unexpected
             .iter()
@@ -531,6 +557,9 @@ pub fn run_fixes(inputs: &[PathBuf], options: &FixOptions) -> Result<RunReport, 
         started.elapsed(),
     );
     report.set_quarantine_outcome(quarantine_candidates, quarantined, quarantine_errors);
+    if options.preflight {
+        report.enable_preflight_evaluation();
+    }
     Ok(report)
 }
 
@@ -550,7 +579,7 @@ fn build_oracle_context(
     let oracle = NorminetteOracle::locate(NorminetteConfig {
         executable: options.norminette_executable.clone(),
         expected_version: normfix_oracle::SUPPORTED_NORMINETTE_VERSION.to_owned(),
-        allow_untested_version: options.allow_untested_norminette,
+        strict_version: options.strict_norminette_version,
         limits: ProcessLimits {
             timeout: options.timeout,
             output_bytes: 1024 * 1024,
@@ -561,13 +590,23 @@ fn build_oracle_context(
         .then(|| CachePaths::for_project(&options.cwd).ok())
         .flatten()
         .map(PersistentCache::open);
+    let norminette_notice_path = files
+        .iter()
+        .find(|file| {
+            matches!(
+                file.kind,
+                ProjectFileKind::CSource | ProjectFileKind::CHeader
+            )
+        })
+        .map(|file| file.path.clone())
+        .expect("a C-family file was established above");
     let compiler_notice_path = files
         .iter()
         .find(|file| file.kind == ProjectFileKind::CSource)
         .map(|file| file.path.clone());
     let has_c_source = compiler_notice_path.is_some();
     let (compiler, compiler_unavailable) =
-        if has_c_source && (options.compiler_preflight || options.analyzer) {
+        if has_c_source && (options.compiler_preflight || options.analyzer || options.preflight) {
             match CompilerValidator::locate(CompilerConfig {
                 executable: options.compiler_executable.clone(),
                 limits: ProcessLimits {
@@ -588,6 +627,7 @@ fn build_oracle_context(
     };
     Ok(Some(OracleContext {
         oracle,
+        norminette_notice_path,
         compiler,
         compiler_unavailable,
         compiler_notice_path,
@@ -703,9 +743,13 @@ fn compiler_arguments(
 
 #[derive(Default)]
 struct CompilerProjectContext {
-    fingerprint: [u8; 32],
+    fingerprint: Option<[u8; 32]>,
     include_directories: Vec<PathBuf>,
 }
+
+const COMPILER_FINGERPRINT_FILE_LIMIT: u64 = 8 * 1024 * 1024;
+const COMPILER_FINGERPRINT_PROJECT_LIMIT: u64 = 64 * 1024 * 1024;
+const MAKEFILE_TRIVIA_PROBE_LIMIT: u64 = 8 * 1024 * 1024;
 
 fn compiler_project_context(project_root: &Path) -> CompilerProjectContext {
     let mut hasher = blake3::Hasher::new();
@@ -741,8 +785,14 @@ fn compiler_project_context(project_root: &Path) -> CompilerProjectContext {
         .collect::<Vec<_>>();
     paths.sort();
     paths.dedup();
+    let mut remaining_bytes = COMPILER_FINGERPRINT_PROJECT_LIMIT;
+    let mut fingerprint_complete = discovery.errors.is_empty();
     for file in paths {
-        hash_compiler_project_file(&mut hasher, &file);
+        if fingerprint_complete
+            && !hash_compiler_project_file(&mut hasher, &file, &mut remaining_bytes)
+        {
+            fingerprint_complete = false;
+        }
     }
     for error in discovery.errors {
         let detail = error.to_string();
@@ -750,54 +800,85 @@ fn compiler_project_context(project_root: &Path) -> CompilerProjectContext {
         hasher.update(detail.as_bytes());
     }
     CompilerProjectContext {
-        fingerprint: *hasher.finalize().as_bytes(),
+        fingerprint: fingerprint_complete.then(|| *hasher.finalize().as_bytes()),
         include_directories,
     }
 }
 
-fn hash_compiler_project_file(hasher: &mut blake3::Hasher, file: &Path) {
+fn hash_compiler_project_file(
+    hasher: &mut blake3::Hasher,
+    file: &Path,
+    remaining_bytes: &mut u64,
+) -> bool {
     let path = file.to_string_lossy();
     hasher.update(&(path.len() as u64).to_le_bytes());
     hasher.update(path.as_bytes());
-    let mut input = match File::open(file) {
+    let input = match File::open(file) {
         Ok(input) => input,
         Err(error) => {
             let detail = error.to_string();
             hasher.update(&u64::MAX.to_le_bytes());
             hasher.update(detail.as_bytes());
-            return;
+            return false;
         }
     };
+    let metadata = match input.metadata() {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            hasher.update(b"metadata-error\0");
+            hasher.update(error.to_string().as_bytes());
+            return false;
+        }
+    };
+    let expected_length = metadata.len();
+    let read_budget = expected_length.saturating_add(1);
+    if !metadata.is_file()
+        || expected_length > COMPILER_FINGERPRINT_FILE_LIMIT
+        || read_budget > *remaining_bytes
+    {
+        hasher.update(b"bounded-read-refused\0");
+        hasher.update(&expected_length.to_le_bytes());
+        return false;
+    }
     let mut content = blake3::Hasher::new();
     let mut length = 0_u64;
     let mut buffer = [0_u8; 16 * 1024];
+    let mut input = input.take(read_budget);
     loop {
         match input.read(&mut buffer) {
             Ok(0) => break,
             Ok(read) => {
                 length = length.saturating_add(read as u64);
+                *remaining_bytes = remaining_bytes.saturating_sub(read as u64);
                 content.update(&buffer[..read]);
             }
             Err(error) => {
                 let detail = error.to_string();
                 hasher.update(&u64::MAX.to_le_bytes());
                 hasher.update(detail.as_bytes());
-                return;
+                return false;
             }
         }
     }
+    if length != expected_length {
+        hasher.update(b"concurrent-length-change\0");
+        hasher.update(&expected_length.to_le_bytes());
+        hasher.update(&length.to_le_bytes());
+        return false;
+    }
     hasher.update(&length.to_le_bytes());
     hasher.update(content.finalize().as_bytes());
+    true
 }
 
+// This is the single audit boundary that sequences complete discovery, scoped
+// authorization, closed snapshots, and both destructive C planners.
+#[allow(clippy::too_many_lines)]
 fn plan_destructive_preludes(
     _inputs: &[PathBuf],
     selected: &[DiscoveredFile],
     options: &FixOptions,
 ) -> BTreeMap<PathBuf, DestructivePrelude> {
-    if !options.remove_unused_static {
-        return BTreeMap::new();
-    }
     let selected_c = selected
         .iter()
         .filter(|file| {
@@ -829,66 +910,145 @@ fn plan_destructive_preludes(
         .map(|file| file.path.clone())
         .collect::<BTreeSet<_>>();
     let mut preludes = BTreeMap::new();
-    if !complete.errors.is_empty() || selected_c != complete_c {
+    let destructive_requested = options.remove_unused_static || options.remove_orphan_prototypes;
+    if !complete.errors.is_empty() {
+        if !destructive_requested {
+            return preludes;
+        }
         attach_destructive_diagnostic(
             &mut preludes,
             selected_c.iter().next().expect("non-empty selected set"),
             &options.cwd,
-            "UNSAFE_STATIC_CLOSED_SET_INCOMPLETE",
-            "Unused static functions were not removed because the selected inputs are not the complete project C/header set.",
-            "Run from the project root without partial paths or ignored C files.",
+            "PROJECT_CLOSED_SET_INCOMPLETE",
+            "Project-wide implementation analysis was skipped because complete C/header discovery failed.",
+            "Resolve every discovery error and rerun from the project root.",
         );
         return preludes;
     }
-    let Some(authorization) = options.destructive_authorization.as_ref() else {
-        attach_destructive_diagnostic(
-            &mut preludes,
-            selected_c.iter().next().expect("non-empty selected set"),
-            &options.cwd,
-            "UNSAFE_AUTHORIZATION_REQUIRED",
-            "Unused static functions were not removed because destructive authorization is missing.",
-            "Confirm the terminal warning or pass --unsafe --force.",
-        );
-        return preludes;
-    };
-
-    let closed = match prepare_closed_source_set(&selected_c, &options.cwd) {
+    let closed = match prepare_closed_source_set(&complete_c, &options.cwd) {
         Ok(closed) => closed,
         Err(error) => {
+            if !destructive_requested {
+                return preludes;
+            }
             attach_destructive_diagnostic(
                 &mut preludes,
                 &error.path,
                 &options.cwd,
-                "UNSAFE_STATIC_CLOSED_SET_INVALID",
+                "PROJECT_CLOSED_SET_INVALID",
                 &error.message,
                 error.help,
             );
             return preludes;
         }
     };
-    let plan = match plan_unused_static_functions(&closed, authorization) {
-        Ok(plan) => plan,
-        Err(error) => {
+    let mut read_preconditions = vec![ReadPrecondition::project_sources(
+        absolute_lexical(&options.cwd),
+        complete_c.iter().cloned(),
+    )];
+    read_preconditions.extend(closed.snapshots().iter().map(|snapshot| {
+        ReadPrecondition::Matches {
+            path: options.cwd.join(snapshot.relative_path().as_std_path()),
+            blake3: *snapshot.content_hash().as_bytes(),
+        }
+    }));
+
+    if options.remove_unused_static {
+        if selected_c != complete_c {
             attach_destructive_diagnostic(
                 &mut preludes,
                 selected_c.iter().next().expect("non-empty selected set"),
                 &options.cwd,
-                "UNSAFE_STATIC_PLAN_FAILED",
-                &format!("Unused static function planning failed: {error}"),
-                "Review the closed project inputs and destructive authorization.",
+                "UNSAFE_STATIC_CLOSED_SET_INCOMPLETE",
+                "Unused static functions were not removed because the selected inputs are not the complete project C/header set.",
+                "Run from the project root without partial paths or ignored C files.",
             );
-            return preludes;
+        } else if let Some(authorization) = options.destructive_authorization.as_ref() {
+            match plan_unused_static_functions(&closed, authorization) {
+                Ok(plan) => apply_static_removal_plan(
+                    &mut preludes,
+                    plan,
+                    &options.cwd,
+                    &read_preconditions,
+                ),
+                Err(error) => attach_destructive_diagnostic(
+                    &mut preludes,
+                    selected_c.iter().next().expect("non-empty selected set"),
+                    &options.cwd,
+                    "UNSAFE_STATIC_PLAN_FAILED",
+                    &format!("Unused static function planning failed: {error}"),
+                    "Review the closed project inputs and destructive authorization.",
+                ),
+            }
+        } else {
+            attach_destructive_diagnostic(
+                &mut preludes,
+                selected_c.iter().next().expect("non-empty selected set"),
+                &options.cwd,
+                "UNSAFE_AUTHORIZATION_REQUIRED",
+                "Unused static functions were not removed because destructive authorization is missing.",
+                "Confirm the terminal warning or pass --unsafe --force.",
+            );
         }
-    };
-    let read_preconditions = closed
-        .snapshots()
-        .iter()
-        .map(|snapshot| ReadPrecondition::Matches {
-            path: options.cwd.join(snapshot.relative_path().as_std_path()),
-            blake3: *snapshot.content_hash().as_bytes(),
-        })
-        .collect::<Vec<_>>();
-    apply_static_removal_plan(&mut preludes, plan, &options.cwd, &read_preconditions);
+    }
+
+    let can_remove = options.remove_orphan_prototypes
+        && selected_c == complete_c
+        && options.destructive_authorization.is_some();
+    if options.remove_orphan_prototypes && selected_c != complete_c {
+        attach_destructive_diagnostic(
+            &mut preludes,
+            selected_c.iter().next().expect("non-empty selected set"),
+            &options.cwd,
+            "UNSAFE_ORPHAN_PROTOTYPE_CLOSED_SET_INCOMPLETE",
+            "Orphan header prototypes were not removed because the selected inputs are not the complete project C/header set.",
+            "Run from the project root so every declaration and use participates in the proof.",
+        );
+    } else if options.remove_orphan_prototypes && options.destructive_authorization.is_none() {
+        attach_destructive_diagnostic(
+            &mut preludes,
+            selected_c.iter().next().expect("non-empty selected set"),
+            &options.cwd,
+            "UNSAFE_AUTHORIZATION_REQUIRED",
+            "Orphan header prototypes were not removed because destructive authorization is missing.",
+            "Confirm the terminal warning or pass --unsafe --force.",
+        );
+    }
+    let transformed =
+        prepare_closed_source_set_with_overrides(&complete_c, &options.cwd, &preludes);
+    match transformed {
+        Ok(transformed) => {
+            let authorization = can_remove
+                .then_some(options.destructive_authorization.as_ref())
+                .flatten();
+            match plan_orphan_prototypes(&transformed, authorization) {
+                Ok(plan) => apply_orphan_prototype_plan(
+                    &mut preludes,
+                    plan,
+                    &options.cwd,
+                    &selected_c,
+                    can_remove,
+                    &read_preconditions,
+                ),
+                Err(error) => attach_destructive_diagnostic(
+                    &mut preludes,
+                    selected_c.iter().next().expect("non-empty selected set"),
+                    &options.cwd,
+                    "ORPHAN_PROTOTYPE_PLAN_FAILED",
+                    &format!("Prototype implementation analysis failed: {error}"),
+                    "Review the complete project inputs and destructive authorization.",
+                ),
+            }
+        }
+        Err(error) => attach_destructive_diagnostic(
+            &mut preludes,
+            &error.path,
+            &options.cwd,
+            "ORPHAN_PROTOTYPE_CLOSED_SET_INVALID",
+            &error.message,
+            error.help,
+        ),
+    }
     preludes
 }
 
@@ -1252,6 +1412,9 @@ fn append_function_policy_incomplete_diagnostic(
     item.report.after.dedup();
 }
 
+// Every preflight notice is written here so the complete set of pre-defense
+// advisories stays readable as one sequence instead of scattered emitters.
+#[allow(clippy::too_many_lines)]
 fn append_preflight_diagnostics(
     diagnostics: &mut BTreeMap<PathBuf, Vec<Diagnostic>>,
     selected: &[DiscoveredFile],
@@ -1259,6 +1422,72 @@ fn append_preflight_diagnostics(
 ) {
     if !options.preflight {
         return;
+    }
+    let Some(notice_file) = selected.iter().find(|file| {
+        matches!(
+            file.kind,
+            ProjectFileKind::CSource | ProjectFileKind::CHeader
+        )
+    }) else {
+        return;
+    };
+    let selected_makefiles = selected
+        .iter()
+        .filter(|file| file.kind == ProjectFileKind::Makefile)
+        .map(|file| absolute_lexical(&file.path))
+        .collect::<BTreeSet<_>>();
+    let root_makefiles = root_regular_makefiles(&options.cwd);
+    let unevaluated_root_makefile = root_makefiles
+        .iter()
+        .any(|path| !selected_makefiles.contains(path));
+    if selected_makefiles.is_empty() && root_makefiles.is_empty() {
+        let path = report_path(&notice_file.path, &options.cwd)
+            .unwrap_or_else(|_| Utf8PathBuf::from(notice_file.path.to_string_lossy().as_ref()));
+        diagnostics
+            .entry(notice_file.path.clone())
+            .or_default()
+            .push(Diagnostic {
+                rule_id: "MAKEFILE_NOT_FOUND".to_owned(),
+                path,
+                range: TextRange::empty(TextSize::new(0)),
+                severity: Severity::Info,
+                message:
+                    "No regular Makefile was selected or found at the project root; build verification is incomplete."
+                        .to_owned(),
+                source: DiagnosticSource::Project,
+                notes: vec![
+                    "Some 42 subjects do not require a Makefile, so absence alone is not a hard fail without subject-specific policy."
+                        .to_owned(),
+                ],
+                help: Some(
+                    "Check the current subject and evaluation sheet; add or select the required Makefile before relying on preflight."
+                        .to_owned(),
+                ),
+            });
+    } else if unevaluated_root_makefile {
+        let path = report_path(&notice_file.path, &options.cwd)
+            .unwrap_or_else(|_| Utf8PathBuf::from(notice_file.path.to_string_lossy().as_ref()));
+        diagnostics
+            .entry(notice_file.path.clone())
+            .or_default()
+            .push(Diagnostic {
+                rule_id: "MAKEFILE_NOT_EVALUATED".to_owned(),
+                path,
+                range: TextRange::empty(TextSize::new(0)),
+                severity: Severity::Warning,
+                message:
+                    "A regular Makefile exists at the project root but was not selected, so preflight did not evaluate it."
+                        .to_owned(),
+                source: DiagnosticSource::Project,
+                notes: vec![
+                    "Its header, targets, recipes, and source references are absent from this report."
+                        .to_owned(),
+                ],
+                help: Some(
+                    "Include the root Makefile explicitly, or run preflight from the project root without a partial file scope."
+                        .to_owned(),
+                ),
+            });
     }
     let Some(file) = selected
         .iter()
@@ -1268,6 +1497,15 @@ fn append_preflight_diagnostics(
     };
     let path = report_path(&file.path, &options.cwd)
         .unwrap_or_else(|_| Utf8PathBuf::from(file.path.to_string_lossy().as_ref()));
+    let clang_tidy = executable_on_path("clang-tidy").map_or_else(
+        || "clang-tidy was not found on PATH; install it only if the project allows an additional local advisory pass.".to_owned(),
+        |executable| {
+            format!(
+                "clang-tidy is available at `{}`; run it with the project's real include paths and compile flags, and review findings manually.",
+                executable.display()
+            )
+        },
+    );
     diagnostics
         .entry(file.path.clone())
         .or_default()
@@ -1283,19 +1521,73 @@ fn append_preflight_diagnostics(
             notes: vec![
                 "Run the subject's required make/relink sequence and functional tests in the evaluator environment."
                     .to_owned(),
-                if options.analyzer {
-                    "GCC -fanalyzer was requested, but its findings are advisory and are not a runtime leak proof."
+                if options.preflight {
+                    "Preflight automatically runs the bounded compiler analyzer; its findings are advisory and are not a runtime leak proof."
+                        .to_owned()
+                } else if options.analyzer {
+                    "A compiler analyzer was requested, but its findings are advisory and are not a runtime leak proof."
                         .to_owned()
                 } else {
-                    "Use --analyzer with GCC for an additional static advisory, then confirm memory ownership at runtime."
+                    "Use --analyzer for an additional static advisory, then confirm memory ownership at runtime."
                         .to_owned()
                 },
+                "For a separate local debug build, use AddressSanitizer and UndefinedBehaviorSanitizer (`-fsanitize=address,undefined -fno-omit-frame-pointer -g`) when your compiler supports them; do not silently change the submitted Makefile flags."
+                    .to_owned(),
+                "LeakSanitizer support varies by compiler and operating system; run the subject's required leak tool as the final runtime check."
+                    .to_owned(),
+                clang_tidy,
             ],
             help: Some(
                 "Complete the subject-specific manual checks shown in the evaluation sheet before defense."
                     .to_owned(),
             ),
         });
+}
+
+fn root_regular_makefiles(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut makefiles = entries
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case("makefile"))
+                && std::fs::symlink_metadata(entry.path())
+                    .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+        })
+        .map(|entry| absolute_lexical(&entry.path()))
+        .collect::<Vec<_>>();
+    makefiles.sort();
+    makefiles.dedup();
+    makefiles
+}
+
+fn executable_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let executable_name = OsString::from(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    std::env::split_paths(&path)
+        .filter(|directory| directory.is_absolute())
+        .map(|directory| directory.join(&executable_name))
+        .find(|candidate| {
+            std::fs::metadata(candidate).is_ok_and(|metadata| is_executable_file(&metadata))
+        })
+}
+
+fn is_executable_file(metadata: &std::fs::Metadata) -> bool {
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 fn prepare_closed_source_set(
@@ -1357,6 +1649,75 @@ fn prepare_closed_source_set(
     })
 }
 
+fn prepare_closed_source_set_with_overrides(
+    selected: &BTreeSet<PathBuf>,
+    cwd: &Path,
+    overrides: &BTreeMap<PathBuf, DestructivePrelude>,
+) -> Result<ClosedCSourceSet, ClosedSourcePreparationError> {
+    let mut snapshots = Vec::with_capacity(selected.len());
+    for (index, absolute) in selected.iter().enumerate() {
+        let source = if let Some(source) = overrides
+            .get(absolute)
+            .and_then(|prelude| prelude.source.clone())
+        {
+            source
+        } else {
+            let bytes = std::fs::read(absolute).map_err(|error| ClosedSourcePreparationError {
+                path: absolute.clone(),
+                message: format!(
+                    "A C source could not be read for the closed-world proof: {error}"
+                ),
+                help: "Make every selected C/header file readable and retry.",
+            })?;
+            String::from_utf8(bytes).map_err(|error| ClosedSourcePreparationError {
+                path: absolute.clone(),
+                message: format!("A C source is not valid UTF-8: {error}"),
+                help: "Convert the source to UTF-8 before project-wide analysis.",
+            })?
+        };
+        let relative =
+            absolute
+                .strip_prefix(cwd)
+                .map_err(|error| ClosedSourcePreparationError {
+                    path: absolute.clone(),
+                    message: format!("A selected C source is outside the project root: {error}"),
+                    help: "Run project-wide analysis from one complete project root.",
+                })?;
+        let relative = Utf8PathBuf::from_path_buf(relative.to_path_buf()).map_err(|path| {
+            ClosedSourcePreparationError {
+                path: absolute.clone(),
+                message: format!("A selected C path is not valid UTF-8: {}", path.display()),
+                help: "Rename the path before project-wide analysis.",
+            }
+        })?;
+        let file_id = u32::try_from(index).map_err(|error| ClosedSourcePreparationError {
+            path: absolute.clone(),
+            message: format!("The closed source set is too large to index safely: {error}"),
+            help: "Reduce the project to fewer than 2^32 C/header files.",
+        })?;
+        snapshots.push(
+            SourceSnapshot::new(FileId::new(file_id), relative, Arc::<str>::from(source)).map_err(
+                |error| ClosedSourcePreparationError {
+                    path: absolute.clone(),
+                    message: format!("A C source snapshot was rejected: {error}"),
+                    help: "Use project-relative UTF-8 paths and sources smaller than 4 GiB.",
+                },
+            )?,
+        );
+    }
+    ClosedCSourceSet::from_complete_discovery(snapshots).map_err(|error| {
+        ClosedSourcePreparationError {
+            path: selected
+                .iter()
+                .next()
+                .cloned()
+                .unwrap_or_else(|| cwd.to_path_buf()),
+            message: format!("The closed C source set was rejected: {error}"),
+            help: "Run from one complete project root with unique C/header paths.",
+        }
+    })
+}
+
 fn apply_static_removal_plan(
     preludes: &mut BTreeMap<PathBuf, DestructivePrelude>,
     plan: StaticRemovalPlan,
@@ -1371,7 +1732,20 @@ fn apply_static_removal_plan(
     for file_plan in plan.files {
         let absolute = cwd.join(file_plan.path.as_std_path());
         let prelude = prelude_entry(preludes, &absolute);
-        if blake3::hash(prelude.source.as_bytes()).to_hex().to_string() != file_plan.original_hash {
+        if let Err(error) = load_destructive_source(prelude, &absolute) {
+            prelude.diagnostics.push(project_diagnostic(
+                file_plan.path,
+                "UNSAFE_STATIC_SOURCE_UNREADABLE",
+                &format!("The source could not be read for destructive planning: {error}"),
+                "Make the file readable and retry; no function was removed.",
+            ));
+            continue;
+        }
+        let source = prelude
+            .source
+            .as_deref()
+            .expect("loaded destructive source");
+        if blake3::hash(source.as_bytes()).to_hex().to_string() != file_plan.original_hash {
             prelude.diagnostics.push(project_diagnostic(
                 file_plan.path,
                 "UNSAFE_STATIC_SNAPSHOT_CHANGED",
@@ -1380,9 +1754,9 @@ fn apply_static_removal_plan(
             ));
             continue;
         }
-        match apply_source_edits(&prelude.source, &file_plan.edits) {
+        match apply_source_edits(source, &file_plan.edits) {
             Ok(source) => {
-                prelude.source = source;
+                prelude.source = Some(source);
                 prelude.fixes.extend(file_plan.fixes);
                 prelude
                     .read_preconditions
@@ -1398,6 +1772,93 @@ fn apply_static_removal_plan(
     }
 }
 
+fn apply_orphan_prototype_plan(
+    preludes: &mut BTreeMap<PathBuf, DestructivePrelude>,
+    plan: OrphanPrototypePlan,
+    cwd: &Path,
+    selected: &BTreeSet<PathBuf>,
+    apply_removals: bool,
+    read_preconditions: &[ReadPrecondition],
+) {
+    let mut attached_diagnostic = false;
+    let proof_incomplete = apply_removals
+        && plan
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.rule_id == "ORPHAN_PROTOTYPE_CLOSED_SET_INVALID");
+    for diagnostic in plan.diagnostics {
+        if !apply_removals && diagnostic.rule_id == "ORPHAN_PROTOTYPE_CLOSED_SET_INVALID" {
+            continue;
+        }
+        let absolute = cwd.join(diagnostic.path.as_std_path());
+        if selected.contains(&absolute) {
+            prelude_entry(preludes, &absolute)
+                .diagnostics
+                .push(diagnostic);
+            attached_diagnostic = true;
+        }
+    }
+    if proof_incomplete && !attached_diagnostic {
+        if let Some(first) = selected.iter().next() {
+            attach_destructive_diagnostic(
+                preludes,
+                first,
+                cwd,
+                "ORPHAN_PROTOTYPE_CLOSED_SET_INVALID",
+                "Prototype implementation analysis was inconclusive because another project C/header file could not be parsed losslessly.",
+                "Fix every project syntax/recovery issue and rerun preflight.",
+            );
+        }
+    }
+    if !apply_removals {
+        return;
+    }
+    for file_plan in plan.files {
+        let absolute = cwd.join(file_plan.path.as_std_path());
+        if !selected.contains(&absolute) {
+            continue;
+        }
+        let prelude = prelude_entry(preludes, &absolute);
+        if let Err(error) = load_destructive_source(prelude, &absolute) {
+            prelude.diagnostics.push(project_diagnostic(
+                file_plan.path,
+                "UNSAFE_ORPHAN_PROTOTYPE_SOURCE_UNREADABLE",
+                &format!("The header could not be read for destructive planning: {error}"),
+                "Make the file readable and retry; no prototype was removed.",
+            ));
+            continue;
+        }
+        let source = prelude
+            .source
+            .as_deref()
+            .expect("loaded destructive source");
+        if blake3::hash(source.as_bytes()).to_hex().to_string() != file_plan.original_hash {
+            prelude.diagnostics.push(project_diagnostic(
+                file_plan.path,
+                "UNSAFE_ORPHAN_PROTOTYPE_SNAPSHOT_CHANGED",
+                "The header changed after orphan-prototype planning; no prototype was removed.",
+                "Retry the command against an unchanged project.",
+            ));
+            continue;
+        }
+        match apply_source_edits(source, &file_plan.edits) {
+            Ok(source) => {
+                prelude.source = Some(source);
+                prelude.fixes.extend(file_plan.fixes);
+                prelude
+                    .read_preconditions
+                    .extend_from_slice(read_preconditions);
+            }
+            Err(error) => prelude.diagnostics.push(project_diagnostic(
+                file_plan.path,
+                "UNSAFE_ORPHAN_PROTOTYPE_EDIT_REJECTED",
+                &format!("The prototype deletion set was rejected: {error}"),
+                "Review the prototype manually; no deletion was applied.",
+            )),
+        }
+    }
+}
+
 fn prelude_entry<'a>(
     preludes: &'a mut BTreeMap<PathBuf, DestructivePrelude>,
     absolute: &Path,
@@ -1405,11 +1866,26 @@ fn prelude_entry<'a>(
     preludes
         .entry(absolute.to_path_buf())
         .or_insert_with(|| DestructivePrelude {
-            source: std::fs::read_to_string(absolute).unwrap_or_default(),
+            source: None,
+            original_blake3: None,
             fixes: Vec::new(),
             diagnostics: Vec::new(),
             read_preconditions: Vec::new(),
         })
+}
+
+fn load_destructive_source(
+    prelude: &mut DestructivePrelude,
+    absolute: &Path,
+) -> Result<(), String> {
+    if prelude.source.is_some() {
+        return Ok(());
+    }
+    let bytes = std::fs::read(absolute).map_err(|error| error.to_string())?;
+    let source = String::from_utf8(bytes.clone()).map_err(|error| error.to_string())?;
+    prelude.original_blake3 = Some(*blake3::hash(&bytes).as_bytes());
+    prelude.source = Some(source);
+    Ok(())
 }
 
 fn snapshot_preconditions(snapshot: &ProjectSnapshot) -> Vec<ReadPrecondition> {
@@ -1583,6 +2059,7 @@ fn process_c(
     destructive_prelude: Option<&DestructivePrelude>,
     policy_diagnostics: Option<&[Diagnostic]>,
 ) -> FileWork {
+    let norminette_version = oracle.oracle.fingerprint().version.as_str();
     let before_report = match oracle.lint(&file.path, &original) {
         Ok(report) => report,
         Err(error) => {
@@ -1595,26 +2072,30 @@ fn process_c(
             );
         }
     };
-    let before = official_diagnostics(&path, &original, &before_report.diagnostics);
+    let mut before_official = before_report.diagnostics.clone();
+    let before_semantic_advisories = explain_constant_array_false_positives(
+        &path,
+        &original,
+        &mut before_official,
+        norminette_version,
+    );
+    let before = official_diagnostics(&path, &original, &before_official, norminette_version);
     if options.lint_only {
-        let mut remaining_official = before_report.diagnostics;
-        let semantic_advisories =
-            explain_constant_array_false_positives(&path, &original, &mut remaining_official);
+        let remaining_official = before_official;
+        let semantic_advisories = before_semantic_advisories;
         let mut after = match analyze_c(path.as_path(), &original, options.max_columns) {
             Ok(diagnostics) => diagnostics,
             Err(_) => parser_diagnostics(&path, &original),
         };
-        let native_rules = after
-            .iter()
-            .map(|diagnostic| diagnostic.rule_id.clone())
-            .collect::<BTreeSet<_>>();
-        after.extend(
-            official_diagnostics(&path, &original, &remaining_official)
-                .into_iter()
-                .filter(|diagnostic| !native_rules.contains(&diagnostic.rule_id)),
+        merge_official_diagnostics(
+            &mut after,
+            official_diagnostics(&path, &original, &remaining_official, norminette_version),
+            options.preflight,
+            norminette_version,
         );
         after.extend(semantic_advisories);
         after.extend(policy_diagnostics.unwrap_or_default().iter().cloned());
+        after.extend(untested_norminette_diagnostic(oracle, file, &path));
         if options.emit_budget {
             after.extend(budget_diagnostics(&path, &original));
         }
@@ -1643,13 +2124,27 @@ fn process_c(
             read_preconditions: Vec::new(),
         };
     }
-    let mut current =
-        destructive_prelude.map_or_else(|| original.clone(), |prelude| prelude.source.clone());
-    let mut fixes = destructive_prelude.map_or_else(Vec::new, |prelude| prelude.fixes.clone());
+    let confirmed_prelude =
+        destructive_prelude.filter(|prelude| prelude.confirmed_source(&original_bytes).is_some());
+    let mut current = confirmed_prelude
+        .and_then(|prelude| prelude.confirmed_source(&original_bytes))
+        .map_or_else(|| original.clone(), str::to_owned);
+    let pre_action_source = current.clone();
+    let mut fixes = confirmed_prelude.map_or_else(Vec::new, |prelude| prelude.fixes.clone());
     let mut local_diagnostics =
         destructive_prelude.map_or_else(Vec::new, |prelude| prelude.diagnostics.clone());
     let mut read_preconditions =
-        destructive_prelude.map_or_else(Vec::new, |prelude| prelude.read_preconditions.clone());
+        confirmed_prelude.map_or_else(Vec::new, |prelude| prelude.read_preconditions.clone());
+    if destructive_prelude.is_some_and(|prelude| {
+        prelude.source.is_some() && prelude.confirmed_source(&original_bytes).is_none()
+    }) {
+        local_diagnostics.push(project_diagnostic(
+            path.clone(),
+            "DESTRUCTIVE_PRELUDE_SNAPSHOT_CHANGED",
+            "The file changed after destructive planning; the planned deletion was discarded.",
+            "Retry against an unchanged project; no stale source bytes were used.",
+        ));
+    }
     local_diagnostics.extend(policy_diagnostics.unwrap_or_default().iter().cloned());
 
     let approval_key = file
@@ -1825,7 +2320,7 @@ fn process_c(
             "An optional formatting batch was skipped because it introduced a new Norminette diagnostic."
                 .to_owned(),
             DiagnosticSource::NorminetteCompat(
-                normfix_oracle::SUPPORTED_NORMINETTE_VERSION.to_owned(),
+                norminette_version.to_owned(),
             ),
             Some(
                 "The complete batch was reverted; the original source remains authoritative."
@@ -1851,10 +2346,14 @@ fn process_c(
     }
 
     let mut remaining_official = final_report.diagnostics;
-    let semantic_advisories =
-        explain_constant_array_false_positives(&path, &current, &mut remaining_official);
+    let semantic_advisories = explain_constant_array_false_positives(
+        &path,
+        &current,
+        &mut remaining_official,
+        norminette_version,
+    );
+    local_diagnostics.extend(untested_norminette_diagnostic(oracle, file, &path));
     if file.kind == ProjectFileKind::CSource {
-        local_diagnostics.extend(untested_norminette_diagnostic(oracle, file, &path));
         local_diagnostics.extend(run_compiler_preflight(
             oracle, options, file, &path, &original, &current,
         ));
@@ -1863,16 +2362,14 @@ fn process_c(
         Ok(diagnostics) => diagnostics,
         Err(_) => parser_diagnostics(&path, &current),
     };
-    let native_rules = after
-        .iter()
-        .map(|diagnostic| diagnostic.rule_id.clone())
-        .collect::<BTreeSet<_>>();
-    after.extend(
-        official_diagnostics(&path, &current, &remaining_official)
-            .into_iter()
-            .filter(|diagnostic| !native_rules.contains(&diagnostic.rule_id)),
+    merge_official_diagnostics(
+        &mut after,
+        official_diagnostics(&path, &current, &remaining_official, norminette_version),
+        options.preflight,
+        norminette_version,
     );
     after.extend(semantic_advisories);
+    remap_orphan_prototype_diagnostics(&mut local_diagnostics, &pre_action_source, &current);
     after.extend(local_diagnostics);
     if let Some(reason) = guard_failure {
         if file.kind == ProjectFileKind::CHeader
@@ -1920,6 +2417,78 @@ fn process_c(
         },
         plan,
         read_preconditions,
+    }
+}
+
+fn remap_orphan_prototype_diagnostics(diagnostics: &mut [Diagnostic], before: &str, after: &str) {
+    if before == after
+        || !diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.rule_id.as_str(),
+                "HEADER_PROTOTYPE_IMPLEMENTATION_MISSING"
+                    | "HEADER_PROTOTYPE_IMPLEMENTATION_EMPTY"
+                    | "UNSAFE_ORPHAN_PROTOTYPE_PROOF_BLOCKED"
+            )
+        })
+    {
+        return;
+    }
+    let parsed = CParser::new().and_then(|mut parser| {
+        Ok((
+            parser.parse(before)?.facts().clone(),
+            parser.parse(after)?.facts().clone(),
+        ))
+    });
+    let Ok((before_facts, after_facts)) = parsed else {
+        for diagnostic in diagnostics.iter_mut().filter(|diagnostic| {
+            matches!(
+                diagnostic.rule_id.as_str(),
+                "HEADER_PROTOTYPE_IMPLEMENTATION_MISSING"
+                    | "HEADER_PROTOTYPE_IMPLEMENTATION_EMPTY"
+                    | "UNSAFE_ORPHAN_PROTOTYPE_PROOF_BLOCKED"
+            )
+        }) {
+            diagnostic.range = TextRange::empty(TextSize::new(0));
+        }
+        return;
+    };
+    for diagnostic in diagnostics.iter_mut().filter(|diagnostic| {
+        matches!(
+            diagnostic.rule_id.as_str(),
+            "HEADER_PROTOTYPE_IMPLEMENTATION_MISSING"
+                | "HEADER_PROTOTYPE_IMPLEMENTATION_EMPTY"
+                | "UNSAFE_ORPHAN_PROTOTYPE_PROOF_BLOCKED"
+        )
+    }) {
+        let before_prototypes = before_facts
+            .functions
+            .iter()
+            .filter(|function| function.kind == CFunctionKind::Prototype)
+            .collect::<Vec<_>>();
+        let Some((name, ordinal)) = before_prototypes
+            .iter()
+            .find(|function| function.name_range == diagnostic.range)
+            .map(|target| {
+                let ordinal = before_prototypes
+                    .iter()
+                    .filter(|function| function.name == target.name)
+                    .position(|function| function.name_range == target.name_range)
+                    .unwrap_or(0);
+                (target.name.as_str(), ordinal)
+            })
+        else {
+            diagnostic.range = TextRange::empty(TextSize::new(0));
+            continue;
+        };
+        diagnostic.range = after_facts
+            .functions
+            .iter()
+            .filter(|function| function.kind == CFunctionKind::Prototype && function.name == name)
+            .nth(ordinal)
+            .map_or_else(
+                || TextRange::empty(TextSize::new(0)),
+                |function| function.name_range,
+            );
     }
 }
 
@@ -1988,6 +2557,7 @@ fn process_makefile(
         let mut after = makefile_diagnostics(file, &path, &original, options);
         after.sort();
         after.dedup();
+        let before = after.clone();
         return FileWork {
             absolute_path: file.path.clone(),
             report: FileReport {
@@ -1997,7 +2567,7 @@ fn process_makefile(
                 backup: None,
                 failure: None,
                 fixes: Vec::new(),
-                before: Vec::new(),
+                before,
                 after,
                 original: Some(Arc::from(original.clone())),
                 fixed: Some(Arc::from(original)),
@@ -2018,8 +2588,16 @@ fn process_makefile(
             .is_some_and(|authorization| {
                 authorization.allows(DestructiveCapability::RemoveMissingMakefileSources)
             });
+    let mut before = makefile_diagnostics(file, &path, &original, options);
+    before.sort();
+    before.dedup();
+    let mut empty_source_proofs = BTreeMap::<String, (PathBuf, [u8; 32])>::new();
     let reconciled = reconcile_source_references(&original, remove_missing, |reference| {
-        makefile_source_status(&file.path, &options.cwd, reference)
+        let (status, proof) = makefile_source_probe(&file.path, &options.cwd, reference);
+        if let Some(proof) = proof {
+            empty_source_proofs.insert(reference.to_owned(), proof);
+        }
+        status
     });
     let formatted = format_makefile(
         &reconciled.output,
@@ -2041,21 +2619,8 @@ fn process_makefile(
     after.sort();
     after.dedup();
     let changed = formatted.output.as_bytes() != original_bytes;
-    let removed_ranges = reconciled
-        .fixes
-        .iter()
-        .filter(|fix| fix.code == "MAKEFILE_REMOVE_MISSING_SOURCE")
-        .map(|fix| fix.range)
-        .collect::<BTreeSet<_>>();
-    let read_preconditions = reconciled
-        .missing
-        .iter()
-        .filter(|reference| removed_ranges.contains(&reference.range))
-        .filter_map(|reference| {
-            makefile_source_path(&file.path, &options.cwd, &reference.path)
-                .map(ReadPrecondition::absent)
-        })
-        .collect();
+    let read_preconditions =
+        makefile_reconciliation_preconditions(file, options, &reconciled, &empty_source_proofs);
     let plan = changed.then(|| PlannedFile {
         path: file.path.clone(),
         original: original_bytes.to_vec(),
@@ -2071,7 +2636,7 @@ fn process_makefile(
             backup: None,
             failure: None,
             fixes,
-            before: Vec::new(),
+            before,
             after,
             original: Some(Arc::from(original)),
             fixed: Some(Arc::from(formatted.output)),
@@ -2079,6 +2644,47 @@ fn process_makefile(
         plan,
         read_preconditions,
     }
+}
+
+fn makefile_reconciliation_preconditions(
+    file: &DiscoveredFile,
+    options: &FixOptions,
+    reconciled: &normfix_makefile::SourceReconciliation,
+    empty_source_proofs: &BTreeMap<String, (PathBuf, [u8; 32])>,
+) -> Vec<ReadPrecondition> {
+    let removed_missing_ranges = reconciled
+        .fixes
+        .iter()
+        .filter(|fix| fix.code == "MAKEFILE_REMOVE_MISSING_SOURCE")
+        .map(|fix| fix.range)
+        .collect::<BTreeSet<_>>();
+    let removed_empty_ranges = reconciled
+        .fixes
+        .iter()
+        .filter(|fix| fix.code == "MAKEFILE_REMOVE_EMPTY_SOURCE")
+        .map(|fix| fix.range)
+        .collect::<BTreeSet<_>>();
+    let mut preconditions = reconciled
+        .missing
+        .iter()
+        .filter(|reference| removed_missing_ranges.contains(&reference.range))
+        .filter_map(|reference| {
+            makefile_source_path(&file.path, &options.cwd, &reference.path)
+                .map(ReadPrecondition::absent)
+        })
+        .collect::<Vec<_>>();
+    preconditions.extend(
+        reconciled
+            .empty
+            .iter()
+            .filter(|reference| removed_empty_ranges.contains(&reference.range))
+            .filter_map(|reference| empty_source_proofs.get(&reference.path))
+            .map(|(path, digest)| ReadPrecondition::Matches {
+                path: path.clone(),
+                blake3: *digest,
+            }),
+    );
+    preconditions
 }
 
 fn makefile_diagnostics(
@@ -2127,6 +2733,25 @@ fn makefile_diagnostics(
             ),
         }
     }));
+    diagnostics.extend(remaining_sources.empty.into_iter().map(|reference| Diagnostic {
+        rule_id: "MAKEFILE_SOURCE_EMPTY".to_owned(),
+        path: path.clone(),
+        range: text_range(reference.range),
+        severity: Severity::Warning,
+        message: format!(
+            "The literal Makefile source `{}` contains only whitespace or comments.",
+            reference.path
+        ),
+        source: DiagnosticSource::Makefile,
+        notes: vec![
+            "The file was read as a regular non-symbolic path below the project root; comments and an official header do not count as an implementation."
+                .to_owned(),
+        ],
+        help: Some(
+            "Implement the source, remove the stale entry manually, or use explicitly authorized unsafe mode to remove this exact empty token."
+                .to_owned(),
+        ),
+    }));
     diagnostics
 }
 
@@ -2171,17 +2796,25 @@ fn makefile_source_status(
     project_root: &Path,
     reference: &str,
 ) -> SourcePathStatus {
+    makefile_source_probe(makefile, project_root, reference).0
+}
+
+fn makefile_source_probe(
+    makefile: &Path,
+    project_root: &Path,
+    reference: &str,
+) -> (SourcePathStatus, Option<(PathBuf, [u8; 32])>) {
     let Ok(root) = project_root.canonicalize() else {
-        return SourcePathStatus::Unknown;
+        return (SourcePathStatus::Unknown, None);
     };
     let Some(parent) = makefile.parent() else {
-        return SourcePathStatus::Unknown;
+        return (SourcePathStatus::Unknown, None);
     };
     let Ok(parent) = parent.canonicalize() else {
-        return SourcePathStatus::Unknown;
+        return (SourcePathStatus::Unknown, None);
     };
     if !parent.starts_with(&root) {
-        return SourcePathStatus::Unknown;
+        return (SourcePathStatus::Unknown, None);
     }
     let relative = Path::new(reference);
     if relative.is_absolute()
@@ -2189,26 +2822,93 @@ fn makefile_source_status(
             .components()
             .any(|component| !matches!(component, std::path::Component::Normal(_)))
     {
-        return SourcePathStatus::Unknown;
+        return (SourcePathStatus::Unknown, None);
     }
     let mut candidate = parent;
     for component in relative.components() {
         let std::path::Component::Normal(name) = component else {
-            return SourcePathStatus::Unknown;
+            return (SourcePathStatus::Unknown, None);
         };
         candidate.push(name);
         match std::fs::symlink_metadata(&candidate) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                return SourcePathStatus::Unknown;
+                return (SourcePathStatus::Unknown, None);
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return SourcePathStatus::Missing;
+                return (SourcePathStatus::Missing, None);
             }
-            Err(_) => return SourcePathStatus::Unknown,
+            Err(_) => return (SourcePathStatus::Unknown, None),
         }
     }
-    SourcePathStatus::Exists
+    let Ok(metadata) = std::fs::symlink_metadata(&candidate) else {
+        return (SourcePathStatus::Unknown, None);
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return (SourcePathStatus::Unknown, None);
+    }
+    let Ok(input) = File::open(&candidate) else {
+        return (SourcePathStatus::Unknown, None);
+    };
+    let Ok(opened_metadata) = input.metadata() else {
+        return (SourcePathStatus::Unknown, None);
+    };
+    if !opened_metadata.is_file() || opened_metadata.len() > MAKEFILE_TRIVIA_PROBE_LIMIT {
+        return (SourcePathStatus::Unknown, None);
+    }
+    let expected_length = opened_metadata.len();
+    let Ok(capacity) = usize::try_from(expected_length) else {
+        return (SourcePathStatus::Unknown, None);
+    };
+    let mut bytes = Vec::with_capacity(capacity);
+    if input
+        .take(expected_length.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .is_err()
+        || u64::try_from(bytes.len()) != Ok(expected_length)
+    {
+        return (SourcePathStatus::Unknown, None);
+    }
+    if contains_only_c_trivia(&bytes) {
+        let digest = *blake3::hash(&bytes).as_bytes();
+        let Ok(relative) = candidate.strip_prefix(&root) else {
+            return (SourcePathStatus::Unknown, None);
+        };
+        return (
+            SourcePathStatus::Empty,
+            Some((project_root.join(relative), digest)),
+        );
+    }
+    (SourcePathStatus::Exists, None)
+}
+
+fn contains_only_c_trivia(bytes: &[u8]) -> bool {
+    let mut index = 0_usize;
+    while index < bytes.len() {
+        if bytes[index].is_ascii_whitespace() {
+            index += 1;
+            continue;
+        }
+        if bytes.get(index..index + 2) == Some(b"//") {
+            index += 2;
+            while index < bytes.len() && !matches!(bytes[index], b'\r' | b'\n') {
+                index += 1;
+            }
+            continue;
+        }
+        if bytes.get(index..index + 2) == Some(b"/*") {
+            let Some(end) = bytes[index + 2..]
+                .windows(2)
+                .position(|window| window == b"*/")
+            else {
+                return false;
+            };
+            index += end + 4;
+            continue;
+        }
+        return false;
+    }
+    true
 }
 
 fn makefile_source_path(makefile: &Path, project_root: &Path, reference: &str) -> Option<PathBuf> {
@@ -2244,7 +2944,7 @@ fn process_markdown(
         }
     };
     let proposed = result.formatted.unwrap_or_else(|| original.clone());
-    let after = result
+    let mut after = result
         .issues
         .into_iter()
         .map(|issue| Diagnostic {
@@ -2258,6 +2958,27 @@ fn process_markdown(
             help: Some(issue.help),
         })
         .collect::<Vec<_>>();
+    if options.preflight {
+        after.push(Diagnostic {
+            rule_id: "README_42_CRITERIA_REVIEW".to_owned(),
+            path: path.clone(),
+            range: TextRange::empty(TextSize::new(0)),
+            severity: Severity::Info,
+            message: "A README is present, but its subject-specific 42 evaluation criteria cannot be proven automatically."
+                .to_owned(),
+            source: DiagnosticSource::Markdown,
+            notes: vec![
+                "README absence is not a normfix preflight failure; this advisory exists only when a README was discovered."
+                    .to_owned(),
+            ],
+            help: Some(
+                "Compare the document with the current subject and evaluation sheet: required overview, instructions, resources, attribution, and project-specific sections vary by cursus project."
+                    .to_owned(),
+            ),
+        });
+    }
+    after.sort();
+    after.dedup();
     let changed = proposed.as_bytes() != original_bytes;
     let fix_records = changed
         .then(|| FixRecord {
@@ -2297,34 +3018,102 @@ fn process_markdown(
 ///
 /// An expired approval marks the affected reports and commits nothing, because
 /// the previewed bytes are no longer the bytes on disk.
-fn plans_to_commit(work: &mut [FileWork], options: &FixOptions) -> Option<Vec<PlannedFile>> {
-    let Some(approvals) = &options.write_approvals else {
-        return Some(work.iter().filter_map(|item| item.plan.clone()).collect());
-    };
-    let valid = approvals.iter().all(|(path, approval)| {
-        work.iter()
-            .find(|item| absolute_lexical(&item.absolute_path) == absolute_lexical(path))
-            .and_then(|item| item.plan.as_ref())
-            .is_some_and(|plan| approval.permits(plan))
-    });
-    if !valid {
-        let message =
-            "Interactive approval expired because the original or proposed bytes changed after preview; no files were written."
-                .to_owned();
-        for item in work
-            .iter_mut()
-            .filter(|item| approvals.contains_key(&absolute_lexical(&item.absolute_path)))
-        {
-            item.report.failure = Some(message.clone());
+fn plans_to_commit(
+    work: &mut [FileWork],
+    options: &FixOptions,
+    dependent_destructive_bundle: &BTreeSet<PathBuf>,
+) -> Option<Vec<PlannedFile>> {
+    let plans = if let Some(approvals) = &options.write_approvals {
+        let valid = approvals.iter().all(|(path, approval)| {
+            work.iter()
+                .find(|item| absolute_lexical(&item.absolute_path) == absolute_lexical(path))
+                .and_then(|item| item.plan.as_ref())
+                .is_some_and(|plan| approval.permits(plan))
+        });
+        if !valid {
+            let message =
+                "Interactive approval expired because the original or proposed bytes changed after preview; no files were written."
+                    .to_owned();
+            for item in work
+                .iter_mut()
+                .filter(|item| approvals.contains_key(&absolute_lexical(&item.absolute_path)))
+            {
+                item.report.failure = Some(message.clone());
+            }
+            return None;
         }
-        return None;
-    }
-    Some(
         work.iter()
             .filter(|item| approvals.contains_key(&absolute_lexical(&item.absolute_path)))
             .filter_map(|item| item.plan.clone())
-            .collect(),
-    )
+            .collect::<Vec<_>>()
+    } else {
+        work.iter().filter_map(|item| item.plan.clone()).collect()
+    };
+
+    if dependent_destructive_bundle_is_partial(&plans, dependent_destructive_bundle) {
+        let message = "The dependent static-function and orphan-prototype removal bundle became incomplete after validation or approval filtering; no files were written.";
+        for item in work.iter_mut().filter(|item| {
+            dependent_destructive_bundle.contains(&absolute_lexical(&item.absolute_path))
+        }) {
+            if item.report.failure.is_none() {
+                item.report.failure = Some(message.to_owned());
+            }
+        }
+        return None;
+    }
+    Some(plans)
+}
+
+fn dependent_destructive_bundle_is_partial(
+    plans: &[PlannedFile],
+    dependent_destructive_bundle: &BTreeSet<PathBuf>,
+) -> bool {
+    let selected_bundle_paths = plans
+        .iter()
+        .filter(|plan| {
+            plan.fixes.iter().any(|fix| {
+                matches!(
+                    fix.rule_id.as_str(),
+                    "UNSAFE_REMOVE_UNUSED_STATIC" | "UNSAFE_REMOVE_ORPHAN_PROTOTYPE"
+                )
+            })
+        })
+        .map(|plan| absolute_lexical(&plan.path))
+        .filter(|path| dependent_destructive_bundle.contains(path))
+        .collect::<BTreeSet<_>>();
+    !selected_bundle_paths.is_empty() && selected_bundle_paths != *dependent_destructive_bundle
+}
+
+/// Returns the exact files whose static and orphan removals were planned from
+/// one transformed closed-world snapshot. Neither edit family may survive
+/// without every other replacement that supplied that snapshot.
+fn dependent_destructive_bundle_paths(
+    preludes: &BTreeMap<PathBuf, DestructivePrelude>,
+) -> BTreeSet<PathBuf> {
+    let mut has_static_removal = false;
+    let mut has_orphan_removal = false;
+    let mut paths = BTreeSet::new();
+    for (path, prelude) in preludes {
+        let participates = prelude.fixes.iter().any(|fix| {
+            if fix.rule_id == "UNSAFE_REMOVE_UNUSED_STATIC" {
+                has_static_removal = true;
+                true
+            } else if fix.rule_id == "UNSAFE_REMOVE_ORPHAN_PROTOTYPE" {
+                has_orphan_removal = true;
+                true
+            } else {
+                false
+            }
+        });
+        if participates {
+            paths.insert(absolute_lexical(path));
+        }
+    }
+    if has_static_removal && has_orphan_removal {
+        paths
+    } else {
+        BTreeSet::new()
+    }
 }
 
 /// Records one operational failure on every selected file report.
@@ -2345,8 +3134,12 @@ fn fail_selected(
     }
 }
 
-fn commit_work(work: &mut [FileWork], options: &FixOptions) -> bool {
-    let Some(plans) = plans_to_commit(work, options) else {
+fn commit_work(
+    work: &mut [FileWork],
+    options: &FixOptions,
+    dependent_destructive_bundle: &BTreeSet<PathBuf>,
+) -> bool {
+    let Some(plans) = plans_to_commit(work, options, dependent_destructive_bundle) else {
         return false;
     };
     if plans.is_empty() {
@@ -2374,6 +3167,7 @@ fn commit_work(work: &mut [FileWork], options: &FixOptions) -> bool {
                 ReadPrecondition::Matches { path, .. } | ReadPrecondition::Absent { path } => {
                     absolute_lexical(path)
                 }
+                ReadPrecondition::ProjectSources { root, .. } => absolute_lexical(root),
             }),
     );
     let cwd = absolute_lexical(&options.cwd);
@@ -2389,6 +3183,8 @@ fn commit_work(work: &mut [FileWork], options: &FixOptions) -> bool {
                 "UNSAFE_REMOVE_UNUSED_STATIC"
                     | "REMOVE_INVALID_COMMENT"
                     | "MAKEFILE_REMOVE_MISSING_SOURCE"
+                    | "MAKEFILE_REMOVE_EMPTY_SOURCE"
+                    | "UNSAFE_REMOVE_ORPHAN_PROTOTYPE"
             )
         })
     });
@@ -2950,6 +3746,7 @@ fn official_diagnostics(
     path: &Utf8PathBuf,
     source: &str,
     diagnostics: &[NorminetteDiagnostic],
+    norminette_version: &str,
 ) -> Vec<Diagnostic> {
     diagnostics
         .iter()
@@ -2959,13 +3756,42 @@ fn official_diagnostics(
             range: diagnostic_range(source, item.line, item.column, ColumnUnit::Display),
             severity: Severity::Warning,
             message: item.message.clone(),
-            source: DiagnosticSource::NorminetteCompat(
-                normfix_oracle::SUPPORTED_NORMINETTE_VERSION.to_owned(),
-            ),
+            source: DiagnosticSource::NorminetteCompat(norminette_version.to_owned()),
             notes: Vec::new(),
             help: Some(diagnostic_help(&item.rule_id).to_owned()),
         })
         .collect()
+}
+
+/// Merges official findings without allowing one native rule occurrence to
+/// hide other official occurrences of that rule at distinct source locations.
+fn merge_official_diagnostics(
+    diagnostics: &mut Vec<Diagnostic>,
+    official: Vec<Diagnostic>,
+    corroborate_native: bool,
+    norminette_version: &str,
+) {
+    let represented = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.source == DiagnosticSource::NativeNorm41)
+        .filter(|diagnostic| {
+            official.iter().any(|candidate| {
+                candidate.rule_id == diagnostic.rule_id
+                    && candidate.range.start() == diagnostic.range.start()
+            })
+        })
+        .map(|diagnostic| (diagnostic.rule_id.clone(), diagnostic.range.start()))
+        .collect::<BTreeSet<_>>();
+    if corroborate_native {
+        for diagnostic in diagnostics.iter_mut().filter(|diagnostic| {
+            represented.contains(&(diagnostic.rule_id.clone(), diagnostic.range.start()))
+        }) {
+            diagnostic.source = DiagnosticSource::NorminetteCompat(norminette_version.to_owned());
+        }
+    }
+    diagnostics.extend(official.into_iter().filter(|diagnostic| {
+        !represented.contains(&(diagnostic.rule_id.clone(), diagnostic.range.start()))
+    }));
 }
 
 fn diagnostic_help(rule_id: &str) -> &'static str {
@@ -3124,14 +3950,13 @@ fn untested_norminette_diagnostic(
     path: &Utf8PathBuf,
 ) -> Option<Diagnostic> {
     let fingerprint = oracle.oracle.fingerprint();
-    if !fingerprint.untested || oracle.compiler_notice_path.as_deref() != Some(file.path.as_path())
-    {
+    if !fingerprint.untested || oracle.norminette_notice_path.as_path() != file.path.as_path() {
         return None;
     }
     Some(point_diagnostic(
         path,
         "NORMINETTE_VERSION_UNTESTED",
-        Severity::Warning,
+        Severity::Info,
         format!(
             "This run used Norminette {}, which this normfix release has not been verified against; {} is the supported version.",
             fingerprint.version,
@@ -3183,7 +4008,7 @@ fn run_compiler_preflight(
         return Vec::new();
     }
     let mut diagnostics = Vec::new();
-    if options.compiler_preflight {
+    if options.compiler_preflight || options.preflight {
         append_compiler_run(
             &mut diagnostics,
             oracle,
@@ -3195,7 +4020,7 @@ fn run_compiler_preflight(
             options.preflight,
         );
     }
-    if options.analyzer {
+    if options.analyzer || options.preflight {
         append_compiler_run(
             &mut diagnostics,
             oracle,
@@ -3641,7 +4466,14 @@ fn explain_constant_array_false_positives(
     path: &Utf8PathBuf,
     source: &str,
     diagnostics: &mut Vec<NorminetteDiagnostic>,
+    norminette_version: &str,
 ) -> Vec<Diagnostic> {
+    if !diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.rule_id == "VLA_FORBIDDEN")
+    {
+        return Vec::new();
+    }
     let Ok(mut parser) = CParser::new() else {
         return Vec::new();
     };
@@ -3682,9 +4514,7 @@ fn explain_constant_array_false_positives(
                 "Norminette reported a VLA, but `{}` resolves to the integer constant {value}.",
                 array.expression.as_deref().unwrap_or("this bound")
             ),
-            source: DiagnosticSource::NorminetteCompat(
-                normfix_oracle::SUPPORTED_NORMINETTE_VERSION.to_owned(),
-            ),
+            source: DiagnosticSource::NorminetteCompat(norminette_version.to_owned()),
             notes: vec![
                 "The native enum evaluator proved this bound within the current translation unit."
                     .to_owned(),
@@ -3701,11 +4531,95 @@ fn explain_constant_array_false_positives(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        fs,
+    };
 
     use tempfile::TempDir;
 
-    use super::{makefile_source_path, prepare_external_recovery_root, transaction_root};
+    use normfix_core::FixRecord;
+    use normfix_makefile::SourcePathStatus;
+
+    use super::{
+        COMPILER_FINGERPRINT_FILE_LIMIT, MAKEFILE_TRIVIA_PROBE_LIMIT, PlannedFile,
+        compiler_project_context, dependent_destructive_bundle_is_partial, load_destructive_source,
+        makefile_source_path, makefile_source_probe, prelude_entry, prepare_external_recovery_root,
+        transaction_root,
+    };
+
+    fn destructive_test_plan(path: &std::path::Path, rule_id: &str) -> PlannedFile {
+        PlannedFile {
+            path: path.to_path_buf(),
+            original: b"old\n".to_vec(),
+            replacement: b"new\n".to_vec(),
+            fixes: vec![FixRecord {
+                rule_id: rule_id.to_owned(),
+                description: "test".to_owned(),
+                line: None,
+                count: 1,
+            }],
+        }
+    }
+
+    #[test]
+    fn ordinary_plan_cannot_impersonate_a_surviving_destructive_bundle_member() {
+        let project = TempDir::new().expect("project");
+        let source = project.path().join("unused.c");
+        let header = project.path().join("api.h");
+        let bundle = [source.clone(), header.clone()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let static_plan = destructive_test_plan(&source, "UNSAFE_REMOVE_UNUSED_STATIC");
+        let ordinary_header_plan = destructive_test_plan(&header, "HEADER_GUARD_RENAME");
+
+        assert!(dependent_destructive_bundle_is_partial(
+            &[static_plan.clone(), ordinary_header_plan],
+            &bundle,
+        ));
+        assert!(!dependent_destructive_bundle_is_partial(
+            &[
+                static_plan,
+                destructive_test_plan(&header, "UNSAFE_REMOVE_ORPHAN_PROTOTYPE"),
+            ],
+            &bundle,
+        ));
+    }
+
+    #[test]
+    fn diagnostic_preludes_never_invent_or_cache_source_bytes() {
+        let project = TempDir::new().expect("project");
+        let source = project.path().join("missing.c");
+        let mut preludes = BTreeMap::new();
+
+        let prelude = prelude_entry(&mut preludes, &source);
+        assert!(prelude.source.is_none());
+        assert!(prelude.original_blake3.is_none());
+        assert!(load_destructive_source(prelude, &source).is_err());
+        assert!(prelude.source.is_none());
+        assert!(prelude.original_blake3.is_none());
+    }
+
+    #[test]
+    fn destructive_source_override_requires_the_authoritative_original_digest() {
+        let project = TempDir::new().expect("project");
+        let source = project.path().join("main.c");
+        fs::write(&source, "static int\tunused(void)\n{\n\treturn (0);\n}\n").expect("source");
+        let mut preludes = BTreeMap::new();
+        let prelude = prelude_entry(&mut preludes, &source);
+        load_destructive_source(prelude, &source).expect("snapshot");
+
+        assert!(
+            prelude
+                .confirmed_source(b"static int\tunused(void)\n{\n\treturn (0);\n}\n")
+                .is_some()
+        );
+        assert!(
+            prelude
+                .confirmed_source(b"static int\tused(void)\n{\n\treturn (0);\n}\n")
+                .is_none()
+        );
+    }
 
     #[test]
     fn each_authority_column_convention_lands_on_the_same_character() {
@@ -3814,6 +4728,41 @@ mod tests {
             assert!(!strict.iter().any(|flag| flag == "--analyze"));
             assert!(!strict.iter().any(|flag| flag == "-fanalyzer"));
         }
+    }
+
+    #[test]
+    fn oversized_unexpected_file_disables_the_compiler_cache_fingerprint() {
+        let project = TempDir::new().expect("project");
+        fs::write(
+            project.path().join("main.c"),
+            "int\tmain(void)\n{\n\treturn (0);\n}\n",
+        )
+        .expect("source");
+        let unexpected =
+            fs::File::create(project.path().join("recording.bin")).expect("unexpected file");
+        unexpected
+            .set_len(COMPILER_FINGERPRINT_FILE_LIMIT + 1)
+            .expect("sparse oversized unexpected file");
+
+        let context = compiler_project_context(project.path());
+
+        assert!(context.fingerprint.is_none());
+    }
+
+    #[test]
+    fn oversized_makefile_source_is_not_classified_as_trivia_only() {
+        let project = TempDir::new().expect("project");
+        let makefile = project.path().join("Makefile");
+        fs::write(&makefile, "SRCS = generated.c\n").expect("Makefile");
+        let source = fs::File::create(project.path().join("generated.c")).expect("source");
+        source
+            .set_len(MAKEFILE_TRIVIA_PROBE_LIMIT + 1)
+            .expect("sparse oversized source");
+
+        let (status, proof) = makefile_source_probe(&makefile, project.path(), "generated.c");
+
+        assert_eq!(status, SourcePathStatus::Unknown);
+        assert!(proof.is_none());
     }
 
     #[test]

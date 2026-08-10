@@ -2,7 +2,9 @@
 
 #![forbid(unsafe_code)]
 
+mod execution;
 mod rules;
+mod scope_guard;
 mod upgrade;
 
 use std::collections::BTreeMap;
@@ -16,13 +18,17 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use normfix_actions::{UndoRun, list_undo_runs, undo_run};
 use normfix_destructive::{DestructiveAuthorization, DestructiveCapability, DestructiveRequest};
 use normfix_engine::{BackupPolicy, FixOptions, WriteApproval, run_fixes};
-use normfix_header::{IdentityResolution, RunClock, identity_from_email, resolve_identity};
+use normfix_header::{
+    IdentityResolution, RunClock, identity_from_email, persist_identity, resolve_identity,
+};
 use normfix_project::{
     GitScope, GitScopeOptions, ProjectFileKind, is_project_control_file, resolve_git_scope,
 };
 use normfix_report::{
     FileReport, RenderOptions, ReportMode, RunReport, render_human, unified_diff,
 };
+
+use crate::execution::{ExecutionStart, terminal_safe_inline};
 
 // Clap represents independent switches as booleans; replacing them with one
 // state enum would incorrectly make compatible command-line flags exclusive.
@@ -118,7 +124,7 @@ struct Cli {
     #[arg(long = "unsafe", global = true)]
     unsafe_mode: bool,
 
-    /// Confirm destructive operations non-interactively.
+    /// Confirm destructive operations or acknowledge a protected system scope.
     #[arg(long, global = true)]
     force: bool,
 
@@ -142,10 +148,18 @@ struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     norminette: Option<PathBuf>,
 
-    /// Continue with a Norminette release this version has not been verified
-    /// against, instead of refusing to run.
-    #[arg(long, global = true)]
+    /// Deprecated no-op: untested Norminette releases now run with an advisory.
+    #[arg(
+        long,
+        global = true,
+        hide = true,
+        conflicts_with = "strict_norminette_version"
+    )]
     allow_untested_norminette: bool,
+
+    /// Refuse Norminette releases this normfix version has not verified.
+    #[arg(long, global = true)]
+    strict_norminette_version: bool,
 
     /// Disable `cc -fsyntax-only -Wall -Wextra -Werror` diagnostics.
     #[arg(long, global = true)]
@@ -231,10 +245,13 @@ enum Workflow {
 }
 
 /// Recoverable removals requested for one run.
+// Clap exposes independent destructive switches; each may be enabled together.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy, Debug)]
 struct DestructiveFlags {
     remove_unused: bool,
     remove_missing_makefile_sources: bool,
+    remove_orphan_prototypes: bool,
     remove_unexpected: bool,
 }
 
@@ -243,12 +260,16 @@ impl DestructiveFlags {
         Self {
             remove_unused: cli.remove_unused || cli.unsafe_mode,
             remove_missing_makefile_sources: cli.unsafe_mode,
+            remove_orphan_prototypes: cli.unsafe_mode,
             remove_unexpected: cli.remove_unexpected || cli.unsafe_mode,
         }
     }
 
     fn any(self) -> bool {
-        self.remove_unused || self.remove_missing_makefile_sources || self.remove_unexpected
+        self.remove_unused
+            || self.remove_missing_makefile_sources
+            || self.remove_orphan_prototypes
+            || self.remove_unexpected
     }
 }
 
@@ -260,7 +281,6 @@ struct OptionsInput {
     git_unexpected: Vec<PathBuf>,
     identity: IdentityResolution,
     destructive: DestructiveFlags,
-    authorization: Option<DestructiveAuthorization>,
 }
 
 fn main() -> ExitCode {
@@ -317,28 +337,13 @@ fn run(cli: &Cli) -> ExitCode {
         }
     }
     let destructive = DestructiveFlags::from_cli(cli);
-    if let Some(message) = invalid_invocation(cli, workflow, destructive) {
-        print_run_error(cli.format, message);
+    if let Err(message) = validate_run_scope(cli, workflow, destructive, &cwd, &paths, git_scoped) {
+        print_run_error(cli.format, &message);
         return ExitCode::from(2);
     }
-    let mut identity = resolve_identity(cli.login.as_deref(), cli.email.as_deref(), &cwd);
-    if identity.identity.is_none()
-        && scope_may_need_identity(&paths, git_scoped)
-        && !matches!(workflow, Workflow::Lint | Workflow::Budget)
-        && cli.format == OutputFormat::Human
-        && io::stdin().is_terminal()
-        && io::stderr().is_terminal()
-    {
-        identity = prompt_for_identity(cli.login.as_deref(), identity);
-    }
-    let authorization = match authorize_destructive(destructive, cli.force, cli.format) {
-        Ok(authorization) => authorization,
-        Err(message) => {
-            print_run_error(cli.format, &message);
-            return ExitCode::from(2);
-        }
-    };
-    let options = build_fix_options(
+    let (identity, identity_persistence) =
+        resolve_run_identity(cli, &paths, git_scoped, workflow, &cwd);
+    let mut options = build_fix_options(
         cli,
         cwd,
         OptionsInput {
@@ -348,9 +353,28 @@ fn run(cli: &Cli) -> ExitCode {
             git_unexpected,
             identity,
             destructive,
-            authorization,
         },
     );
+
+    if let Err(message) = announce_execution(
+        cli,
+        workflow,
+        &paths,
+        git_scoped,
+        &options,
+        identity_persistence,
+    ) {
+        print_run_error(cli.format, &message);
+        return ExitCode::from(2);
+    }
+    options.destructive_authorization =
+        match authorize_destructive(destructive, cli.force, cli.format) {
+            Ok(authorization) => authorization,
+            Err(message) => {
+                print_run_error(cli.format, &message);
+                return ExitCode::from(2);
+            }
+        };
 
     if cli.interactive {
         return run_interactive(cli, &paths, &options);
@@ -434,14 +458,17 @@ fn invalid_invocation(
     cli: &Cli,
     workflow: Workflow,
     destructive: DestructiveFlags,
+    protected_scope: bool,
 ) -> Option<&'static str> {
     if workflow == Workflow::Preflight && cli.no_compiler_preflight {
         return Some(
             "preflight includes the strict compiler check; remove --no-compiler-preflight",
         );
     }
-    if cli.force && !destructive.any() {
-        return Some("--force requires --unsafe, --remove-unused, or --remove-unexpected");
+    if cli.force && !destructive.any() && !protected_scope {
+        return Some(
+            "--force requires --unsafe, --remove-unused, --remove-unexpected, or a protected system scope",
+        );
     }
     if cli.interactive
         && (cli.format != OutputFormat::Human
@@ -456,6 +483,28 @@ fn invalid_invocation(
         );
     }
     None
+}
+
+fn validate_run_scope(
+    cli: &Cli,
+    workflow: Workflow,
+    destructive: DestructiveFlags,
+    cwd: &std::path::Path,
+    paths: &[PathBuf],
+    git_scoped: bool,
+) -> Result<(), String> {
+    let protected = scope_guard::sensitive_scope(cwd, paths, git_scoped);
+    if let Some(message) = invalid_invocation(cli, workflow, destructive, protected.is_some()) {
+        return Err(message.to_owned());
+    }
+    if let Some(protected) = protected.as_ref().filter(|_| !cli.force) {
+        return Err(format!(
+            "refusing to scan or modify protected scope `{}` because {}; inspect the path and pass --force to acknowledge it explicitly",
+            protected.resolved.display(),
+            protected.reason
+        ));
+    }
+    Ok(())
 }
 
 fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions {
@@ -489,7 +538,7 @@ fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions
         BackupPolicy::Automatic
     };
     options.norminette_executable.clone_from(&cli.norminette);
-    options.allow_untested_norminette = cli.allow_untested_norminette;
+    options.strict_norminette_version = cli.strict_norminette_version;
     options.compiler_preflight = !cli.no_compiler_preflight;
     options.compiler_executable.clone_from(&cli.cc);
     options.analyzer = cli.analyzer;
@@ -498,9 +547,9 @@ fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions
     options.remove_invalid_comments = cli.remove_invalid_comments || cli.unsafe_mode;
     options.compact_null_checks = cli.unsafe_mode;
     options.remove_missing_makefile_sources = input.destructive.remove_missing_makefile_sources;
+    options.remove_orphan_prototypes = input.destructive.remove_orphan_prototypes;
     options.remove_unused_static = input.destructive.remove_unused;
     options.quarantine_unexpected = input.destructive.remove_unexpected;
-    options.destructive_authorization = input.authorization;
     options.reorder_includes = !cli.no_reorder_includes;
     options.format_markdown = !cli.no_format_markdown;
     options.max_passes = cli.max_passes;
@@ -520,6 +569,192 @@ fn scope_may_need_identity(paths: &[PathBuf], git_scoped: bool) -> bool {
             Some(ProjectFileKind::CSource | ProjectFileKind::CHeader | ProjectFileKind::Makefile)
         )
     })
+}
+
+const fn identity_prompt_allowed(
+    format: OutputFormat,
+    stdin_is_terminal: bool,
+    stderr_is_terminal: bool,
+) -> bool {
+    matches!(format, OutputFormat::Human) && stdin_is_terminal && stderr_is_terminal
+}
+
+fn resolve_run_identity(
+    cli: &Cli,
+    paths: &[PathBuf],
+    git_scoped: bool,
+    workflow: Workflow,
+    cwd: &std::path::Path,
+) -> (IdentityResolution, Option<String>) {
+    let mut identity = resolve_identity(cli.login.as_deref(), cli.email.as_deref(), cwd);
+    if identity.identity.is_none()
+        && scope_may_need_identity(paths, git_scoped)
+        && !matches!(workflow, Workflow::Lint | Workflow::Budget)
+        && identity_prompt_allowed(
+            cli.format,
+            io::stdin().is_terminal(),
+            io::stderr().is_terminal(),
+        )
+    {
+        identity = prompt_for_identity(cli.login.as_deref(), identity);
+    }
+    let persistence = persist_requested_identity(cli, &identity);
+    (identity, persistence)
+}
+
+fn persist_requested_identity(cli: &Cli, resolution: &IdentityResolution) -> Option<String> {
+    let supplied_or_prompted = cli.email.is_some()
+        || cli.login.is_some()
+        || resolution
+            .identity
+            .as_ref()
+            .is_some_and(|identity| identity.source == "interactive terminal");
+    if !supplied_or_prompted {
+        return None;
+    }
+    let identity = resolution.identity.as_ref()?;
+    Some(match persist_identity(identity) {
+        Ok(path) => format!(
+            "42 identity saved with private file permissions for future runs at {}",
+            path.display()
+        ),
+        Err(error) => format!("42 identity is valid for this run but could not be saved: {error}"),
+    })
+}
+
+fn announce_execution(
+    cli: &Cli,
+    workflow: Workflow,
+    paths: &[PathBuf],
+    git_scoped: bool,
+    options: &FixOptions,
+    advisory: Option<String>,
+) -> Result<(), String> {
+    let scope = execution_scope(cli, paths, git_scoped, &options.cwd);
+    let identity = options.identity.as_ref().map_or_else(
+        || "unavailable (headers will be reported)".to_owned(),
+        |identity| identity.email.clone(),
+    );
+    let backups = match &options.backup {
+        BackupPolicy::Automatic => "automatic external backup".to_owned(),
+        BackupPolicy::Directory(path) => format!("external directory {}", path.display()),
+        BackupPolicy::Disabled => "disabled for ordinary writes".to_owned(),
+    };
+    let event = ExecutionStart {
+        event: "execution_start",
+        action: workflow_name(cli, workflow).to_owned(),
+        mode: report_mode_name(options.mode).to_owned(),
+        current_directory: options.cwd.display().to_string(),
+        scope,
+        identity,
+        identity_source: options.identity_source.clone(),
+        workers: options
+            .threads
+            .map_or_else(|| "auto".to_owned(), |count| count.to_string()),
+        timeout_seconds: options.timeout.as_secs_f64(),
+        norminette: options.norminette_executable.as_ref().map_or_else(
+            || "automatic PATH discovery".to_owned(),
+            |path| path.display().to_string(),
+        ),
+        norminette_version_policy: if options.strict_norminette_version {
+            "strict (tested release required)"
+        } else {
+            "advisory (other releases continue)"
+        }
+        .to_owned(),
+        compiler_preflight: options.compiler_preflight,
+        cache: options.cache,
+        respect_gitignore: options.respect_gitignore,
+        backups,
+        destructive: destructive_description(options),
+        forced: cli.force,
+        advisory,
+    };
+    match cli.format {
+        OutputFormat::Human => eprint!("{}", event.to_human()),
+        OutputFormat::Json => eprintln!(
+            "{}",
+            event
+                .to_json_line()
+                .map_err(|error| format!("Could not serialize execution settings: {error}"))?
+        ),
+    }
+    Ok(())
+}
+
+fn execution_scope(
+    cli: &Cli,
+    paths: &[PathBuf],
+    git_scoped: bool,
+    cwd: &std::path::Path,
+) -> String {
+    if git_scoped {
+        format!(
+            "Git {} in {} ({} selected file(s))",
+            if cli.staged { "staged" } else { "changed" },
+            cwd.display(),
+            paths.len()
+        )
+    } else if paths.is_empty() {
+        format!("{} (recursive)", cwd.display())
+    } else {
+        let mut selected = paths
+            .iter()
+            .take(3)
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>();
+        if paths.len() > selected.len() {
+            selected.push(format!("+{} more", paths.len() - selected.len()));
+        }
+        selected.join(", ")
+    }
+}
+
+fn destructive_description(options: &FixOptions) -> String {
+    let mut destructive = Vec::new();
+    if options.remove_invalid_comments {
+        destructive.push("invalid comments");
+    }
+    if options.compact_null_checks {
+        destructive.push("NULL-check compaction");
+    }
+    if options.remove_missing_makefile_sources {
+        destructive.push("missing or trivia-only Makefile entries");
+    }
+    if options.remove_orphan_prototypes {
+        destructive.push("orphan header prototypes");
+    }
+    if options.remove_unused_static {
+        destructive.push("unreachable static functions");
+    }
+    if options.quarantine_unexpected {
+        destructive.push("unexpected-file quarantine");
+    }
+    if destructive.is_empty() {
+        "none".to_owned()
+    } else {
+        destructive.join(", ")
+    }
+}
+
+const fn workflow_name(cli: &Cli, workflow: Workflow) -> &'static str {
+    match workflow {
+        Workflow::Default | Workflow::Format if cli.diff => "diff",
+        Workflow::Default | Workflow::Format if cli.check => "check",
+        Workflow::Default | Workflow::Format => "format",
+        Workflow::Lint => "lint",
+        Workflow::Check => "check",
+        Workflow::Budget => "budget",
+        Workflow::Preflight => "preflight",
+    }
+}
+
+const fn report_mode_name(mode: ReportMode) -> &'static str {
+    match mode {
+        ReportMode::Fix => "write",
+        ReportMode::Check => "read-only check",
+        ReportMode::Diff => "read-only diff",
+    }
 }
 
 fn render_report(cli: &Cli, report: &RunReport) -> Result<(), String> {
@@ -652,7 +887,7 @@ fn prompt_for_approvals(
         loop {
             eprint!(
                 "Apply the validated change to {}? [y/N/a(all)/q(cancel)] ",
-                file.path
+                terminal_safe_inline(file.path.as_str())
             );
             let _ = io::stderr().flush();
             let mut answer = String::new();
@@ -911,6 +1146,9 @@ fn authorize_destructive(
     if destructive.remove_missing_makefile_sources {
         capabilities.push(DestructiveCapability::RemoveMissingMakefileSources);
     }
+    if destructive.remove_orphan_prototypes {
+        capabilities.push(DestructiveCapability::RemoveOrphanPrototypes);
+    }
     if destructive.remove_unexpected {
         capabilities.push(DestructiveCapability::QuarantineUnexpectedFiles);
     }
@@ -930,7 +1168,7 @@ fn authorize_destructive(
         );
     }
     eprintln!(
-        "WARNING: this run may remove proven-dead static code, remove proven-missing Makefile entries, and/or move unexpected files."
+        "WARNING: this run may remove proven-dead static code, proven-missing or trivia-only Makefile entries, unused missing-implementation header prototypes, and/or move unexpected files."
     );
     eprint!("Continue with recoverable destructive operations? [y/N] ");
     let _ = io::stderr().flush();
@@ -973,7 +1211,7 @@ fn prompt_for_identity(
         }
         eprintln!(
             "{}. Use an address such as login@student.42.fr, or cancel.",
-            resolution.source
+            terminal_safe_inline(&resolution.source)
         );
     }
 }
@@ -1011,7 +1249,7 @@ fn print_run_error(format: OutputFormat, message: &str) {
     match format {
         OutputFormat::Human => {
             eprintln!("normfix");
-            eprintln!("error: {message}");
+            eprintln!("error: {}", terminal_safe_inline(message));
             eprintln!("No unvalidated changes were written.");
         }
         OutputFormat::Json => {
@@ -1039,7 +1277,10 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{Cli, Command, OutputFormat, run};
+    use super::{
+        Cli, Command, DestructiveFlags, OutputFormat, Workflow, authorize_destructive,
+        identity_prompt_allowed, invalid_invocation, run, selected_workflow, workflow_name,
+    };
 
     #[test]
     fn accepts_zero_one_or_many_paths_like_norminette() {
@@ -1076,6 +1317,7 @@ mod tests {
             "--force",
             "--format-markdown",
             "--no-cache",
+            "--strict-norminette-version",
             "src",
         ])
         .expect("valid CLI");
@@ -1091,6 +1333,7 @@ mod tests {
         assert!(parsed.format_markdown);
         assert!(!parsed.no_format_markdown);
         assert!(parsed.no_cache);
+        assert!(parsed.strict_norminette_version);
         assert_eq!(parsed.paths, vec![PathBuf::from("src")]);
     }
 
@@ -1140,5 +1383,67 @@ mod tests {
         assert!(matches!(preflight.command, Some(Command::Preflight(_))));
         assert!(preflight.changed);
         assert!(preflight.interactive);
+    }
+
+    #[test]
+    fn identity_prompt_is_never_available_to_json_or_noninteractive_runs() {
+        assert!(!identity_prompt_allowed(OutputFormat::Json, true, true));
+        assert!(!identity_prompt_allowed(OutputFormat::Human, false, true));
+        assert!(!identity_prompt_allowed(OutputFormat::Human, true, false));
+        assert!(identity_prompt_allowed(OutputFormat::Human, true, true));
+    }
+
+    #[test]
+    fn global_preview_shortcuts_name_the_real_action_in_the_start_banner() {
+        let check = Cli::try_parse_from(["normfix", "--check"]).expect("check shortcut");
+        let (_, check_workflow) = selected_workflow(&check);
+        assert_eq!(workflow_name(&check, check_workflow), "check");
+
+        let diff = Cli::try_parse_from(["normfix", "--diff"]).expect("diff shortcut");
+        let (_, diff_workflow) = selected_workflow(&diff);
+        assert_eq!(workflow_name(&diff, diff_workflow), "diff");
+    }
+
+    #[test]
+    fn protected_scope_force_does_not_invent_destructive_capabilities() {
+        let cli = Cli::try_parse_from(["normfix", "--force", "/"]).expect("forced root scope");
+        let destructive = DestructiveFlags::from_cli(&cli);
+
+        assert!(invalid_invocation(&cli, Workflow::Default, destructive, true).is_none());
+        assert!(
+            authorize_destructive(destructive, cli.force, OutputFormat::Json)
+                .expect("no destructive request")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn destructive_noninteractive_runs_still_require_force() {
+        let destructive = DestructiveFlags {
+            remove_unused: true,
+            remove_missing_makefile_sources: false,
+            remove_orphan_prototypes: false,
+            remove_unexpected: false,
+        };
+        let error = authorize_destructive(destructive, false, OutputFormat::Json)
+            .expect_err("JSON may not prompt");
+        assert!(error.contains("require an interactive"));
+    }
+
+    #[test]
+    fn deprecated_allow_flag_is_hidden_and_conflicts_with_strict_policy() {
+        assert!(
+            Cli::try_parse_from([
+                "normfix",
+                "--allow-untested-norminette",
+                "--strict-norminette-version",
+            ])
+            .is_err()
+        );
+        let help = Cli::try_parse_from(["normfix", "--help"])
+            .expect_err("help exits through clap")
+            .to_string();
+        assert!(!help.contains("allow-untested-norminette"));
+        assert!(help.contains("strict-norminette-version"));
     }
 }
