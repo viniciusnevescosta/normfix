@@ -27,10 +27,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
-    ignore:
-      # Pinned exactly and stated in the compatibility policy.
-      - dependency-name: "vite"
-      - dependency-name: "vitepress"
+    groups:
+      site-toolchain:
+        patterns: ["vite", "vitepress", "@vitejs/*"]
+      browser-editor:
+        patterns: ["monaco-editor", "dompurify", "marked"]
 
   - package-ecosystem: github-actions
     directory: "/"

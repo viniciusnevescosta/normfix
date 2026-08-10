@@ -11,6 +11,13 @@
     "web",
     "docs"
   ],
+  "overrides": {
+    "dompurify@<=3.4.12": "3.4.13",
+    "monaco-editor": {
+      "dompurify": "3.4.13"
+    },
+    "vite@<=6.4.2": "6.4.3"
+  },
   "scripts": {
     "build": "npm run build --workspace normfix-playground && npm run build --workspace normfix-docs",
     "build:vercel": "npm run build:vercel --workspace normfix-playground && npm run build --workspace normfix-docs",
