@@ -179,8 +179,48 @@ jobs:
             exit 1
           fi
           gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}" "${prerelease[@]}"
-          # Point every published release at its own curated notes.
-          notes_link="Full notes for this version: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"
+          # Every published release opens with the two commands that install it,
+          # so a reader never has to leave the page to try the version they are
+          # looking at. A pre-release pins its own tag, because the unpinned
+          # installer and the Homebrew formula both track the latest stable.
+          version="${GITHUB_REF_NAME#v}"
+          {
+            echo "## Install"
+            echo
+            case "$version" in
+              *-*)
+                echo '```sh'
+                echo "NORMFIX_VERSION=${GITHUB_REF_NAME} sh -c \"\$(curl -fsSL https://normfix.vercel.app/install.sh)\""
+                echo '```'
+                echo
+                echo "This is a pre-release. The unpinned installer and the Homebrew formula stay on the latest stable version, so the tag above is required to install exactly this build."
+                ;;
+              *)
+                echo '```sh'
+                echo 'curl -fsSL https://normfix.vercel.app/install.sh | sh'
+                echo '```'
+                echo
+                echo "Or with Homebrew:"
+                echo
+                echo '```sh'
+                echo 'brew install viniciusnevescosta/normfix/normfix'
+                echo '```'
+                ;;
+            esac
+            echo
+            echo "The official [Norminette](https://github.com/42School/norminette) is the only requirement:"
+            echo
+            echo '```sh'
+            echo 'pipx install norminette==3.3.59'
+            echo '```'
+            echo
+            echo "Verify the download against \`SHA256SUMS\` below; every archive carries build provenance."
+            echo
+            echo "Full notes for this version: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"
+            echo
+            echo "---"
+            echo
+          } > release-header.md
           gh release view "$GITHUB_REF_NAME" --json body -q .body > generated-notes.md
-          printf '%s\n\n---\n\n' "$notes_link" | cat - generated-notes.md > release-notes.md
+          cat release-header.md generated-notes.md > release-notes.md
           gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md

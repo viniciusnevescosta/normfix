@@ -43,6 +43,35 @@ const BROAD_ROOTS: &[&str] = &[
     "/var",
 ];
 
+/// Why one scope is protected.
+///
+/// This is a discriminant rather than a sentence so the refusal can be stated
+/// in the reader's language without the guard owning any prose.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScopeReason {
+    /// The path is a filesystem root.
+    FilesystemRoot,
+    /// The path is a complete user home directory.
+    HomeDirectory,
+    /// The path lies inside an operating-system-managed tree.
+    OperatingSystemTree,
+    /// The path is a broad system or multi-project directory.
+    BroadDirectory,
+}
+
+impl ScopeReason {
+    /// Returns the translated explanation for this protection.
+    #[must_use]
+    pub const fn describe(self, messages: &normfix_i18n::Messages) -> &'static str {
+        match self {
+            Self::FilesystemRoot => messages.scope_reason_filesystem_root,
+            Self::HomeDirectory => messages.scope_reason_home_directory,
+            Self::OperatingSystemTree => messages.scope_reason_system_tree,
+            Self::BroadDirectory => messages.scope_reason_broad_directory,
+        }
+    }
+}
+
 /// One effective scope that requires an explicit `--force` acknowledgement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SensitiveScope {
@@ -50,8 +79,8 @@ pub struct SensitiveScope {
     pub requested: PathBuf,
     /// Canonical or lexically normalized path used for the decision.
     pub resolved: PathBuf,
-    /// Human-readable reason for the protection.
-    pub reason: &'static str,
+    /// Why the protection applies.
+    pub reason: ScopeReason,
 }
 
 /// Returns the first protected path selected by this invocation.
@@ -132,12 +161,12 @@ fn normalize_lexically(path: &Path) -> PathBuf {
     normalized
 }
 
-fn protected_reason(path: &Path, homes: &[PathBuf]) -> Option<&'static str> {
+fn protected_reason(path: &Path, homes: &[PathBuf]) -> Option<ScopeReason> {
     if path.parent().is_none() {
-        return Some("it is a filesystem root");
+        return Some(ScopeReason::FilesystemRoot);
     }
     if homes.iter().any(|home| path == home) {
-        return Some("it is the complete user home directory");
+        return Some(ScopeReason::HomeDirectory);
     }
 
     if SYSTEM_TREES
@@ -146,14 +175,14 @@ fn protected_reason(path: &Path, homes: &[PathBuf]) -> Option<&'static str> {
         .any(|root| path == root || path.starts_with(root))
         || (cfg!(target_os = "linux") && path.starts_with("/var"))
     {
-        return Some("it is inside an operating-system-managed directory");
+        return Some(ScopeReason::OperatingSystemTree);
     }
 
     BROAD_ROOTS
         .iter()
         .map(Path::new)
         .any(|root| path == root)
-        .then_some("it is a broad system or multi-project directory")
+        .then_some(ScopeReason::BroadDirectory)
 }
 
 #[cfg(test)]

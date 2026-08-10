@@ -300,6 +300,7 @@ fn run(cli: &Cli) -> ExitCode {
         Err(error) => {
             print_run_error(
                 cli.format,
+                cli_messages(cli),
                 &format!("Could not determine the current directory: {error}"),
             );
             return ExitCode::from(2);
@@ -308,18 +309,19 @@ fn run(cli: &Cli) -> ExitCode {
     if cli.command.is_some() && !cli.paths.is_empty() {
         print_run_error(
             cli.format,
+            cli_messages(cli),
             "paths before a subcommand are ambiguous; place every path after `format`, `lint`, `check`, `budget`, or `preflight`",
         );
         return ExitCode::from(2);
     }
     if let Some(Command::Explain(arguments)) = &cli.command {
-        return run_explain(cli.format, &arguments.rule);
+        return run_explain(cli.format, cli_messages(cli), &arguments.rule);
     }
     if let Some(Command::Undo(arguments)) = &cli.command {
         return run_undo(cli, arguments, &cwd);
     }
     if let Some(Command::Upgrade(arguments)) = &cli.command {
-        return run_upgrade(cli.format, arguments.check);
+        return run_upgrade(cli.format, cli_messages(cli), arguments.check);
     }
     let (mut paths, workflow) = selected_workflow(cli);
     let mut git_unexpected = Vec::new();
@@ -328,6 +330,7 @@ fn run(cli: &Cli) -> ExitCode {
         if !paths.is_empty() {
             print_run_error(
                 cli.format,
+                cli_messages(cli),
                 "--changed and --staged select paths themselves and cannot be combined with PATH arguments",
             );
             return ExitCode::from(2);
@@ -338,14 +341,14 @@ fn run(cli: &Cli) -> ExitCode {
                 git_unexpected = unexpected;
             }
             Err(message) => {
-                print_run_error(cli.format, &message);
+                print_run_error(cli.format, cli_messages(cli), &message);
                 return ExitCode::from(2);
             }
         }
     }
     let destructive = DestructiveFlags::from_cli(cli);
     if let Err(message) = validate_run_scope(cli, workflow, destructive, &cwd, &paths, git_scoped) {
-        print_run_error(cli.format, &message);
+        print_run_error(cli.format, cli_messages(cli), &message);
         return ExitCode::from(2);
     }
     let (identity, identity_persistence) =
@@ -371,14 +374,14 @@ fn run(cli: &Cli) -> ExitCode {
         &options,
         identity_persistence,
     ) {
-        print_run_error(cli.format, &message);
+        print_run_error(cli.format, cli_messages(cli), &message);
         return ExitCode::from(2);
     }
     options.destructive_authorization =
-        match authorize_destructive(destructive, cli.force, cli.format) {
+        match authorize_destructive(destructive, cli.force, cli_messages(cli), cli.format) {
             Ok(authorization) => authorization,
             Err(message) => {
-                print_run_error(cli.format, &message);
+                print_run_error(cli.format, cli_messages(cli), &message);
                 return ExitCode::from(2);
             }
         };
@@ -395,7 +398,7 @@ fn finish_run(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCode {
     match run_fixes(paths, options) {
         Ok(report) => {
             if let Err(message) = render_report(cli, &report) {
-                print_run_error(cli.format, &message);
+                print_run_error(cli.format, cli_messages(cli), &message);
                 return ExitCode::from(2);
             }
             if cli.format == OutputFormat::Human && io::stderr().is_terminal() {
@@ -404,14 +407,18 @@ fn finish_run(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCode {
             ExitCode::from(report.exit_code())
         }
         Err(error) => {
-            print_run_error(cli.format, &error.to_string());
+            print_run_error(cli.format, cli_messages(cli), &error.to_string());
             ExitCode::from(2)
         }
     }
 }
 
 /// Replaces the running binary with the newest published release.
-fn run_upgrade(format: OutputFormat, check_only: bool) -> ExitCode {
+fn run_upgrade(
+    format: OutputFormat,
+    messages: &normfix_i18n::Messages,
+    check_only: bool,
+) -> ExitCode {
     match upgrade::upgrade(env!("CARGO_PKG_VERSION"), check_only) {
         Ok(upgrade::Outcome::Current(version)) => {
             println!("normfix {version} is already the newest release.");
@@ -430,7 +437,7 @@ fn run_upgrade(format: OutputFormat, check_only: bool) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(message) => {
-            print_run_error(format, &message);
+            print_run_error(format, messages, &message);
             ExitCode::from(2)
         }
     }
@@ -473,9 +480,7 @@ fn invalid_invocation(
         );
     }
     if cli.force && !destructive.any() && !protected_scope {
-        return Some(
-            "--force requires --unsafe, --remove-unused, --remove-unexpected, or a protected system scope",
-        );
+        return Some(cli_messages(cli).force_without_target);
     }
     if cli.interactive
         && (cli.format != OutputFormat::Human
@@ -505,10 +510,13 @@ fn validate_run_scope(
         return Err(message.to_owned());
     }
     if let Some(protected) = protected.as_ref().filter(|_| !cli.force) {
-        return Err(format!(
-            "refusing to scan or modify protected scope `{}` because {}; inspect the path and pass --force to acknowledge it explicitly",
-            protected.resolved.display(),
-            protected.reason
+        let messages = cli_messages(cli);
+        return Err(normfix_i18n::fill(
+            messages.scope_refusal,
+            &[
+                ("scope", &protected.resolved.display().to_string()),
+                ("reason", protected.reason.describe(messages)),
+            ],
         ));
     }
     Ok(())
@@ -639,10 +647,7 @@ fn announce_execution(
 ) -> Result<(), String> {
     // Only the human block is localized. The JSON event keeps English values so
     // a script never has to select a language to parse the same run.
-    let messages = match cli.format {
-        OutputFormat::Human => normfix_i18n::messages(resolve_locale(cli).locale),
-        OutputFormat::Json => normfix_i18n::messages(normfix_i18n::Locale::English),
-    };
+    let messages = cli_messages(cli);
     let scope = execution_scope(cli, paths, git_scoped, &options.cwd, messages);
     let identity = options.identity.as_ref().map_or_else(
         || messages.identity_unavailable.to_owned(),
@@ -775,6 +780,16 @@ fn resolve_locale(cli: &Cli) -> normfix_i18n::Resolution {
     normfix_i18n::resolve(cli.lang.as_deref(), |name| std::env::var(name).ok())
 }
 
+/// Returns the catalogue for this invocation's output.
+///
+/// JSON is machine output and stays English whatever the reader's language is.
+fn cli_messages(cli: &Cli) -> &'static normfix_i18n::Messages {
+    match cli.format {
+        OutputFormat::Human => normfix_i18n::messages(resolve_locale(cli).locale),
+        OutputFormat::Json => normfix_i18n::messages(normfix_i18n::Locale::English),
+    }
+}
+
 const fn workflow_name(cli: &Cli, workflow: Workflow) -> &'static str {
     match workflow {
         Workflow::Default | Workflow::Format if cli.diff => "diff",
@@ -829,6 +844,7 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
     {
         print_run_error(
             cli.format,
+            cli_messages(cli),
             "--interactive requires a human terminal on standard input, output, and error",
         );
         return ExitCode::from(2);
@@ -836,6 +852,7 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
     if options.mode != ReportMode::Fix || options.lint_only {
         print_run_error(
             cli.format,
+            cli_messages(cli),
             "--interactive is available with the default or `format` workflow, without --check or --diff",
         );
         return ExitCode::from(2);
@@ -848,6 +865,7 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
     {
         print_run_error(
             cli.format,
+            cli_messages(cli),
             "--interactive cannot be combined with destructive or --unsafe operations",
         );
         return ExitCode::from(2);
@@ -861,6 +879,7 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
         Err(error) => {
             print_run_error(
                 cli.format,
+                cli_messages(cli),
                 &format!("Could not capture the interactive run clock: {error}"),
             );
             return ExitCode::from(2);
@@ -869,12 +888,12 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
     let preview = match run_fixes(paths, &preview_options) {
         Ok(report) => report,
         Err(error) => {
-            print_run_error(cli.format, &error.to_string());
+            print_run_error(cli.format, cli_messages(cli), &error.to_string());
             return ExitCode::from(2);
         }
     };
     if let Err(message) = render_report(cli, &preview) {
-        print_run_error(cli.format, &message);
+        print_run_error(cli.format, cli_messages(cli), &message);
         return ExitCode::from(2);
     }
     let candidates = preview
@@ -901,12 +920,12 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
     let report = match run_fixes(paths, &final_options) {
         Ok(report) => report,
         Err(error) => {
-            print_run_error(cli.format, &error.to_string());
+            print_run_error(cli.format, cli_messages(cli), &error.to_string());
             return ExitCode::from(2);
         }
     };
     if let Err(message) = render_report(cli, &report) {
-        print_run_error(cli.format, &message);
+        print_run_error(cli.format, cli_messages(cli), &message);
         return ExitCode::from(2);
     }
     let code = report.exit_code();
@@ -995,11 +1014,12 @@ fn selected_workflow(cli: &Cli) -> (Vec<PathBuf>, Workflow) {
     }
 }
 
-fn run_explain(format: OutputFormat, rule: &str) -> ExitCode {
+fn run_explain(format: OutputFormat, messages: &normfix_i18n::Messages, rule: &str) -> ExitCode {
     let canonical = rule.trim().to_ascii_uppercase();
     let Some(explanation) = rules::explain(&canonical) else {
         print_run_error(
             format,
+            messages,
             &format!(
                 "No bundled explanation exists for `{canonical}`. The rule remains available in the normal diagnostic report."
             ),
@@ -1027,7 +1047,7 @@ fn run_undo(cli: &Cli, arguments: &UndoArguments, cwd: &std::path::Path) -> Exit
     let runs = match collect_undo_runs(cli.backup_dir.as_deref(), cwd) {
         Ok(runs) => runs,
         Err(message) => {
-            print_run_error(cli.format, &message);
+            print_run_error(cli.format, cli_messages(cli), &message);
             return ExitCode::from(2);
         }
     };
@@ -1044,18 +1064,19 @@ fn run_undo(cli: &Cli, arguments: &UndoArguments, cwd: &std::path::Path) -> Exit
             || "No intact backup run exists for this project.".to_owned(),
             |run_id| format!("No intact backup run named `{run_id}` exists for this project."),
         );
-        print_run_error(cli.format, &detail);
+        print_run_error(cli.format, cli_messages(cli), &detail);
         return ExitCode::from(2);
     };
     if !cli.force {
-        if let Err(message) = confirm_undo(selected, cli.format) {
-            print_run_error(cli.format, &message);
+        if let Err(message) = confirm_undo(selected, cli) {
+            print_run_error(cli.format, cli_messages(cli), &message);
             return ExitCode::from(2);
         }
     }
     let Some(backup_root) = selected.journal.parent().and_then(std::path::Path::parent) else {
         print_run_error(
             cli.format,
+            cli_messages(cli),
             "The selected recovery journal has no backup root.",
         );
         return ExitCode::from(2);
@@ -1088,7 +1109,7 @@ fn run_undo(cli: &Cli, arguments: &UndoArguments, cwd: &std::path::Path) -> Exit
             ExitCode::SUCCESS
         }
         Err(error) => {
-            print_run_error(cli.format, &error.to_string());
+            print_run_error(cli.format, cli_messages(cli), &error.to_string());
             ExitCode::from(2)
         }
     }
@@ -1153,29 +1174,40 @@ fn render_undo_list(format: OutputFormat, runs: &[UndoRun]) {
     }
 }
 
-fn confirm_undo(run: &UndoRun, format: OutputFormat) -> Result<(), String> {
-    if format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal() {
-        return Err("undo requires an interactive y/N confirmation or --force".to_owned());
+fn confirm_undo(run: &UndoRun, cli: &Cli) -> Result<(), String> {
+    let messages = cli_messages(cli);
+    if cli.format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal()
+    {
+        return Err(messages.undo_needs_confirmation.to_owned());
     }
     eprintln!(
-        "Restore {} file(s) from {}? Later edits are protected and will cause refusal.",
-        run.files.len(),
-        run.run_id
+        "{}",
+        normfix_i18n::fill(
+            messages.undo_question,
+            &[
+                ("count", &run.files.len().to_string()),
+                ("run", &run.run_id),
+            ],
+        )
     );
-    eprint!("Continue? [y/N] ");
+    eprint!("{}", messages.undo_prompt);
     let _ = io::stderr().flush();
     let mut answer = String::new();
+    // The accepted answer stays `y` in every language: it is a protocol token,
+    // like a flag. A prompt that offered a translated letter and then rejected
+    // it would be a trap in exactly the place that must not have one.
     let confirmed = io::stdin()
         .read_line(&mut answer)
         .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
     confirmed
         .then_some(())
-        .ok_or_else(|| "undo was cancelled; no files were changed".to_owned())
+        .ok_or_else(|| messages.undo_cancelled.to_owned())
 }
 
 fn authorize_destructive(
     destructive: DestructiveFlags,
     force: bool,
+    messages: &normfix_i18n::Messages,
     format: OutputFormat,
 ) -> Result<Option<DestructiveAuthorization>, String> {
     let mut capabilities = Vec::new();
@@ -1202,23 +1234,20 @@ fn authorize_destructive(
             .map_err(|error| error.to_string());
     }
     if format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal() {
-        return Err(
-            "destructive operations require an interactive y/N confirmation or --force".to_owned(),
-        );
+        return Err(messages.destructive_needs_confirmation.to_owned());
     }
-    eprintln!(
-        "WARNING: this run may remove proven-dead static code, proven-missing or trivia-only Makefile entries, unused missing-implementation header prototypes, and/or move unexpected files."
-    );
-    eprint!("Continue with recoverable destructive operations? [y/N] ");
+    eprintln!("{}", messages.destructive_warning);
+    eprint!("{}", messages.destructive_prompt);
     let _ = io::stderr().flush();
     let mut answer = String::new();
+    // `y` is the accepted answer in every language; see `confirm_undo`.
     let confirmed = io::stdin()
         .read_line(&mut answer)
         .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
     request
         .authorize_yes(confirmed)
         .map(Some)
-        .map_err(|_| "destructive operations were cancelled; no files were changed".to_owned())
+        .map_err(|_| messages.destructive_cancelled.to_owned())
 }
 
 fn prompt_for_identity(
@@ -1284,12 +1313,12 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
         .map_err(|_| "timeout is outside the supported range".to_owned())
 }
 
-fn print_run_error(format: OutputFormat, message: &str) {
+fn print_run_error(format: OutputFormat, messages: &normfix_i18n::Messages, message: &str) {
     match format {
         OutputFormat::Human => {
             eprintln!("normfix");
             eprintln!("error: {}", terminal_safe_inline(message));
-            eprintln!("No unvalidated changes were written.");
+            eprintln!("{}", messages.error_nothing_written);
         }
         OutputFormat::Json => {
             let value = serde_json::json!({
@@ -1450,9 +1479,14 @@ mod tests {
 
         assert!(invalid_invocation(&cli, Workflow::Default, destructive, true).is_none());
         assert!(
-            authorize_destructive(destructive, cli.force, OutputFormat::Json)
-                .expect("no destructive request")
-                .is_none()
+            authorize_destructive(
+                destructive,
+                cli.force,
+                normfix_i18n::messages(normfix_i18n::Locale::English),
+                OutputFormat::Json,
+            )
+            .expect("no destructive request")
+            .is_none()
         );
     }
 
@@ -1464,8 +1498,13 @@ mod tests {
             remove_orphan_prototypes: false,
             remove_unexpected: false,
         };
-        let error = authorize_destructive(destructive, false, OutputFormat::Json)
-            .expect_err("JSON may not prompt");
+        let error = authorize_destructive(
+            destructive,
+            false,
+            normfix_i18n::messages(normfix_i18n::Locale::English),
+            OutputFormat::Json,
+        )
+        .expect_err("JSON may not prompt");
         assert!(error.contains("require an interactive"));
     }
 

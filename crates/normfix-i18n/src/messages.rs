@@ -154,6 +154,38 @@ pub struct Messages {
     pub report_estimate_caveat: &'static str,
     /// Heading above located hard failures.
     pub report_hard_fail_heading: &'static str,
+
+    /// Refusal for a protected scope. Placeholders: `{scope}`, `{reason}`.
+    pub scope_refusal: &'static str,
+    /// Reason: the path is a filesystem root.
+    pub scope_reason_filesystem_root: &'static str,
+    /// Reason: the path is a complete user home directory.
+    pub scope_reason_home_directory: &'static str,
+    /// Reason: the path is inside an operating-system-managed tree.
+    pub scope_reason_system_tree: &'static str,
+    /// Reason: the path is a broad system or multi-project directory.
+    pub scope_reason_broad_directory: &'static str,
+    /// `--force` was supplied with nothing for it to acknowledge.
+    pub force_without_target: &'static str,
+
+    /// Standing warning shown before a destructive run is authorized.
+    pub destructive_warning: &'static str,
+    /// Destructive confirmation question. The `[y/N]` token stays literal.
+    pub destructive_prompt: &'static str,
+    /// A destructive run outside an interactive terminal.
+    pub destructive_needs_confirmation: &'static str,
+    /// The person declined the destructive confirmation.
+    pub destructive_cancelled: &'static str,
+    /// An undo outside an interactive terminal.
+    pub undo_needs_confirmation: &'static str,
+    /// Undo question. Placeholders: `{count}`, `{run}`.
+    pub undo_question: &'static str,
+    /// Undo confirmation prompt. The `[y/N]` token stays literal.
+    pub undo_prompt: &'static str,
+    /// The person declined the undo confirmation.
+    pub undo_cancelled: &'static str,
+    /// Reassurance printed under a failed run.
+    pub error_nothing_written: &'static str,
 }
 
 /// Returns the catalogue for `locale`.
@@ -238,6 +270,23 @@ const ENGLISH: Messages = Messages {
     report_estimate_value: "{verdict} | grade {grade} | {score}/100",
     report_estimate_caveat: "This estimate is heuristic and never replaces the official evaluation.",
     report_hard_fail_heading: "Hard-fail evidence",
+
+    scope_refusal: "refusing to scan or modify protected scope `{scope}` because {reason}; inspect the path and pass --force to acknowledge it explicitly",
+    scope_reason_filesystem_root: "it is a filesystem root",
+    scope_reason_home_directory: "it is the complete user home directory",
+    scope_reason_system_tree: "it is inside an operating-system-managed directory",
+    scope_reason_broad_directory: "it is a broad system or multi-project directory",
+    force_without_target: "--force requires --unsafe, --remove-unused, --remove-unexpected, or a protected system scope",
+
+    destructive_warning: "WARNING: this run may remove proven-dead static code, proven-missing or trivia-only Makefile entries, unused missing-implementation header prototypes, and/or move unexpected files.",
+    destructive_prompt: "Continue with recoverable destructive operations? [y/N] ",
+    destructive_needs_confirmation: "destructive operations require an interactive y/N confirmation or --force",
+    destructive_cancelled: "destructive operations were cancelled; no files were changed",
+    undo_needs_confirmation: "undo requires an interactive y/N confirmation or --force",
+    undo_question: "Restore {count} file(s) from {run}? Later edits are protected and will cause refusal.",
+    undo_prompt: "Continue? [y/N] ",
+    undo_cancelled: "undo was cancelled; no files were changed",
+    error_nothing_written: "No unvalidated changes were written.",
 };
 
 const PORTUGUESE: Messages = Messages {
@@ -311,6 +360,23 @@ const PORTUGUESE: Messages = Messages {
     report_estimate_value: "{verdict} | nota {grade} | {score}/100",
     report_estimate_caveat: "Esta estimativa é heurística e nunca substitui a avaliação oficial.",
     report_hard_fail_heading: "Evidências de reprovação",
+
+    scope_refusal: "recusando ler ou modificar o escopo protegido `{scope}` porque {reason}; inspecione o caminho e passe --force para reconhecê-lo explicitamente",
+    scope_reason_filesystem_root: "é a raiz do sistema de arquivos",
+    scope_reason_home_directory: "é o diretório pessoal completo do usuário",
+    scope_reason_system_tree: "está dentro de um diretório gerenciado pelo sistema operacional",
+    scope_reason_broad_directory: "é um diretório amplo do sistema ou com vários projetos",
+    force_without_target: "--force exige --unsafe, --remove-unused, --remove-unexpected ou um escopo protegido do sistema",
+
+    destructive_warning: "ATENÇÃO: esta execução pode remover código static comprovadamente morto, entradas do Makefile comprovadamente ausentes ou só com trivialidades, protótipos de cabeçalho sem implementação e sem uso, e/ou mover arquivos inesperados.",
+    destructive_prompt: "Continuar com as operações destrutivas recuperáveis? [y/N] ",
+    destructive_needs_confirmation: "operações destrutivas exigem uma confirmação interativa y/N ou --force",
+    destructive_cancelled: "as operações destrutivas foram canceladas; nenhum arquivo foi alterado",
+    undo_needs_confirmation: "desfazer exige uma confirmação interativa y/N ou --force",
+    undo_question: "Restaurar {count} arquivo(s) de {run}? Edições posteriores são protegidas e causarão recusa.",
+    undo_prompt: "Continuar? [y/N] ",
+    undo_cancelled: "o desfazer foi cancelado; nenhum arquivo foi alterado",
+    error_nothing_written: "Nenhuma alteração não validada foi gravada.",
 };
 
 const SPANISH: Messages = Messages {
@@ -384,6 +450,23 @@ const SPANISH: Messages = Messages {
     report_estimate_value: "{verdict} | nota {grade} | {score}/100",
     report_estimate_caveat: "Esta estimación es heurística y nunca sustituye a la evaluación oficial.",
     report_hard_fail_heading: "Evidencias de suspenso",
+
+    scope_refusal: "se rechaza leer o modificar el alcance protegido `{scope}` porque {reason}; inspecciona la ruta y pasa --force para reconocerla explícitamente",
+    scope_reason_filesystem_root: "es la raíz del sistema de archivos",
+    scope_reason_home_directory: "es el directorio personal completo del usuario",
+    scope_reason_system_tree: "está dentro de un directorio gestionado por el sistema operativo",
+    scope_reason_broad_directory: "es un directorio amplio del sistema o con varios proyectos",
+    force_without_target: "--force requiere --unsafe, --remove-unused, --remove-unexpected o un alcance protegido del sistema",
+
+    destructive_warning: "ATENCIÓN: esta ejecución puede eliminar código static probadamente muerto, entradas del Makefile probadamente ausentes o solo con trivialidades, prototipos de cabecera sin implementación y sin uso, y/o mover archivos inesperados.",
+    destructive_prompt: "¿Continuar con las operaciones destructivas recuperables? [y/N] ",
+    destructive_needs_confirmation: "las operaciones destructivas requieren una confirmación interactiva y/N o --force",
+    destructive_cancelled: "las operaciones destructivas se cancelaron; no se modificó ningún archivo",
+    undo_needs_confirmation: "deshacer requiere una confirmación interactiva y/N o --force",
+    undo_question: "¿Restaurar {count} archivo(s) de {run}? Las ediciones posteriores están protegidas y provocarán un rechazo.",
+    undo_prompt: "¿Continuar? [y/N] ",
+    undo_cancelled: "el deshacer se canceló; no se modificó ningún archivo",
+    error_nothing_written: "No se escribió ningún cambio sin validar.",
 };
 
 const FRENCH: Messages = Messages {
@@ -457,12 +540,32 @@ const FRENCH: Messages = Messages {
     report_estimate_value: "{verdict} | note {grade} | {score}/100",
     report_estimate_caveat: "Cette estimation est heuristique et ne remplace jamais l'évaluation officielle.",
     report_hard_fail_heading: "Preuves d'échec",
+
+    scope_refusal: "refus de lire ou de modifier la portée protégée `{scope}` car {reason} ; inspectez le chemin et passez --force pour l'accepter explicitement",
+    scope_reason_filesystem_root: "c'est une racine du système de fichiers",
+    scope_reason_home_directory: "c'est le répertoire personnel complet de l'utilisateur",
+    scope_reason_system_tree: "il se trouve dans un répertoire géré par le système d'exploitation",
+    scope_reason_broad_directory: "c'est un répertoire système large ou contenant plusieurs projets",
+    force_without_target: "--force exige --unsafe, --remove-unused, --remove-unexpected ou une portée système protégée",
+
+    destructive_warning: "ATTENTION : cette exécution peut supprimer du code static prouvé mort, des entrées de Makefile prouvées absentes ou sans code, des prototypes d'en-tête sans implémentation ni usage, et/ou déplacer des fichiers inattendus.",
+    destructive_prompt: "Continuer avec les opérations destructives récupérables ? [y/N] ",
+    destructive_needs_confirmation: "les opérations destructives exigent une confirmation interactive y/N ou --force",
+    destructive_cancelled: "les opérations destructives ont été annulées ; aucun fichier n'a été modifié",
+    undo_needs_confirmation: "l'annulation exige une confirmation interactive y/N ou --force",
+    undo_question: "Restaurer {count} fichier(s) depuis {run} ? Les modifications ultérieures sont protégées et provoqueront un refus.",
+    undo_prompt: "Continuer ? [y/N] ",
+    undo_cancelled: "l'annulation a été abandonnée ; aucun fichier n'a été modifié",
+    error_nothing_written: "Aucune modification non validée n'a été écrite.",
 };
 
 #[cfg(test)]
 mod tests {
     use crate::{Locale, PUBLISHED, messages};
 
+    // One line per catalogue entry: the list is long by construction, and
+    // splitting it would only hide which entries the guards actually cover.
+    #[allow(clippy::too_many_lines)]
     fn entries(messages: &'static super::Messages) -> Vec<(&'static str, &'static str)> {
         vec![
             ("starting_banner", messages.starting_banner),
@@ -563,6 +666,36 @@ mod tests {
                 "report_hard_fail_heading",
                 messages.report_hard_fail_heading,
             ),
+            ("scope_refusal", messages.scope_refusal),
+            (
+                "scope_reason_filesystem_root",
+                messages.scope_reason_filesystem_root,
+            ),
+            (
+                "scope_reason_home_directory",
+                messages.scope_reason_home_directory,
+            ),
+            (
+                "scope_reason_system_tree",
+                messages.scope_reason_system_tree,
+            ),
+            (
+                "scope_reason_broad_directory",
+                messages.scope_reason_broad_directory,
+            ),
+            ("force_without_target", messages.force_without_target),
+            ("destructive_warning", messages.destructive_warning),
+            ("destructive_prompt", messages.destructive_prompt),
+            (
+                "destructive_needs_confirmation",
+                messages.destructive_needs_confirmation,
+            ),
+            ("destructive_cancelled", messages.destructive_cancelled),
+            ("undo_needs_confirmation", messages.undo_needs_confirmation),
+            ("undo_question", messages.undo_question),
+            ("undo_prompt", messages.undo_prompt),
+            ("undo_cancelled", messages.undo_cancelled),
+            ("error_nothing_written", messages.error_nothing_written),
         ]
     }
 
