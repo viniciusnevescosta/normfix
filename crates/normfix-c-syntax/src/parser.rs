@@ -405,6 +405,19 @@ mod tests {
     }
 
     #[test]
+    fn function_typedefs_are_not_function_prototype_facts() {
+        let mut parser = CParser::new().expect("embedded C grammar must load");
+        let source = concat!(
+            "typedef int\tt_callback(void);\n",
+            "typedef int\t(*t_callback_pointer)(void);\n",
+        );
+        let parsed = parser.parse(source).expect("valid function typedefs");
+
+        assert!(parsed.issues().is_empty());
+        assert!(parsed.facts().functions.is_empty());
+    }
+
+    #[test]
     fn structural_facts_cover_controls_calls_returns_tags_and_null_checks() {
         let mut parser = CParser::new().expect("embedded C grammar must load");
         let source = concat!(

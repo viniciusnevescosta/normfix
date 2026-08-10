@@ -271,7 +271,9 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
                     facts.functions.push(fact);
                 }
             }
-            "declaration" if !has_ancestor_kind(node, "function_definition") => {
+            "declaration" | "type_definition"
+                if !has_ancestor_kind(node, "function_definition") =>
+            {
                 if let Some(fact) = prototype_fact(source, node)? {
                     facts.functions.push(fact);
                 }
@@ -409,6 +411,13 @@ fn function_definition_fact(
 }
 
 fn prototype_fact(source: &str, node: Node<'_>) -> Result<Option<CFunctionFact>, ParseFailure> {
+    // A function typedef and a function-pointer typedef both contain a
+    // `function_declarator` in Tree-sitter's C grammar, but neither declares a
+    // callable function symbol. Keep this exclusion at the fact boundary so no
+    // downstream consumer can mistake a type alias for a prototype.
+    if declaration_is_typedef(source, node)? {
+        return Ok(None);
+    }
     let function_nodes = descendants_kind(node, "function_declarator");
     if function_nodes.len() != 1 {
         return Ok(None);
@@ -436,6 +445,18 @@ fn prototype_fact(source: &str, node: Node<'_>) -> Result<Option<CFunctionFact>,
         returns_pointer: declarator_returns_pointer(node, function),
         kind: CFunctionKind::Prototype,
     }))
+}
+
+fn declaration_is_typedef(source: &str, node: Node<'_>) -> Result<bool, ParseFailure> {
+    if node.kind() == "type_definition" || has_ancestor_kind(node, "type_definition") {
+        return Ok(true);
+    }
+    for child in direct_named_children(node) {
+        if child.kind() == "storage_class_specifier" && node_text(source, child)? == "typedef" {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn enum_fact(source: &str, node: Node<'_>) -> Result<Option<EnumConstantFact>, ParseFailure> {
