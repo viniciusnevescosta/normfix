@@ -10,6 +10,75 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.0.0-rc.3] / 2026-08-10
+
+The third release candidate. normfix now speaks the reader's language for the
+text it writes itself, and every release page tells you how to install the
+version you are looking at.
+
+### Added
+
+- **A locale layer that cannot be half-translated.** `crates/normfix-i18n` owns
+  language selection and the message catalogue. Each language is one struct
+  literal, so an entry that some locale does not translate is a build failure
+  rather than a review item. Two tests cover what the type system cannot: no
+  entry may be empty, and a translation must carry the same `{placeholder}` set
+  as its English original. Placeholders are named, so a translation is free to
+  reorder them — Portuguese and Spanish put the grade word before its value
+  where English does not.
+
+- **`--lang`, and a process locale that is only a hint.** Selection follows
+  `--lang`, then `NORMFIX_LANG`, `LC_ALL`, `LC_MESSAGES`, and `LANG`, then
+  English. Only the primary subtag matters, so `pt_BR.UTF-8` is Portuguese. An
+  unpublished `--lang` value continues in English with one advisory; an
+  unpublished process locale falls back silently, because a hint is not a
+  decision. Neither is ever fatal: output language must not be a reason to
+  refuse to analyze a project.
+
+- **English, Portuguese, Spanish, and French terminal output** for the run
+  announcement, the report's own prose, and — the part that actually matters —
+  every safety-critical prompt. The destructive warning and confirmation, the
+  undo confirmation, the protected-scope refusal with its reason, and the line
+  stating that nothing was written are all translated. A reader being asked in
+  a language they do not read to confirm an irreversible operation is a real
+  gap, not a cosmetic one.
+
+- **Install commands at the top of every release.** A reader who lands on a
+  release page wants to try that version. Stable releases open with the curl
+  installer and the Homebrew formula; a pre-release prints the pinned
+  `NORMFIX_VERSION=` form and says why, since the unpinned installer and the
+  formula both track the latest stable release.
+
+### Changed
+
+- **The scope guard returns a reason, not a sentence.** It decides which scopes
+  are protected; the catalogue owns the words. This is what let the refusal be
+  translated without moving any part of the decision into the message.
+
+- **`--format json` is never localized.** The `execution_start` event and the
+  final report keep English values in every language, so a script never has to
+  select a locale to stay reliable. The `y` answer to a confirmation prompt is
+  the same kind of token and also stays English in every language: a prompt
+  that offered a translated letter and then rejected it would be a trap in
+  exactly the place that must not have one.
+
+### Notes
+
+Rule messages from the analysis backends are still English, and a non-English
+run prints one line saying so. That line is not an apology; it is the honest
+description of a partially translated report, and removing it is part of
+translating the backends in 1.1 rather than a cosmetic change of its own.
+
+Status tokens in the file table and severity words stay English beside the rule
+IDs they belong to.
+
+The browser and documentation work that this candidate was originally scheduled
+to carry shipped early, in rc.2. `docs/ROADMAP.md` now records what actually
+landed where.
+
+Splitting `crates/normfix-engine/src/pipeline.rs` remains the first change
+after 1.0.0.
+
 ## [1.0.0-rc.2] / 2026-08-10
 
 The second release candidate. It is about answering the question a student
@@ -502,6 +571,7 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[1.0.0-rc.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.1
 [0.4.0-beta.5]: https://github.com/viniciusnevescosta/normfix/releases/tag/v0.4.0-beta.5

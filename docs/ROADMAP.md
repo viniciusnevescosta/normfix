@@ -18,14 +18,21 @@ archives, and browser build are green.
   analyzer, sanitizer, and non-conclusive evaluation guidance;
 - publish the operational contract for AI agents.
 
-### 1.0.0-rc.3 — browser and documentation
+### 1.0.0-rc.3 — terminal language and release ergonomics
 
-- Monaco-based multi-file playground for C, headers, Makefiles, and README
-  documents;
-- local-only 42 identity support for official headers;
-- English, Portuguese, Spanish, and French navigation/content foundations;
-- GitHub project metadata, official dependency links, examples, and SEO;
-- a dependency tree with no known npm advisory in the shipped lockfile.
+The browser and documentation work originally planned here shipped early, in
+rc.2: the Monaco multi-file playground, local-only 42 identity, the four-locale
+navigation foundations, dependency links and SEO, and an advisory-free
+lockfile are all published. This candidate carries what took their place.
+
+- a locale layer whose catalogue cannot be incomplete, because each language is
+  one struct literal and a missing translation fails the build;
+- language selection from `--lang` or the process locale, falling back to
+  English without ever making output language a reason to refuse a run;
+- the run announcement, the report's own prose, and every safety-critical
+  prompt in English, Portuguese, Spanish, and French;
+- JSON that stays language-neutral in every locale;
+- release notes that open with the commands that install that exact version.
 
 ### 1.0.0 — stable contract
 
@@ -40,11 +47,17 @@ The first code change after the 1.0.0 tag is splitting
 intentionally deferred so the release-candidate behavior is not obscured by a
 large structural diff.
 
-## 1.1 — localized terminal experience
+## 1.1 — complete the terminal translation
 
-Translate human diagnostics and help into Portuguese, Spanish, and French.
-Command and flag spellings remain stable English API tokens. JSON keys, rule
-IDs, and exit codes stay language-neutral.
+rc.3 localized the text normfix itself authors. This line finishes the job:
+the `explain` catalogue, command-line help, and the rule messages produced by
+the analysis backends. Until then a non-English run says plainly that backend
+messages are still English, because a localized frame that implies otherwise is
+worse than an English one.
+
+Command and flag spellings remain stable English API tokens, as does the `y`
+answer to a confirmation prompt. JSON keys, values, rule IDs, and exit codes
+stay language-neutral.
 
 ## 1.2 — project initialization
 

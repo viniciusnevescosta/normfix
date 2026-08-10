@@ -37,8 +37,8 @@ Create an annotated tag whose text is exactly the workspace version prefixed by
 `v`. The tagged commit must already be contained in `main`:
 
 ```sh
-git tag -a v1.0.0-rc.2 -m 'normfix 1.0.0-rc.2'
-git push origin v1.0.0-rc.2
+git tag -a v1.0.0-rc.3 -m 'normfix 1.0.0-rc.3'
+git push origin v1.0.0-rc.3
 ```
 
 `.github/workflows/release.yml` then:
