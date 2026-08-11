@@ -10,7 +10,10 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
-## Unreleased
+## [1.3.0] / 2026-08-11
+
+The playground stops needing a network, and starts behaving like a workbench
+for a real project instead of a text box that formats one file.
 
 ### Added
 
@@ -35,6 +38,36 @@ Published archives, checksums, and build provenance live on the
 - **Each language installs as its own app.** The playground publishes one web
   app manifest per locale, so an installed playground opens under the name and
   in the language its reader chose.
+
+- **Drop files, or a whole project folder.** A dropped folder keeps its
+  structure, so `libft/src/ft_strlen.c` arrives under that path rather than
+  flattened. Object files, the compiled binary, `.git`, and editor settings are
+  skipped rather than treated as errors — refusing an entire drop over one file
+  normfix does not format would make the feature useless for the case it exists
+  for. Nothing is skipped quietly: the count is always reported, and when
+  nothing usable arrived, the first rejected path says exactly why.
+
+- **Fix every file at once, or only the one in front of you.** Applying results
+  one at a time was the only option, which does not scale to a real project. A
+  run still covers the whole project, because a header and the file that
+  includes it are judged correctly only together; the new choice is what to do
+  with the answer.
+
+### Changed
+
+- **Downloads are a `.zip` instead of a `.tar`.** Every desktop platform opens
+  a zip by double-clicking it; several need a separate tool for a tar. This
+  also removes a path rule that only existed to satisfy the tar header format
+  and rejected deeply nested but perfectly portable project layouts.
+
+- **Importing skips what normfix does not format instead of failing.** Choosing
+  or dropping thirty files no longer fails because one of them is an object
+  file. The count of what was skipped is always shown.
+
+- **Counted messages agree with their number in every language.** "1 arquivos
+  adicionados" is wrong in Portuguese, Spanish, and French alike. Messages with
+  a count now carry one entry per plural category, with a test that fails if a
+  locale uses one wording for one and for many.
 
 ### Fixed
 
@@ -876,6 +909,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.3.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.0
 [1.2.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.2.0
 [1.1.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.0
 [1.0.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0

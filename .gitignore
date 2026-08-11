@@ -44,3 +44,4 @@ htmlcov/
 /docs/.vitepress/dist/
 /.vercel-rust/
 /.vercel/
+.claude/
