@@ -10,6 +10,83 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.1.0] / 2026-08-11
+
+Two things: `normfix explain` now answers in your language, and the engine's
+largest module is finally readable.
+
+### Added
+
+- **The `explain` catalogue in four languages.** This was the largest remaining
+  English surface: you could run the entire tool in Portuguese and still get a
+  four-paragraph article in English the moment you asked what a rule meant. All
+  twenty-five articles now exist in English, Portuguese, Spanish, and French.
+
+  The rule identifier stays language-neutral and its mapping to an article
+  happens once, shared by every locale, so a translation can change the words
+  but never which rule an explanation belongs to. Each locale matches
+  exhaustively on the article key, which makes an untranslated article a build
+  failure rather than an English paragraph inside a translated answer. A second
+  test catches the copy-paste that compiles perfectly: a translated article that
+  still carries the English explanation.
+
+### Changed
+
+- **`pipeline.rs` is split into focused modules.** This is the change deferred
+  through all three release candidates, so that release-candidate behavior was
+  never obscured by a large structural diff. The file went from 4882 lines to
+  2210, and eight modules now carry the rest: the path vocabulary, the
+  recoverable quarantine, the compiler and analyzer boundary, Makefile handling,
+  README handling, diagnostic construction, the function policy, and the
+  preflight advisories.
+
+  Each module took its tests with it, which is most of the point. A test for
+  recovery-storage overlap now sits beside the function that creates that
+  storage, and the two column-convention tests sit beside the code that
+  reconciles display columns with byte columns, instead of four thousand lines
+  away.
+
+  Behavior is unchanged: the public API is identical and the differential gate
+  still holds.
+
+### Fixed
+
+- **The playground star count was frozen.** It used `cache: "force-cache"`,
+  which serves a stored response regardless of its age. GitHub sends
+  `max-age=60` with an ETag, and force-cache ignores both, so whatever count a
+  browser saw first was the count it kept showing — a star added hours earlier
+  never appeared. The default cache mode respects that freshness window and then
+  revalidates conditionally, which is both fresher and cheaper than refetching.
+
+- **No documentation link changes your language any more.** Clicking Architecture
+  from the Portuguese site loaded the English page and took the whole site with
+  it: navigation, language selector, and every subsequent link. Six documents are
+  maintained in English — the architecture record, the release process, the
+  roadmap, the changelog, and the two files GitHub expects at the repository
+  root — and each is now mirrored into every locale at build time, so the reader
+  stays on their own route with a banner in their language saying the body below
+  is English.
+
+- **The site remembers the language you picked**, sharing the playground's
+  storage key so a choice made in one carries into the other. The landing route
+  follows the stored choice, then the browser languages, then English. A URL that
+  names a locale is never overridden, so a shared link opens the page it names.
+
+- **The Homebrew path is documented in both directions.** The release notes
+  offered `normfix upgrade`, which refuses on a Homebrew-managed binary, so the
+  single instruction shown was the one that would not work for a `brew` user.
+  Both commands now appear, and `brew uninstall` is near the top of the
+  uninstall page in all four languages.
+
+### Notes
+
+Command-line help and the rule messages produced by the analysis backends are
+still English, and a non-English run keeps saying so in one line. Finishing that
+is 1.2: it needs a diagnostic to carry a stable key and typed arguments instead
+of a rendered English sentence, because the dynamic parts are already
+interpolated by the time a renderer sees them. `docs/ROADMAP.md` records the
+plan.
+
 ## [1.0.0] / 2026-08-10
 
 The stable release.
@@ -692,6 +769,7 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[1.1.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.0
 [1.0.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0
 [1.0.0-rc.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.2

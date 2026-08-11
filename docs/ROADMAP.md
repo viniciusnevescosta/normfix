@@ -48,25 +48,35 @@ The first code change after the 1.0.0 tag is splitting
 intentionally deferred so the release-candidate behavior is not obscured by a
 large structural diff.
 
-## 1.1 — complete the terminal translation
+## 1.1 — explanations in your language, and a readable engine
 
-rc.3 localized the text normfix itself authors. This line finishes the job:
-the `explain` catalogue, command-line help, and the rule messages produced by
-the analysis backends. Until then a non-English run says plainly that backend
-messages are still English, because a localized frame that implies otherwise is
-worse than an English one.
+Shipped. `normfix explain` answers in English, Portuguese, Spanish, or French,
+and `crates/normfix-engine/src/pipeline.rs` is split into focused modules — the
+change that was deferred through all three release candidates.
+
+## 1.2 — finish the terminal translation
+
+Command-line help and the rule messages produced by the analysis backends are
+still English. Both need the same thing: a diagnostic has to carry a stable key
+and typed arguments rather than a rendered English sentence, because the
+dynamic parts are already interpolated by the time a renderer sees them. The
+JSON `message` keeps its English value throughout, so automation is unaffected.
+
+Until that lands, a non-English run says plainly that backend messages are
+still English, because a localized frame that implies otherwise is worse than
+an English one.
 
 Command and flag spellings remain stable English API tokens, as does the `y`
 answer to a confirmation prompt. JSON keys, values, rule IDs, and exit codes
 stay language-neutral.
 
-## 1.2 — project initialization
+## 1.3 — project initialization
 
 Add a guided `normfix init` workflow that can create a project name, allowed
 function policy, `main.c`, header, Makefile, README, `src/`, and `tests/` from
 explicit user choices and the stored 42 identity.
 
-## 1.3 — platform hardening
+## 1.4 — platform hardening
 
 Reserve this line for bug fixes, security work, measured performance changes,
 and native Windows x86-64/ARM64 support. Windows support includes filesystem,

@@ -47,7 +47,7 @@ the newest pre-release so the current release candidate remains installable.
 Two environment variables change what it does:
 
 ```sh
-NORMFIX_VERSION=v1.0.0 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+NORMFIX_VERSION=v1.1.0 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
 
@@ -81,10 +81,10 @@ verify it against `SHA256SUMS`, and place `normfix` on `PATH`.
 | macOS Intel | `normfix-x86_64-macos.tar.gz` |
 | macOS Apple Silicon | `normfix-aarch64-macos.tar.gz` |
 
-For example, on Apple Silicon with release `1.0.0`:
+For example, on Apple Silicon with release `1.1.0`:
 
 ```sh
-version=1.0.0
+version=1.1.0
 archive="normfix-aarch64-macos.tar.gz"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/${archive}"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/SHA256SUMS"
