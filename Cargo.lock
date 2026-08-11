@@ -817,6 +817,7 @@ dependencies = [
  "normfix-core",
  "normfix-destructive",
  "normfix-header",
+ "normfix-i18n",
  "normfix-makefile",
  "normfix-markdown",
  "normfix-oracle",

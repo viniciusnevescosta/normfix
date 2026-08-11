@@ -11,9 +11,11 @@ use std::path::{Path, PathBuf};
 
 use camino::Utf8PathBuf;
 use normfix_core::{Diagnostic, DiagnosticSource, Severity, TextRange, TextSize};
+use normfix_i18n::DiagnosticKey;
 use normfix_project::{DiscoveredFile, ProjectFileKind};
 
 use super::FixOptions;
+use super::diagnostics::localized_text;
 use super::paths::{absolute_lexical, report_path};
 
 // Every preflight notice is written here so the complete set of pre-defense
@@ -50,26 +52,19 @@ pub(super) fn append_preflight_diagnostics(
         diagnostics
             .entry(notice_file.path.clone())
             .or_default()
-            .push(Diagnostic {
-                rule_id: "MAKEFILE_NOT_FOUND".to_owned(),
-                path,
-                range: TextRange::empty(TextSize::new(0)),
-                severity: Severity::Info,
-                message:
-                    "No regular Makefile was selected or found at the project root, so build-target and source-list checks did not run."
-                        .to_owned(),
-                source: DiagnosticSource::Project,
-                notes: vec![
-                    "This is normal for a piscina exercise, where only .c files are expected: a Makefile and project headers are both optional."
-                        .to_owned(),
-                    "Absence is never a hard fail. Only the subject can say whether a Makefile is required, and normfix does not read subjects."
-                        .to_owned(),
-                ],
-                help: Some(
-                    "Ignore this when the subject expects loose .c files; add or select the Makefile when it expects one."
-                        .to_owned(),
-                ),
-                localized: None,
+            .push({
+                let text = localized_text(options.locale, DiagnosticKey::MakefileNotFound, &[]);
+                Diagnostic {
+                    rule_id: "MAKEFILE_NOT_FOUND".to_owned(),
+                    path,
+                    range: TextRange::empty(TextSize::new(0)),
+                    severity: Severity::Info,
+                    message: text.message,
+                    source: DiagnosticSource::Project,
+                    notes: text.notes,
+                    help: text.help,
+                    localized: text.localized,
+                }
             });
     } else if unevaluated_root_makefile {
         let path = report_path(&notice_file.path, &options.cwd)
@@ -77,24 +72,19 @@ pub(super) fn append_preflight_diagnostics(
         diagnostics
             .entry(notice_file.path.clone())
             .or_default()
-            .push(Diagnostic {
-                rule_id: "MAKEFILE_NOT_EVALUATED".to_owned(),
-                path,
-                range: TextRange::empty(TextSize::new(0)),
-                severity: Severity::Warning,
-                message:
-                    "A regular Makefile exists at the project root but was not selected, so preflight did not evaluate it."
-                        .to_owned(),
-                source: DiagnosticSource::Project,
-                notes: vec![
-                    "Its header, targets, recipes, and source references are absent from this report."
-                        .to_owned(),
-                ],
-                help: Some(
-                    "Include the root Makefile explicitly, or run preflight from the project root without a partial file scope."
-                        .to_owned(),
-                ),
-                localized: None,
+            .push({
+                let text = localized_text(options.locale, DiagnosticKey::MakefileNotEvaluated, &[]);
+                Diagnostic {
+                    rule_id: "MAKEFILE_NOT_EVALUATED".to_owned(),
+                    path,
+                    range: TextRange::empty(TextSize::new(0)),
+                    severity: Severity::Warning,
+                    message: text.message,
+                    source: DiagnosticSource::Project,
+                    notes: text.notes,
+                    help: text.help,
+                    localized: text.localized,
+                }
             });
     }
     let Some(file) = selected

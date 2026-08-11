@@ -12,6 +12,7 @@ publish.workspace = true
 description = "Conservative orchestration and proof pipeline for normfix"
 
 [dependencies]
+normfix-i18n = { path = "../normfix-i18n" }
 blake3.workspace = true
 camino.workspace = true
 normfix-actions = { path = "../normfix-actions" }

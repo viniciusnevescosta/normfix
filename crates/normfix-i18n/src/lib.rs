@@ -6,9 +6,11 @@
 //! to select English to remain reliable.
 
 mod articles;
+mod diagnostics;
 mod messages;
 
 pub use articles::{ARTICLE_KEYS, Article, ArticleKey, article, article_key};
+pub use diagnostics::{DIAGNOSTIC_KEYS, DiagnosticKey, DiagnosticText, diagnostic_text};
 pub use messages::{Messages, messages};
 
 /// A published human-output language.

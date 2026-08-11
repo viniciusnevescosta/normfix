@@ -138,6 +138,11 @@ pub struct FixOptions {
     pub respect_gitignore: bool,
     /// Worker count, or `None` for the hardware-aware Rayon default.
     pub threads: Option<usize>,
+    /// Language for the diagnostics this project authors.
+    ///
+    /// Findings from the official checker and the C compiler are unaffected:
+    /// that text is those tools' own output.
+    pub locale: normfix_i18n::Locale,
     /// Verified 42 identity, when available.
     pub identity: Option<Identity42>,
     /// Explanation of identity discovery or refusal.
@@ -201,6 +206,7 @@ impl FixOptions {
             run_clock: None,
             respect_gitignore: false,
             threads: None,
+            locale: normfix_i18n::Locale::English,
             identity: None,
             identity_source: "No verified 42 student email was found.".to_owned(),
             backup: BackupPolicy::Automatic,

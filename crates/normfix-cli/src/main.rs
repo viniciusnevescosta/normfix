@@ -296,6 +296,7 @@ impl DestructiveFlags {
 
 /// Everything resolved before the engine options are assembled.
 struct OptionsInput {
+    locale: normfix_i18n::Locale,
     workflow: Workflow,
     git_scoped: bool,
     scope_is_empty: bool,
@@ -386,6 +387,9 @@ fn run(cli: &Cli) -> ExitCode {
         cli,
         cwd,
         OptionsInput {
+            // JSON output stays English, so the engine follows the same rule
+            // the report and the announcement already do.
+            locale: cli_locale(cli),
             workflow,
             git_scoped,
             scope_is_empty: paths.is_empty(),
@@ -642,6 +646,7 @@ fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions
         BackupPolicy::Automatic
     };
     options.norminette_executable.clone_from(&cli.norminette);
+    options.locale = input.locale;
     options.strict_norminette_version = cli.strict_norminette_version;
     options.compiler_preflight = !cli.no_compiler_preflight;
     options.compiler_executable.clone_from(&cli.cc);

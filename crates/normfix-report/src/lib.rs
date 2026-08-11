@@ -908,7 +908,7 @@ fn render_diagnostics(
                 severity: diagnostic.severity,
                 rule_id: diagnostic.rule_id.clone(),
                 source: diagnostic.source.clone(),
-                help: diagnostic.help.clone(),
+                help: reader_text(diagnostic).2.cloned(),
             })
             .or_default()
             .push(diagnostic);
@@ -957,7 +957,8 @@ fn render_rule_group(
     let mut missing_sources: Vec<String> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
     for diagnostic in diagnostics.iter().take(shown) {
-        for note in &diagnostic.notes {
+        let (reader_message, reader_notes, _) = reader_text(diagnostic);
+        for note in reader_notes {
             let note = terminal_safe_inline(note);
             if !notes.contains(&note) {
                 notes.push(note);
@@ -966,7 +967,7 @@ fn render_rule_group(
         let label = if diagnostics.len() == 1 {
             String::new()
         } else {
-            terminal_safe_inline(&diagnostic.message)
+            terminal_safe_inline(reader_message)
         };
         let source = sources
             .get(diagnostic.path.as_path())
@@ -1000,7 +1001,7 @@ fn render_rule_group(
     };
     let file_word = if paths.len() == 1 { "file" } else { "files" };
     let title = if diagnostics.len() == 1 {
-        terminal_safe_inline(&diagnostics[0].message)
+        terminal_safe_inline(reader_text(diagnostics[0]).0)
     } else {
         format!(
             "{} {occurrence_word} in {} {file_word}",
@@ -1158,12 +1159,12 @@ fn render_one_diagnostic(
     diagnostic: &Diagnostic,
     source: Option<&str>,
 ) -> String {
+    let (reader_message, reader_notes, reader_help) = reader_text(diagnostic);
     let rule_id = terminal_safe_inline(&diagnostic.rule_id);
-    let message = terminal_safe_inline(&diagnostic.message);
+    let message = terminal_safe_inline(reader_message);
     let path = safe_path(&diagnostic.path);
-    let help = diagnostic.help.as_deref().map(terminal_safe_inline);
-    let notes = diagnostic
-        .notes
+    let help = reader_help.map(|help| terminal_safe_inline(help));
+    let notes = reader_notes
         .iter()
         .map(|note| terminal_safe_inline(note))
         .collect::<Vec<_>>();
@@ -1272,6 +1273,30 @@ fn render_summary(output: &mut String, paint: &Paint, report: &RunReport, messag
             &[("duration", &format_duration(report.duration_seconds))]
         )
     );
+}
+
+/// Returns the text a reader should see for a diagnostic.
+///
+/// A diagnostic authored by this project carries a translation; one relayed
+/// from the official checker or the C compiler does not, and is shown exactly
+/// as that tool produced it.
+fn reader_text(diagnostic: &Diagnostic) -> (&str, &[String], Option<&String>) {
+    diagnostic.localized.as_ref().map_or_else(
+        || {
+            (
+                diagnostic.message.as_str(),
+                diagnostic.notes.as_slice(),
+                diagnostic.help.as_ref(),
+            )
+        },
+        |localized| {
+            (
+                localized.message.as_str(),
+                localized.notes.as_slice(),
+                localized.help.as_ref(),
+            )
+        },
+    )
 }
 
 fn has_blocking_diagnostic(diagnostics: &[Diagnostic]) -> bool {

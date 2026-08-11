@@ -9,12 +9,62 @@ use std::collections::{BTreeMap, BTreeSet};
 use camino::Utf8PathBuf;
 use normfix_c_semantics::{ArrayBoundKind, analyze as analyze_semantics};
 use normfix_c_syntax::CParser;
-use normfix_core::{Diagnostic, DiagnosticSource, Severity, TextRange, TextSize};
+use normfix_core::{Diagnostic, DiagnosticSource, Localized, Severity, TextRange, TextSize};
 use normfix_header::ByteRange;
+use normfix_i18n::{DiagnosticKey, DiagnosticText, Locale, diagnostic_text, fill};
 use normfix_oracle::NorminetteDiagnostic;
 use normfix_project::DiscoveredFile;
 
 use super::OracleContext;
+
+/// A diagnostic's text, ready to spread into a `Diagnostic`.
+pub(super) struct Text {
+    /// English summary. This is what reaches JSON and what equality uses.
+    pub message: String,
+    /// English context lines.
+    pub notes: Vec<String>,
+    /// English next step.
+    pub help: Option<String>,
+    /// The same three in the reader's language, when it is not English.
+    pub localized: Option<Localized>,
+}
+
+/// Renders a diagnostic in English and, when the reader's language differs,
+/// in that language too.
+///
+/// English is always produced: it is what reaches JSON, what equality and
+/// ordering use, and the only text when the reader reads English.
+pub(super) fn localized_text(
+    locale: Locale,
+    key: DiagnosticKey,
+    arguments: &[(&str, &str)],
+) -> Text {
+    let render = |text: DiagnosticText| {
+        (
+            fill(text.message, arguments),
+            text.notes
+                .iter()
+                .map(|note| fill(note, arguments))
+                .collect::<Vec<_>>(),
+            fill(text.help, arguments),
+        )
+    };
+    let (message, notes, help) = render(diagnostic_text(Locale::English, key));
+    let localized = (locale != Locale::English).then(|| {
+        let (message, notes, help) = render(diagnostic_text(locale, key));
+        Localized {
+            message,
+            notes,
+            help: Some(help),
+        }
+    });
+    Text {
+        message,
+        notes,
+        help: Some(help),
+        localized,
+    }
+}
 
 pub(super) fn project_diagnostic(
     path: Utf8PathBuf,
