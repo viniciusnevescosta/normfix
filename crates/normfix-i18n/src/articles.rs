@@ -225,9 +225,9 @@ fn english(key: ArticleKey) -> Article {
         },
         ArticleKey::MakefileNotFound => Article {
             title: "No project-root Makefile was available for preflight",
-            why: "No regular Makefile was selected or found at the project root, so build-target and source-list checks are incomplete.",
-            next: "Read the current subject and evaluation sheet. Add or select the required Makefile when the subject expects one.",
-            safety: "Some subjects do not require a Makefile, so absence remains an advisory until project policy can prove that requirement.",
+            why: "No regular Makefile was selected or found at the project root, so build-target and source-list checks did not run. This is normal for a piscina exercise, where only .c files are expected and both a Makefile and project headers are optional.",
+            next: "Ignore this when the subject expects loose .c files. Add or select the Makefile when it expects one.",
+            safety: "Absence is never a hard fail and costs no score. Only the subject can say whether a Makefile is required, and normfix does not read subjects.",
         },
         ArticleKey::MakefileNotEvaluated => Article {
             title: "The project-root Makefile was outside the preflight scope",
@@ -383,9 +383,9 @@ fn portuguese(key: ArticleKey) -> Article {
         },
         ArticleKey::MakefileNotFound => Article {
             title: "Nenhum Makefile na raiz do projeto estava disponível para o preflight",
-            why: "Nenhum Makefile regular foi selecionado ou encontrado na raiz do projeto, então as verificações de alvos de build e de lista de fontes estão incompletas.",
-            next: "Leia a ficha de assunto e de avaliação atual. Adicione ou selecione o Makefile exigido quando o assunto esperar um.",
-            safety: "Alguns assuntos não exigem Makefile, então a ausência continua sendo um aviso até que a política do projeto possa provar essa exigência.",
+            why: "Nenhum Makefile regular foi selecionado ou encontrado na raiz do projeto, então as verificações de alvos de build e de lista de fontes não rodaram. Isso é normal em um exercício de piscina, onde só arquivos .c são esperados e tanto o Makefile quanto os cabeçalhos do projeto são opcionais.",
+            next: "Ignore isso quando o assunto espera arquivos .c soltos. Adicione ou selecione o Makefile quando ele exigir um.",
+            safety: "A ausência nunca reprova e não custa nota. Só o assunto pode dizer se um Makefile é exigido, e o normfix não lê assuntos.",
         },
         ArticleKey::MakefileNotEvaluated => Article {
             title: "O Makefile da raiz do projeto ficou fora do escopo do preflight",
@@ -541,9 +541,9 @@ fn spanish(key: ArticleKey) -> Article {
         },
         ArticleKey::MakefileNotFound => Article {
             title: "No había un Makefile en la raíz del proyecto para el preflight",
-            why: "No se seleccionó ni se encontró un Makefile regular en la raíz del proyecto, así que las comprobaciones de objetivos de compilación y de lista de fuentes están incompletas.",
-            next: "Lee la ficha de asignatura y de evaluación actual. Añade o selecciona el Makefile exigido cuando la asignatura espere uno.",
-            safety: "Algunas asignaturas no exigen Makefile, así que su ausencia sigue siendo un aviso hasta que la política del proyecto pueda probar esa exigencia.",
+            why: "No se seleccionó ni se encontró un Makefile regular en la raíz del proyecto, así que las comprobaciones de objetivos de compilación y de lista de fuentes no se ejecutaron. Esto es normal en un ejercicio de piscina, donde solo se esperan archivos .c y tanto el Makefile como las cabeceras del proyecto son opcionales.",
+            next: "Ignora esto cuando la asignatura espera archivos .c sueltos. Añade o selecciona el Makefile cuando exija uno.",
+            safety: "La ausencia nunca suspende y no cuesta nota. Solo la asignatura puede decir si se exige un Makefile, y normfix no lee asignaturas.",
         },
         ArticleKey::MakefileNotEvaluated => Article {
             title: "El Makefile de la raíz quedó fuera del alcance del preflight",
@@ -699,9 +699,9 @@ fn french(key: ArticleKey) -> Article {
         },
         ArticleKey::MakefileNotFound => Article {
             title: "Aucun Makefile à la racine du projet n'était disponible pour le preflight",
-            why: "Aucun Makefile ordinaire n'a été sélectionné ni trouvé à la racine du projet, donc les vérifications de cibles de compilation et de liste de sources sont incomplètes.",
-            next: "Lisez la fiche de sujet et d'évaluation actuelle. Ajoutez ou sélectionnez le Makefile exigé quand le sujet en attend un.",
-            safety: "Certains sujets n'exigent pas de Makefile, donc son absence reste un avis tant que la politique du projet ne peut pas prouver cette exigence.",
+            why: "Aucun Makefile ordinaire n'a été sélectionné ni trouvé à la racine du projet, donc les vérifications de cibles de compilation et de liste de sources n'ont pas eu lieu. C'est normal pour un exercice de piscine, où seuls des fichiers .c sont attendus et où le Makefile comme les en-têtes du projet sont facultatifs.",
+            next: "Ignorez ceci quand le sujet attend des fichiers .c isolés. Ajoutez ou sélectionnez le Makefile quand il en exige un.",
+            safety: "Une absence n'échoue jamais et ne coûte aucun point. Seul le sujet peut dire si un Makefile est exigé, et normfix ne lit pas les sujets.",
         },
         ArticleKey::MakefileNotEvaluated => Article {
             title: "Le Makefile de la racine était hors de la portée du preflight",

@@ -48,7 +48,7 @@ camino = { version = "1.2", features = ["serde1"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
 clap = { version = "4.5", features = ["derive"] }
 comrak = { version = "0.54", default-features = false }
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
 filetime = "0.2"
 # 0.4.30 uses `let` chains, which need a newer compiler than the declared MSRV,
 # and the crate publishes no `rust-version` for the resolver to honor. Raise this

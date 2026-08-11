@@ -130,9 +130,11 @@ New findings that remain in the final shadow are included too.
 README absence is not a hard fail. When a README is present, an informational
 advisory asks you to compare it with the current subject/evaluation sheet.
 If no regular Makefile is selected or found at the project root,
-`MAKEFILE_NOT_FOUND` says build verification is incomplete. It remains an
-advisory because not every subject requires a Makefile and no subject policy was
-proven.
+`MAKEFILE_NOT_FOUND` reports that build-target and source-list checks did not
+run. It is an advisory and costs no score: a piscina exercise is expected to
+contain only `.c` files, so a Makefile and project headers are both optional
+there. Only the subject can say whether a Makefile is required, and normfix
+does not read subjects.
 
 ## What it does not do
 

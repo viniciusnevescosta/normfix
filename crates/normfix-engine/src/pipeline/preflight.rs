@@ -56,15 +56,17 @@ pub(super) fn append_preflight_diagnostics(
                 range: TextRange::empty(TextSize::new(0)),
                 severity: Severity::Info,
                 message:
-                    "No regular Makefile was selected or found at the project root; build verification is incomplete."
+                    "No regular Makefile was selected or found at the project root, so build-target and source-list checks did not run."
                         .to_owned(),
                 source: DiagnosticSource::Project,
                 notes: vec![
-                    "Some 42 subjects do not require a Makefile, so absence alone is not a hard fail without subject-specific policy."
+                    "This is normal for a piscina exercise, where only .c files are expected: a Makefile and project headers are both optional."
+                        .to_owned(),
+                    "Absence is never a hard fail. Only the subject can say whether a Makefile is required, and normfix does not read subjects."
                         .to_owned(),
                 ],
                 help: Some(
-                    "Check the current subject and evaluation sheet; add or select the required Makefile before relying on preflight."
+                    "Ignore this when the subject expects loose .c files; add or select the Makefile when it expects one."
                         .to_owned(),
                 ),
             });

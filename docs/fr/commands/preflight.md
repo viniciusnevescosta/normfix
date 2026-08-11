@@ -136,9 +136,11 @@ dans l'ombre finale sont également inclus.
 L'absence de README n'est pas un échec. Quand un README est présent, un avis
 informatif vous demande de le comparer à la fiche de sujet/évaluation actuelle.
 Si aucun Makefile ordinaire n'est sélectionné ni trouvé à la racine du projet,
-`MAKEFILE_NOT_FOUND` indique que la vérification de compilation est incomplète.
-Cela reste un avis, car tous les sujets n'exigent pas un Makefile et aucune
-politique de projet n'a été prouvée.
+`MAKEFILE_NOT_FOUND` signale que les vérifications de cibles de compilation et
+de liste de sources n'ont pas eu lieu. C'est un avis et cela ne coûte aucun
+point : un exercice de piscine est censé ne contenir que des fichiers `.c`, donc
+le Makefile comme les en-têtes du projet y sont facultatifs. Seul le sujet peut
+dire si un Makefile est exigé, et normfix ne lit pas les sujets.
 
 ## Ce qu'il ne fait pas
 

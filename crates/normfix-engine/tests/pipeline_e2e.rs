@@ -1430,6 +1430,57 @@ exit 1
     }));
 }
 
+#[test]
+fn a_piscina_scope_of_loose_c_files_is_a_clean_preflight() {
+    // A piscina exercise is expected to contain only `.c` files. Neither a
+    // Makefile nor a project header exists, and neither absence may cost a
+    // point or produce anything above an advisory.
+    let fixture = Fixture::clean_oracle();
+    fs::write(
+        fixture.project.path().join("normfix.toml"),
+        "[project]\nname = \"fixture\"\nallowed = []\n",
+    )
+    .expect("policy fixture");
+    let header = build_c_header(
+        "ft_strlen.c",
+        &identity(),
+        &RunClock::fixed("2026/07/23 12:34:56").expect("fixed test clock"),
+    )
+    .expect("valid official header");
+    fs::write(
+        fixture.project.path().join("ft_strlen.c"),
+        format!("{header}\n\nint\tft_strlen(void)\n{{\n\treturn (0);\n}}\n"),
+    )
+    .expect("piscina source");
+    let tools = TempDir::new().expect("compiler tools");
+    let compiler = executable_script(&tools, "cc", CC_VERSION_ONLY);
+    let mut options = fixture.options(ReportMode::Check);
+    options.preflight = true;
+    options.compiler_executable = Some(compiler);
+
+    let report = run_fixes(&[], &options).expect("piscina preflight");
+    let evaluation = report.evaluation.as_ref().expect("preflight evaluation");
+
+    assert!(evaluation.hard_failures.is_empty());
+    assert_eq!(report.summary.remaining, 0);
+    // A perfect score: the missing Makefile is normal here, not a deduction.
+    assert_eq!(evaluation.score, 100);
+
+    let makefile_notice = report
+        .files
+        .iter()
+        .flat_map(|file| &file.after)
+        .find(|diagnostic| diagnostic.rule_id == "MAKEFILE_NOT_FOUND")
+        .expect("the absence is still reported, just not as a problem");
+    assert_eq!(makefile_notice.severity, Severity::Info);
+    assert!(
+        makefile_notice
+            .notes
+            .iter()
+            .any(|note| note.contains("piscina"))
+    );
+}
+
 fn only_child_directory(root: &Path) -> PathBuf {
     let mut children = fs::read_dir(root)
         .expect("read quarantine root")

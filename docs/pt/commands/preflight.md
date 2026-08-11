@@ -133,9 +133,11 @@ A ausência de README não é uma reprovação. Quando um README está presente,
 aviso informativo pede que você o compare com a ficha de assunto/avaliação
 atual.
 Se nenhum Makefile regular for selecionado ou encontrado na raiz do projeto,
-`MAKEFILE_NOT_FOUND` diz que a verificação de build está incompleta. Ele
-permanece um aviso porque nem todo assunto exige um Makefile e nenhuma política
-de projeto foi comprovada.
+`MAKEFILE_NOT_FOUND` informa que as verificações de alvos de build e de lista de
+fontes não rodaram. É um aviso e não custa nota: um exercício de piscina espera
+conter apenas arquivos `.c`, então o Makefile e os cabeçalhos do projeto são
+ambos opcionais ali. Só o assunto pode dizer se um Makefile é exigido, e o
+normfix não lê assuntos.
 
 ## O que ele não faz
 

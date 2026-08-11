@@ -135,9 +135,11 @@ final también se incluyen.
 La ausencia de README no es un suspenso. Cuando hay un README presente, un aviso
 informativo te pide compararlo con la ficha de asignatura/evaluación actual.
 Si no se selecciona ni se encuentra un Makefile regular en la raíz del proyecto,
-`MAKEFILE_NOT_FOUND` dice que la verificación de compilación está incompleta.
-Sigue siendo un aviso porque no toda asignatura exige un Makefile y no se ha
-probado ninguna política de proyecto.
+`MAKEFILE_NOT_FOUND` informa de que las comprobaciones de objetivos de
+compilación y de lista de fuentes no se ejecutaron. Es un aviso y no cuesta
+nota: un ejercicio de piscina espera contener solo archivos `.c`, así que el
+Makefile y las cabeceras del proyecto son ambos opcionales allí. Solo la
+asignatura puede decir si se exige un Makefile, y normfix no lee asignaturas.
 
 ## Qué no hace
 
