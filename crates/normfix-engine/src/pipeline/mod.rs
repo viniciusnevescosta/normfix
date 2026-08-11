@@ -1805,6 +1805,7 @@ fn budget_diagnostics(path: &Utf8PathBuf, source: &str) -> Vec<Diagnostic> {
                         "Keep headroom for defense-day changes; limits already exceeded are also reported as warnings."
                             .to_owned(),
                     ),
+                    localized: None,
                 })
                 .collect()
         },
@@ -2113,6 +2114,7 @@ pub(super) fn append_header_issues(
         source: DiagnosticSource::NativeNorm41,
         notes: Vec::new(),
         help: Some(issue.suggestion.clone()),
+        localized: None,
     }));
 }
 

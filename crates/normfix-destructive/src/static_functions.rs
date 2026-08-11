@@ -772,6 +772,7 @@ fn blocking_diagnostic(
         source: DiagnosticSource::Project,
         notes: vec!["No destructive edit was emitted for this candidate.".to_owned()],
         help: Some(help.to_owned()),
+        localized: None,
     }
 }
 

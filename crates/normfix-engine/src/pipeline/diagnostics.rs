@@ -31,6 +31,7 @@ pub(super) fn project_diagnostic(
         source: DiagnosticSource::Project,
         notes: Vec::new(),
         help: Some(help.to_owned()),
+        localized: None,
     }
 }
 
@@ -72,6 +73,7 @@ pub(super) fn official_diagnostics(
             source: DiagnosticSource::NorminetteCompat(norminette_version.to_owned()),
             notes: Vec::new(),
             help: Some(diagnostic_help(&item.rule_id).to_owned()),
+            localized: None,
         })
         .collect()
 }
@@ -356,6 +358,7 @@ pub(super) fn parser_diagnostics(path: &Utf8PathBuf, source: &str) -> Vec<Diagno
                         }
                         .to_owned(),
                     ),
+                    localized: None,
                 }
             })
             .collect(),
@@ -407,6 +410,7 @@ pub(super) fn point_diagnostic(
         source,
         notes: Vec::new(),
         help,
+        localized: None,
     }
 }
 
@@ -471,6 +475,7 @@ pub(super) fn explain_constant_array_false_positives(
                 "No code change is required; keep the enum definition visible before this array."
                     .to_owned(),
             ),
+            localized: None,
         });
         false
     });

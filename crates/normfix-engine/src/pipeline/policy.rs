@@ -274,6 +274,7 @@ pub(super) fn append_function_policy_diagnostics(
                         "Remove the call or add it to [project].allowed only when the 42 subject explicitly permits it."
                             .to_owned(),
                     ),
+                    localized: None,
                 },
             ));
         }

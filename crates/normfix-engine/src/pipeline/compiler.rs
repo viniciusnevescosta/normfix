@@ -520,6 +520,7 @@ pub(super) fn compiler_report_diagnostics(
                     "Fix this strict -Wall/-Wextra/-Werror compiler diagnostic, then rerun normfix."
                         .to_owned()
                 }),
+                localized: None,
             }
         })
         .collect::<Vec<_>>();

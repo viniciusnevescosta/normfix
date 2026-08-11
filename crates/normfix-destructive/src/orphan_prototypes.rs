@@ -192,6 +192,7 @@ pub fn plan_orphan_prototypes(
             source: DiagnosticSource::Project,
             notes,
             help: Some(help.to_owned()),
+            localized: None,
         });
     }
 
@@ -413,6 +414,7 @@ fn empty_implementation_diagnostics(
                         "Implement the required behavior, or verify against the subject that this no-op API is intentional."
                             .to_owned(),
                     ),
+                    localized: None,
                 });
             }
         }
@@ -649,6 +651,7 @@ fn blocking_diagnostic(
         source: DiagnosticSource::Project,
         notes: vec!["No destructive prototype edit was emitted.".to_owned()],
         help: Some(help.to_owned()),
+        localized: None,
     }
 }
 

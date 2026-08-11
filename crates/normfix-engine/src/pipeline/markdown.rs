@@ -41,6 +41,7 @@ pub(super) fn process_markdown(
             source: DiagnosticSource::Markdown,
             notes: Vec::new(),
             help: Some(issue.help),
+            localized: None,
         })
         .collect::<Vec<_>>();
     if options.preflight {
@@ -60,6 +61,7 @@ pub(super) fn process_markdown(
                 "Compare the document with the current subject and evaluation sheet: required overview, instructions, resources, attribution, and project-specific sections vary by cursus project."
                     .to_owned(),
             ),
+            localized: None,
         });
     }
     after.sort();

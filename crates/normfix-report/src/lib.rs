@@ -1435,6 +1435,7 @@ mod tests {
             source: DiagnosticSource::NativeNorm41,
             notes: vec!["main() has 30 body lines".to_owned()],
             help: Some("Extract one coherent responsibility into a static helper.".to_owned()),
+            localized: None,
         }
     }
 
@@ -1878,6 +1879,7 @@ mod tests {
                 source: DiagnosticSource::Makefile,
                 notes: Vec::new(),
                 help: None,
+                localized: None,
             }],
             original: Some(Arc::clone(&source)),
             fixed: Some(source),

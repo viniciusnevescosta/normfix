@@ -10,6 +10,36 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.1.1] / 2026-08-11
+
+### Fixed
+
+- **Preflight stopped implying that a piscina exercise is missing something.**
+  A piscina exercise is expected to contain only `.c` files, so a Makefile and
+  project headers are both optional there. The score was already correct —
+  `MAKEFILE_NOT_FOUND` is informational and the deduction only counts
+  severities above Info — but the advisory read as a to-do list: "add or select
+  the required Makefile before relying on preflight."
+
+  It now says what is true: the check did not run, that is normal for loose
+  `.c` files, absence is never a hard fail and costs no score, and only the
+  subject can say whether a Makefile is required, which normfix cannot read. A
+  regression test locks it: loose `.c` files with no Makefile and no header
+  score 100 with no hard failures.
+
+### Changed
+
+- Dependency updates: blake3 1.8.6, clap 4.6.6, criterion 0.7.0, and
+  `actions/setup-python` v7. Criterion 0.8 is deliberately not taken because it
+  requires Rust 1.86 and the supported minimum is 1.85.
+
+### Notes
+
+The differential gate was re-run against the installed official Norminette for
+this release: a run still never leaves a file with more official diagnostics
+than it started with, a second run changes nothing, and a file that compiled
+still compiles.
+
 ## [1.1.0] / 2026-08-11
 
 Two things: `normfix explain` now answers in your language, and the engine's
@@ -769,6 +799,7 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
 [1.1.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.0
 [1.0.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0
 [1.0.0-rc.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.3

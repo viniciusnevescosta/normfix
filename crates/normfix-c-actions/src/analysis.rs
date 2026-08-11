@@ -730,6 +730,7 @@ fn diagnostic(
         source: DiagnosticSource::NativeNorm41,
         notes,
         help,
+        localized: None,
     }
 }
 
@@ -749,6 +750,7 @@ fn review_diagnostic(
         source: DiagnosticSource::NativeNorm41,
         notes: vec!["Review required; no project-wide semantic edit was applied.".to_owned()],
         help: Some(help.into()),
+        localized: None,
     }
 }
 

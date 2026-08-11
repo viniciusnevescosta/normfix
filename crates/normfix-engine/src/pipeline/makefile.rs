@@ -188,6 +188,7 @@ pub(super) fn makefile_diagnostics(
                 .into_iter()
                 .collect(),
             help: Some(item.suggestion),
+            localized: None,
         })
         .collect::<Vec<_>>();
     let remaining_sources = reconcile_source_references(source, false, |reference| {
@@ -212,6 +213,7 @@ pub(super) fn makefile_diagnostics(
                 "Create/correct the source path, or use the explicitly authorized unsafe removal mode to remove this exact stale token."
                     .to_owned(),
             ),
+            localized: None,
         }
     }));
     diagnostics.extend(remaining_sources.empty.into_iter().map(|reference| Diagnostic {
@@ -232,6 +234,7 @@ pub(super) fn makefile_diagnostics(
             "Implement the source, remove the stale entry manually, or use explicitly authorized unsafe mode to remove this exact empty token."
                 .to_owned(),
         ),
+        localized: None,
     }));
     diagnostics
 }

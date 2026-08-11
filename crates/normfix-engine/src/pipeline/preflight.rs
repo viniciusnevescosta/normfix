@@ -69,6 +69,7 @@ pub(super) fn append_preflight_diagnostics(
                     "Ignore this when the subject expects loose .c files; add or select the Makefile when it expects one."
                         .to_owned(),
                 ),
+                localized: None,
             });
     } else if unevaluated_root_makefile {
         let path = report_path(&notice_file.path, &options.cwd)
@@ -93,6 +94,7 @@ pub(super) fn append_preflight_diagnostics(
                     "Include the root Makefile explicitly, or run preflight from the project root without a partial file scope."
                         .to_owned(),
                 ),
+                localized: None,
             });
     }
     let Some(file) = selected
@@ -147,6 +149,7 @@ pub(super) fn append_preflight_diagnostics(
                 "Complete the subject-specific manual checks shown in the evaluation sheet before defense."
                     .to_owned(),
             ),
+            localized: None,
         });
 }
 

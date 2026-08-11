@@ -603,8 +603,23 @@ pub fn apply_source_edits(source: &str, edits: &[SourceEdit]) -> Result<String, 
     Ok(result)
 }
 
+/// A diagnostic's text rendered in the reader's language.
+///
+/// This never reaches JSON and never participates in equality or ordering. The
+/// English text is a diagnostic's identity: translating one must not change
+/// which diagnostics count as duplicates, or the order they are reported in.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Localized {
+    /// Translated summary.
+    pub message: String,
+    /// Translated context, in the same order as the English notes.
+    pub notes: Vec<String>,
+    /// Translated next step.
+    pub help: Option<String>,
+}
+
 /// Backend-neutral, deterministically ordered diagnostic.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Serialize)]
 pub struct Diagnostic {
     /// Stable rule identifier.
     pub rule_id: String,
@@ -622,6 +637,27 @@ pub struct Diagnostic {
     pub notes: Vec<String>,
     /// Concrete next step.
     pub help: Option<String>,
+    /// The same text in the reader's language, when it is not English.
+    ///
+    /// Absent for a message produced by the official checker or the C
+    /// compiler: that text is those tools' own output, not this project's.
+    #[serde(skip)]
+    pub localized: Option<Localized>,
+}
+
+// Equality deliberately ignores `localized`. `dedup` relies on it, and two
+// diagnostics that differ only by the reader's language are the same finding.
+impl PartialEq for Diagnostic {
+    fn eq(&self, other: &Self) -> bool {
+        self.rule_id == other.rule_id
+            && self.path == other.path
+            && self.range == other.range
+            && self.severity == other.severity
+            && self.message == other.message
+            && self.source == other.source
+            && self.notes == other.notes
+            && self.help == other.help
+    }
 }
 
 impl Ord for Diagnostic {
@@ -767,6 +803,7 @@ mod tests {
             source: DiagnosticSource::Parser,
             notes: Vec::new(),
             help: None,
+            localized: None,
         };
         let mut diagnostics = [
             make("b.c", 1, "z"),

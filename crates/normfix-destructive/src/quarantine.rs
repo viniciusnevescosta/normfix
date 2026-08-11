@@ -331,6 +331,7 @@ fn rejected_diagnostic(path: &Utf8Path, detail: &str) -> Diagnostic {
             "Use a project-relative regular file and an empty external recovery destination."
                 .to_owned(),
         ),
+        localized: None,
     }
 }
 

@@ -25,7 +25,7 @@ review.
 
 ## Every example on these pages is real
 
-The output shown was produced by `normfix 1.1.0` against this file:
+The output shown was produced by `normfix 1.1.1` against this file:
 
 ```c
 # include "libft.h"
