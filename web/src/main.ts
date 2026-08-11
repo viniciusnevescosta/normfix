@@ -1,5 +1,5 @@
 import { createSourceEditor, type SourceEditor } from "./editor";
-import { startOfflineSupport, type OfflineState, type OfflineSupport } from "./pwa";
+import { startOfflineSupport, type OfflineState, type OfflineSupport } from "./offline/pwa";
 import {
   SUPPORTED_LOCALES,
   detectLocale,
@@ -19,7 +19,7 @@ import {
   readImportBatch,
   sourcePathProblem,
   type ProjectSourceFile,
-} from "./project-files";
+} from "./project/files";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
@@ -409,7 +409,7 @@ function setStateMessage(element: HTMLElement, key: MessageKey): void {
 
 async function loadFormatter(): Promise<void> {
   try {
-    const module = (await import("./pkg/normfix_wasm.js")) as WasmModule;
+    const module = (await import("../pkg/normfix_wasm.js")) as WasmModule;
     await module.default();
     state.formatter = module.formatProject;
     elements.run.disabled = false;

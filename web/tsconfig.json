@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["**/*.ts", "wasm.d.ts"]
+  "include": ["**/*.ts", "src/types/wasm.d.ts"]
 }

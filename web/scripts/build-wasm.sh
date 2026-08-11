@@ -2,7 +2,7 @@
 set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-project_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
+project_dir=$(CDPATH='' cd -- "$script_dir/../.." && pwd)
 
 wasm_clang=""
 brew_clang=""

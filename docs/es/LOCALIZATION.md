@@ -14,7 +14,7 @@ Clang, Vite, Monaco, Git, GitHub y Vercel, con sus enlaces oficiales.
 
 ## Playground
 
-Añade el idioma a `SUPPORTED_LOCALES` en `web/i18n.ts` y traduce cada
+Añade el idioma a `SUPPORTED_LOCALES` en `web/src/i18n.ts` y traduce cada
 `MessageKey`, incluidas validaciones, privacidad, títulos y etiquetas
 accesibles. El texto estático debe usar `data-i18n`, `data-i18n-title`,
 `data-i18n-placeholder` o `data-i18n-aria`; el dinámico debe usar `translate()`.

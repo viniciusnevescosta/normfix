@@ -10,7 +10,7 @@ import {
   staticClosure,
   strategyFor,
   type Bundle,
-} from "../precache";
+} from "../src/offline/precache";
 
 /** A bundle shaped like a real build: an entry, its CSS, a dynamic editor, the WASM. */
 const bundle: Bundle = {
@@ -19,9 +19,9 @@ const bundle: Bundle = {
     isEntry: true,
     imports: ["assets/shared-bbb.js"],
     importedCss: ["assets/index-ccc.css"],
-    moduleIds: ["/repo/web/app.ts"],
+    moduleIds: ["/repo/web/src/main.ts"],
   },
-  "assets/shared-bbb.js": { type: "chunk", imports: [], moduleIds: ["/repo/web/i18n.ts"] },
+  "assets/shared-bbb.js": { type: "chunk", imports: [], moduleIds: ["/repo/web/src/i18n.ts"] },
   "assets/index-ccc.css": { type: "asset" },
   "assets/wasm-glue-ddd.js": {
     type: "chunk",

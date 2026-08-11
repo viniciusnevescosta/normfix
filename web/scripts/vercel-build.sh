@@ -2,7 +2,7 @@
 set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-project_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
+project_dir=$(CDPATH='' cd -- "$script_dir/../.." && pwd)
 rust_cache="$project_dir/.vercel-rust"
 
 export CARGO_HOME="$rust_cache/cargo"
@@ -42,5 +42,5 @@ if [ "$installed_bindgen" != "$expected_bindgen" ]; then
   cargo +1.97.1 install wasm-bindgen-cli --version 0.2.126 --locked
 fi
 
-cd "$script_dir"
+cd "$script_dir/.."
 npm run build

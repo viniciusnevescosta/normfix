@@ -8,7 +8,7 @@ import {
   portablePathKey,
   readImportBatch,
   sourcePathProblem,
-} from "../project-files";
+} from "../src/project/files";
 
 const decoder = new TextDecoder();
 

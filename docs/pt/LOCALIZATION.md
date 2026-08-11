@@ -14,7 +14,7 @@ WSL, Clang, Vite, Monaco, Git, GitHub e Vercel, com seus links oficiais.
 
 ## Playground
 
-Adicione o idioma a `SUPPORTED_LOCALES` em `web/i18n.ts` e traduza cada
+Adicione o idioma a `SUPPORTED_LOCALES` em `web/src/i18n.ts` e traduza cada
 `MessageKey`, inclusive validações, privacidade, títulos e rótulos acessíveis.
 Texto estático deve usar `data-i18n`, `data-i18n-title`,
 `data-i18n-placeholder` ou `data-i18n-aria`; texto dinâmico deve usar

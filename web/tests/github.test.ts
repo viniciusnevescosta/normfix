@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { githubRequestInit, starCount } from "../github";
+import { githubRequestInit, starCount } from "../src/github";
 
 test("the repository request never serves a stale star count", () => {
   const init = githubRequestInit();

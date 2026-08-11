@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { decodeUtf8Source } from "../source-text";
+import { decodeUtf8Source } from "../src/project/source-text";
 
 test("a leading UTF-8 BOM is consumed before header processing", () => {
   const bytes = Uint8Array.from([0xef, 0xbb, 0xbf, 0x69, 0x6e, 0x74]).buffer;

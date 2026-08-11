@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { build, defineConfig, type Plugin } from "vite";
 
-import { offlineShell, type Bundle } from "./precache";
+import { offlineShell, type Bundle } from "./src/offline/precache";
 import { version } from "./package.json" with { type: "json" };
 
 const projectDirectory = resolve(fileURLToPath(new URL(".", import.meta.url)));
@@ -145,7 +145,7 @@ function offlineServiceWorker(): Plugin {
           // IIFE output cannot accidentally emit syntax that a classic worker
           // registration would fail to parse.
           lib: {
-            entry: resolve(projectDirectory, "sw.ts"),
+            entry: resolve(projectDirectory, "src/offline/service-worker.ts"),
             name: "normfixServiceWorker",
             formats: ["iife"],
             fileName: () => "sw.js",

@@ -31,7 +31,7 @@ official link.
 
 | Surface | Source of translated text | Published behavior |
 |---|---|---|
-| Browser playground | `web/i18n.ts` and `data-i18n*` attributes in `web/index.html` | Complete `en`, `pt`, `es`, and `fr` UI; a language choice only changes the language and is remembered until it is changed again |
+| Browser playground | `web/src/i18n.ts` and `data-i18n*` attributes in `web/index.html` | Complete `en`, `pt`, `es`, and `fr` UI; a language choice only changes the language and is remembered until it is changed again |
 | Installed playground | Per-locale web app manifests generated in `web/vite.config.ts` | Each language installs under its own name, identity, and start URL, so an installed playground opens in the language its reader chose |
 | Documentation | Locale trees under `docs/` plus locale navigation in `docs/.vitepress/config.ts` | Localized landing, installation, playground, safety, compatibility, and contributor paths, with English as the explicit fallback for pages not yet published |
 | SEO | VitePress head/config, `web/index.html`, sitemaps, and `robots.txt` | Canonical URLs and `hreflang` only for pages that really exist |
@@ -39,14 +39,14 @@ official link.
 
 ## Translating the playground
 
-1. Add the locale code to `SUPPORTED_LOCALES` in `web/i18n.ts`.
+1. Add the locale code to `SUPPORTED_LOCALES` in `web/src/i18n.ts`.
 2. Supply every `MessageKey`. Do not publish a locale that silently inherits
    an English button, validation error, privacy statement, or accessibility
    label.
 3. Put static HTML text behind `data-i18n`, `data-i18n-title`,
    `data-i18n-placeholder`, or `data-i18n-aria`. Put dynamic text behind
    `translate()`; do not leave
-   user-facing string literals in `web/app.ts` or `web/editor.ts`.
+   user-facing string literals in `web/src/main.ts` or `web/src/editor.ts`.
 4. Use named placeholders such as `{path}` and `{count}`. Every translation
    must preserve the same placeholder set as English.
 5. Format numbers and dates with the selected locale. Do not localize the

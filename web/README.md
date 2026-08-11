@@ -29,9 +29,31 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 npm ci
 ```
 
-`web/build.sh` probes candidate compilers instead of assuming that a command
+`web/scripts/build-wasm.sh` probes candidate compilers instead of assuming that a command
 named `clang` supports WebAssembly. On macOS it checks configured and Homebrew
 LLVM paths and prints an actionable `brew install llvm` message if none works.
+
+## Layout
+
+```
+index.html            the page; every string it shows carries a data-i18n key
+src/main.ts           the workbench: state, rendering, and event wiring
+src/i18n.ts           the complete UI catalogue for en, pt, es, and fr
+src/editor.ts         Monaco, and the textarea it falls back to
+src/github.ts         the one external request the playground makes
+src/offline/          what is stored on the device and which requests are served
+src/project/          import validation, path rules, and UTF-8 decoding
+src/types/            ambient declarations for WASM and Monaco contributions
+scripts/              the POSIX build scripts, run through npm
+tests/                node:test suites over the pure modules above
+```
+
+`src/offline/precache.ts` holds both offline decisions as pure functions —
+which built files must exist before the shell can start, and which requests the
+service worker may answer — so they are tested without a browser, and
+`src/offline/service-worker.ts` only applies them.
+
+Generated directories (`pkg/`, `dist/`, `node_modules/`) are ignored.
 
 ## Develop, test, and build
 
@@ -49,7 +71,7 @@ they serve or publish the site. `web/pkg/` and `web/dist/` are generated and
 ignored, so a fresh CI or Vercel build never depends on a stale binary blob.
 
 Vite emits the English route at `/` and crawlable localized entries at `/pt/`,
-`/es/`, and `/fr/`. UI copy and browser-side validation live in `web/i18n.ts`.
+`/es/`, and `/fr/`. UI copy and browser-side validation live in `web/src/i18n.ts`.
 See the [localization guide](../docs/LOCALIZATION.md) before adding a locale.
 
 ## Browser API and supported files
@@ -70,9 +92,10 @@ See the [localization guide](../docs/LOCALIZATION.md) before adding a locale.
 ```
 
 The response contains formatted source, accepted safe fixes, remaining native
-diagnostics, function budgets, and unified diffs. Native diagnostic text stays
-English until CLI diagnostic localization lands; all browser UI and validation
-messages are localized.
+diagnostics, function budgets, and unified diffs. All browser UI and validation
+messages are localized. Diagnostic text returned by the WASM module stays
+English: the module does not carry the CLI's catalogue, and the UI says so
+rather than presenting a half-translated finding as a complete one.
 
 The browser accepts `.c`, `.h`, `.md`, and files named `Makefile`. Requests are
 bounded to 128 files, 1 MiB per file, and 4 MiB total. Paths must be NFC-normalized
