@@ -5,8 +5,10 @@
 //! and filenames stay language-neutral in every locale, so a script never has
 //! to select English to remain reliable.
 
+mod articles;
 mod messages;
 
+pub use articles::{ARTICLE_KEYS, Article, ArticleKey, article, article_key};
 pub use messages::{Messages, messages};
 
 /// A published human-output language.

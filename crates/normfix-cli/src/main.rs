@@ -308,6 +308,27 @@ fn main() -> ExitCode {
     run(&Cli::parse())
 }
 
+/// Handles the subcommands that never discover or format a project.
+///
+/// They share nothing with the analysis pipeline beyond the command line, so
+/// keeping them out of `run` leaves that function about one thing.
+fn run_standalone_command(cli: &Cli, cwd: &std::path::Path) -> Option<ExitCode> {
+    match &cli.command {
+        Some(Command::Explain(arguments)) => Some(run_explain(
+            cli.format,
+            cli_locale(cli),
+            cli_messages(cli),
+            &arguments.rule,
+        )),
+        Some(Command::Undo(arguments)) => Some(run_undo(cli, arguments, cwd)),
+        Some(Command::Upgrade(arguments)) => {
+            Some(run_upgrade(cli.format, cli_messages(cli), arguments.check))
+        }
+        Some(Command::Uninstall(arguments)) => Some(run_uninstall(cli, arguments)),
+        _ => None,
+    }
+}
+
 fn run(cli: &Cli) -> ExitCode {
     let cwd = match env::current_dir() {
         Ok(cwd) => cwd,
@@ -328,17 +349,8 @@ fn run(cli: &Cli) -> ExitCode {
         );
         return ExitCode::from(2);
     }
-    if let Some(Command::Explain(arguments)) = &cli.command {
-        return run_explain(cli.format, cli_messages(cli), &arguments.rule);
-    }
-    if let Some(Command::Undo(arguments)) = &cli.command {
-        return run_undo(cli, arguments, &cwd);
-    }
-    if let Some(Command::Upgrade(arguments)) = &cli.command {
-        return run_upgrade(cli.format, cli_messages(cli), arguments.check);
-    }
-    if let Some(Command::Uninstall(arguments)) = &cli.command {
-        return run_uninstall(cli, arguments);
+    if let Some(exit) = run_standalone_command(cli, &cwd) {
+        return exit;
     }
     let (mut paths, workflow) = selected_workflow(cli);
     let mut git_unexpected = Vec::new();
@@ -857,14 +869,19 @@ fn resolve_locale(cli: &Cli) -> normfix_i18n::Resolution {
     normfix_i18n::resolve(cli.lang.as_deref(), |name| std::env::var(name).ok())
 }
 
-/// Returns the catalogue for this invocation's output.
+/// Returns the language this invocation's human output uses.
 ///
 /// JSON is machine output and stays English whatever the reader's language is.
-fn cli_messages(cli: &Cli) -> &'static normfix_i18n::Messages {
+fn cli_locale(cli: &Cli) -> normfix_i18n::Locale {
     match cli.format {
-        OutputFormat::Human => normfix_i18n::messages(resolve_locale(cli).locale),
-        OutputFormat::Json => normfix_i18n::messages(normfix_i18n::Locale::English),
+        OutputFormat::Human => resolve_locale(cli).locale,
+        OutputFormat::Json => normfix_i18n::Locale::English,
     }
+}
+
+/// Returns the catalogue for this invocation's output.
+fn cli_messages(cli: &Cli) -> &'static normfix_i18n::Messages {
+    normfix_i18n::messages(cli_locale(cli))
 }
 
 const fn workflow_name(cli: &Cli, workflow: Workflow) -> &'static str {
@@ -1091,15 +1108,18 @@ fn selected_workflow(cli: &Cli) -> (Vec<PathBuf>, Workflow) {
     }
 }
 
-fn run_explain(format: OutputFormat, messages: &normfix_i18n::Messages, rule: &str) -> ExitCode {
+fn run_explain(
+    format: OutputFormat,
+    locale: normfix_i18n::Locale,
+    messages: &normfix_i18n::Messages,
+    rule: &str,
+) -> ExitCode {
     let canonical = rule.trim().to_ascii_uppercase();
-    let Some(explanation) = rules::explain(&canonical) else {
+    let Some(explanation) = rules::explain(&canonical, locale, messages) else {
         print_run_error(
             format,
             messages,
-            &format!(
-                "No bundled explanation exists for `{canonical}`. The rule remains available in the normal diagnostic report."
-            ),
+            &normfix_i18n::fill(messages.explain_unknown_rule, &[("rule", &canonical)]),
         );
         return ExitCode::from(2);
     };

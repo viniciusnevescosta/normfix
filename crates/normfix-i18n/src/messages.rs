@@ -197,6 +197,15 @@ pub struct Messages {
     pub uninstall_cancelled: &'static str,
     /// Confirmation that the tool removed itself.
     pub uninstall_done: &'static str,
+
+    /// Section label: why the rule exists.
+    pub explain_why: &'static str,
+    /// Section label: the reader's next step.
+    pub explain_next: &'static str,
+    /// Section label: why the tool did or did not act by itself.
+    pub explain_safety: &'static str,
+    /// No bundled article exists for a requested identifier. Placeholder: `{rule}`.
+    pub explain_unknown_rule: &'static str,
 }
 
 /// Returns the catalogue for `locale`.
@@ -304,6 +313,11 @@ const ENGLISH: Messages = Messages {
     uninstall_needs_confirmation: "uninstall requires an interactive y/N confirmation or --force",
     uninstall_cancelled: "uninstall was cancelled; nothing was removed",
     uninstall_done: "normfix has been removed.",
+
+    explain_why: "Why",
+    explain_next: "Next",
+    explain_safety: "Safety",
+    explain_unknown_rule: "No bundled explanation exists for `{rule}`. The rule remains available in the normal diagnostic report.",
 };
 
 const PORTUGUESE: Messages = Messages {
@@ -400,6 +414,11 @@ const PORTUGUESE: Messages = Messages {
     uninstall_needs_confirmation: "a desinstalação exige uma confirmação interativa y/N ou --force",
     uninstall_cancelled: "a desinstalação foi cancelada; nada foi removido",
     uninstall_done: "o normfix foi removido.",
+
+    explain_why: "Por quê",
+    explain_next: "A seguir",
+    explain_safety: "Segurança",
+    explain_unknown_rule: "Nenhuma explicação embutida existe para `{rule}`. A regra continua disponível no relatório normal de diagnósticos.",
 };
 
 const SPANISH: Messages = Messages {
@@ -496,6 +515,11 @@ const SPANISH: Messages = Messages {
     uninstall_needs_confirmation: "la desinstalación requiere una confirmación interactiva y/N o --force",
     uninstall_cancelled: "la desinstalación se canceló; no se eliminó nada",
     uninstall_done: "normfix se ha eliminado.",
+
+    explain_why: "Por qué",
+    explain_next: "A continuación",
+    explain_safety: "Seguridad",
+    explain_unknown_rule: "No hay ninguna explicación incluida para `{rule}`. La regla sigue disponible en el informe normal de diagnósticos.",
 };
 
 const FRENCH: Messages = Messages {
@@ -592,6 +616,11 @@ const FRENCH: Messages = Messages {
     uninstall_needs_confirmation: "la désinstallation exige une confirmation interactive y/N ou --force",
     uninstall_cancelled: "la désinstallation a été annulée ; rien n'a été supprimé",
     uninstall_done: "normfix a été supprimé.",
+
+    explain_why: "Pourquoi",
+    explain_next: "Ensuite",
+    explain_safety: "Sûreté",
+    explain_unknown_rule: "Aucune explication intégrée n'existe pour `{rule}`. La règle reste disponible dans le rapport de diagnostics normal.",
 };
 
 #[cfg(test)]
@@ -742,6 +771,10 @@ mod tests {
             ),
             ("uninstall_cancelled", messages.uninstall_cancelled),
             ("uninstall_done", messages.uninstall_done),
+            ("explain_why", messages.explain_why),
+            ("explain_next", messages.explain_next),
+            ("explain_safety", messages.explain_safety),
+            ("explain_unknown_rule", messages.explain_unknown_rule),
         ]
     }
 
