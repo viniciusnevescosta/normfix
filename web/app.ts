@@ -19,11 +19,11 @@ import {
   sourcePathProblem,
   type ProjectSourceFile,
 } from "./project-files";
+import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
 const LOCALE_STORAGE_KEY = "normfix.locale.v1";
-const GITHUB_REPOSITORY_API = "https://api.github.com/repos/viniciusnevescosta/normfix";
 const FALLBACK_STARS = 0;
 
 const SAMPLE: string = `#include <unistd.h>
@@ -350,17 +350,15 @@ async function loadGitHubStars(): Promise<void> {
   elements.starCount.textContent = String(FALLBACK_STARS);
   try {
     const response = await fetch(GITHUB_REPOSITORY_API, {
-      cache: "force-cache",
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
+      ...githubRequestInit(),
       signal: AbortSignal.timeout(4000),
     });
     if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-    const payload = (await response.json()) as { stargazers_count?: unknown };
-    if (typeof payload.stargazers_count !== "number" || payload.stargazers_count < 0) {
+    const stars = starCount(await response.json());
+    if (stars === null) {
       throw new Error("GitHub returned an invalid star count");
     }
-    elements.starCount.textContent = payload.stargazers_count.toLocaleString(state.locale);
+    elements.starCount.textContent = stars.toLocaleString(state.locale);
     elements.starCount.removeAttribute("title");
     delete elements.starCount.dataset.i18nTitle;
   } catch {
