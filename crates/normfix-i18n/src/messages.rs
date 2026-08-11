@@ -126,7 +126,7 @@ pub struct Messages {
     pub report_project_reminder_label: &'static str,
     /// Body of the English-source reminder.
     pub report_project_reminder: &'static str,
-    /// Stated limit of this release's terminal translation.
+    /// What in a non-English report is not this project's own words.
     pub report_translation_scope: &'static str,
     /// Heading above the per-file table.
     pub report_files_heading: &'static str,
@@ -277,7 +277,7 @@ const ENGLISH: Messages = Messages {
     report_tagline: "Safe automatic fixes for the 42 Norm v4.1",
     report_project_reminder_label: "Project reminder:",
     report_project_reminder: "keep submitted code and permitted comments in English (not a Norm rule).",
-    report_translation_scope: "Rule messages from the analysis backends are still English in this release.",
+    report_translation_scope: "Findings from the official Norminette and your C compiler are shown as those tools produced them.",
     report_files_heading: "Files",
     report_grouped_heading: "Diagnostics grouped by rule",
     report_diagnostics_heading: "Diagnostics",
@@ -378,7 +378,7 @@ const PORTUGUESE: Messages = Messages {
     report_tagline: "Correções automáticas seguras para a Norm v4.1 da 42",
     report_project_reminder_label: "Lembrete do projeto:",
     report_project_reminder: "mantenha o código entregue e os comentários permitidos em inglês (não é uma regra da Norm).",
-    report_translation_scope: "As mensagens de regra vindas dos analisadores continuam em inglês nesta versão.",
+    report_translation_scope: "Os achados da Norminette oficial e do seu compilador C aparecem como aquelas ferramentas os produziram.",
     report_files_heading: "Arquivos",
     report_grouped_heading: "Diagnósticos agrupados por regra",
     report_diagnostics_heading: "Diagnósticos",
@@ -479,7 +479,7 @@ const SPANISH: Messages = Messages {
     report_tagline: "Correcciones automáticas seguras para la Norm v4.1 de 42",
     report_project_reminder_label: "Recordatorio del proyecto:",
     report_project_reminder: "mantén el código entregado y los comentarios permitidos en inglés (no es una regla de la Norm).",
-    report_translation_scope: "Los mensajes de regla de los analizadores siguen en inglés en esta versión.",
+    report_translation_scope: "Los hallazgos de la Norminette oficial y de tu compilador C se muestran tal como los produjeron esas herramientas.",
     report_files_heading: "Archivos",
     report_grouped_heading: "Diagnósticos agrupados por regla",
     report_diagnostics_heading: "Diagnósticos",
@@ -580,7 +580,7 @@ const FRENCH: Messages = Messages {
     report_tagline: "Corrections automatiques sûres pour la Norm v4.1 de 42",
     report_project_reminder_label: "Rappel du projet :",
     report_project_reminder: "gardez le code rendu et les commentaires autorisés en anglais (ce n'est pas une règle de la Norm).",
-    report_translation_scope: "Les messages de règle issus des analyseurs restent en anglais dans cette version.",
+    report_translation_scope: "Les constats de la Norminette officielle et de votre compilateur C sont affichés tels que ces outils les ont produits.",
     report_files_heading: "Fichiers",
     report_grouped_heading: "Diagnostics groupés par règle",
     report_diagnostics_heading: "Diagnostics",

@@ -31,10 +31,10 @@ official link.
 
 | Surface | Source of translated text | Published behavior |
 |---|---|---|
-| Browser playground | `web/i18n.ts` and `data-i18n*` attributes in `web/index.html` | Complete `en`, `pt`, `es`, and `fr` UI; native rule diagnostics remain English until the CLI catalogue is localized |
+| Browser playground | `web/i18n.ts` and `data-i18n*` attributes in `web/index.html` | Complete `en`, `pt`, `es`, and `fr` UI; a language choice only changes the language and is remembered until it is changed again |
 | Documentation | Locale trees under `docs/` plus locale navigation in `docs/.vitepress/config.ts` | Localized landing, installation, playground, safety, compatibility, and contributor paths, with English as the explicit fallback for pages not yet published |
 | SEO | VitePress head/config, `web/index.html`, sitemaps, and `robots.txt` | Canonical URLs and `hreflang` only for pages that really exist |
-| Native CLI | `crates/normfix-i18n` catalogue, selected with `--lang` or the process locale | Run announcement and report prose in `en`, `pt`, `es`, and `fr`; backend rule messages remain English and the run says so; commands, flags, JSON, rule IDs, and exit codes remain language-neutral |
+| Native CLI | `crates/normfix-i18n` catalogue, selected with `--lang` or the process locale | Announcement, report prose, safety prompts, `explain` articles, and this project's own diagnostics in `en`, `pt`, `es`, and `fr`; findings relayed from the official checker or the C compiler stay as those tools produced them; commands, flags, JSON, rule IDs, and exit codes remain language-neutral |
 
 ## Translating the playground
 
@@ -116,20 +116,25 @@ JSON is never localized. The `execution_start` event and the final report keep
 English values in every locale, so a script never has to select a language to
 stay reliable.
 
-### What is translated today
+### What is translated, and what never will be
 
-The run announcement and the report's own prose: headings, the project
-reminder, discovery and quarantine notes, summary counts, the elapsed-time
-line, and the pre-defense estimate.
+Translated: the run announcement, the report's own prose, every
+safety-critical prompt, the `explain` articles, and the diagnostics this
+project authors.
 
-Rule messages from the analysis backends are still English. A non-English run
-prints one line saying so, for the same reason the playground does: a localized
-frame around English diagnostics is honest, while a localized frame that
-implies the diagnostics were translated is not. Removing that line is part of
-translating the backends, not a separate cosmetic change.
+Never translated: a finding relayed from the official Norminette or from the C
+compiler. That text is those tools' own output. Rewriting it would make the
+report disagree with what running `norminette` directly prints, which is worse
+than reading one English sentence. A non-English run states this in one line —
+as a fact about where the words come from, not as an apology for a missing
+translation.
 
 Status tokens in the file table (`CLEAN`, `WOULD FIX`, `REVIEW`, `FAILED`) and
 severity words stay English with the rule IDs they sit beside.
+
+To translate a new diagnostic, add a `DiagnosticKey`, fill it in all four
+locale matches, and build it with `localized_text`. English is always produced,
+because it is what reaches JSON and what equality and ordering use.
 
 ## Terminology and tone
 
