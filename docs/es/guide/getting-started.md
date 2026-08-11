@@ -2,11 +2,14 @@
 
 ## Requisito principal
 
-Instala la [Norminette oficial](https://github.com/42school/norminette) y deja
-el comando disponible en el `PATH`:
+Instala la [Norminette oficial](https://github.com/42School/norminette)
+siguiendo las instrucciones de su propio repositorio y deja el comando
+disponible en el `PATH`. Ese proyecto es el dueño de cómo se instala, y su
+README es la única fuente que sigue siendo correcta cuando eso cambia.
+
+Una vez instalada, comprueba que `normfix` la encontrará:
 
 ```sh
-pipx install norminette==3.3.59
 norminette --version
 ```
 

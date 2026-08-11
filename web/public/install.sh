@@ -172,8 +172,10 @@ case ":$PATH:" in
 esac
 
 note ""
-note "normfix is tested with official Norminette 3.3.59:"
-note "  pipx install norminette==3.3.59"
-note "Other parseable releases continue with a compatibility advisory."
+note "normfix needs the official Norminette on PATH. Install it from its own"
+note "repository, which is the only source that stays correct:"
+note "  https://github.com/42School/norminette"
+note "The tested baseline is 3.3.59; other parseable releases continue with a"
+note "compatibility advisory."
 note ""
 note "Documentation: https://normfix.vercel.app/docs"

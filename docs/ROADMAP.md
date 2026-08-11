@@ -54,36 +54,35 @@ Shipped. `normfix explain` answers in English, Portuguese, Spanish, or French,
 and `crates/normfix-engine/src/pipeline.rs` is split into focused modules — the
 change that was deferred through all three release candidates.
 
-## 1.2 — finish the terminal translation
+## 1.2 — the playground as a workspace
 
-Command-line help and the rule messages produced by the analysis backends are
-still English. Both need the same thing: a diagnostic has to carry a stable key
-and typed arguments rather than a rendered English sentence, because the
-dynamic parts are already interpolated by the time a renderer sees them. The
-JSON `message` keeps its English value throughout, so automation is unaffected.
+Make the browser playground usable for a whole project rather than one file:
 
-Until that lands, a non-English run says plainly that backend messages are
-still English, because a localized frame that implies otherwise is worse than
-an English one.
-
-Command and flag spellings remain stable English API tokens, as does the `y`
-answer to a confirmation prompt. JSON keys, values, rule IDs, and exit codes
-stay language-neutral.
+- drag and drop supported files onto the page, and drop a complete project
+  folder, with the interface showing that a drop is being received;
+- one button to fix every open file, and one to fix only the current file;
+- download everything as `.zip`, which is the format every operating system
+  opens without a extra tool.
 
 ## 1.3 — project initialization
 
-Add a guided `normfix init` workflow that can create a project name, allowed
-function policy, `main.c`, header, Makefile, README, `src/`, and `tests/` from
-explicit user choices and the stored 42 identity.
+A guided `normfix init` that creates a project from explicit choices: name,
+allowed function policy, `main.c`, header, Makefile, `README.md` carrying the
+student's name, `src/`, `tests/`, and an initialized Git repository.
 
 ## 1.4 — platform hardening
 
-Reserve this line for bug fixes, security work, measured performance changes,
-and native Windows x86-64/ARM64 support. Windows support includes filesystem,
-terminal, compiler, archive, installer, and CI behavior; producing a binary
-alone does not count as support.
+Bug fixes, vulnerability work, measured performance changes, and native support
+for Windows and BSD on x86-64 and ARM64. Support means filesystem, terminal,
+compiler, archive, installer, and CI behavior; producing a binary alone does not
+count.
 
-## 2.0 — Python projects
+## 1.5 — leak checking
+
+Add Valgrind support so a run can report leaks in the code, within the same rule
+as every other backend: what it cannot prove, it reports rather than asserts.
+
+## 1.6 — Python projects
 
 Add a separate Python policy/formatting pipeline around mypy and flake8, plus a
 Python-capable playground. The C/Norminette contract remains available and

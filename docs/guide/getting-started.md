@@ -9,17 +9,19 @@
   building from source. Release archives contain a native binary and need no
   Rust toolchain.
 
-Norminette uses its own Python runtime, as provided by the official package.
-Install the tested checker in an isolated environment when it is not already
-available, then verify it:
+Install it by following the instructions in its own repository:
+**[42School/norminette](https://github.com/42School/norminette)**. That project
+owns how it is installed, and its README is the only source that stays correct
+when that changes.
+
+Once it is installed, check that `normfix` will find it:
 
 ```sh
-pipx install norminette==3.3.59
 norminette --version
 ```
 
-A campus-managed Python environment works too. Only the command version and
-its availability on `PATH` matter to `normfix`.
+A campus-managed environment works too. Only the command's version and its
+availability on `PATH` matter to `normfix`.
 
 ::: warning Version compatibility
 Another parseable Norminette release runs with a prominent compatibility

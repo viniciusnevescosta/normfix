@@ -33,7 +33,6 @@ compatibility authority used by the differential gate.
 
 ```sh
 rustup show active-toolchain     # installs the pinned Rust toolchain
-pipx install norminette==3.3.59  # installs the official checker
 npm ci                           # the playground and documentation workspace
 ```
 

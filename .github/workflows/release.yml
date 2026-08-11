@@ -234,11 +234,7 @@ jobs:
                 ;;
             esac
             echo
-            echo "The official [Norminette](https://github.com/42School/norminette) is the only requirement:"
-            echo
-            echo '```sh'
-            echo 'pipx install norminette==3.3.59'
-            echo '```'
+            echo "The official [Norminette](https://github.com/42School/norminette) is the only requirement. Install it by following the instructions in its own repository, which is the only source that stays correct when they change. The tested baseline is 3.3.59; another parseable release continues with a compatibility advisory."
             echo
             echo "Verify the download against \`SHA256SUMS\` below; every archive carries build provenance."
             echo

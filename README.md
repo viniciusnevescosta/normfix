@@ -31,11 +31,10 @@ uploaded.
 ## Requirements
 
 The official Norminette `3.3.59` on `PATH`, or supplied with
-`--norminette PATH`:
-
-```sh
-pipx install norminette==3.3.59
-```
+`--norminette PATH`. Install it by following the instructions in its own
+repository: **[42School/norminette](https://github.com/42School/norminette)**.
+That project owns how it is installed, and its README is the only source that
+stays correct when that changes.
 
 `normfix` does not reimplement it. The official checker decides what counts as
 a Norm error, and every run compares its answer before and after the edits; that
