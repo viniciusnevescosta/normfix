@@ -8,6 +8,24 @@ normfix uninstall             # elimina el binario, conserva tus datos
 normfix uninstall --purge     # elimina también configuración, caché y copias
 ```
 
+¿Lo instalaste con Homebrew? Usa `brew`, que es el dueño de esa copia:
+
+```sh
+brew uninstall viniciusnevescosta/normfix/normfix
+```
+
+`normfix uninstall` rechaza un binario gestionado por Homebrew e imprime ese
+comando, en lugar de borrar un archivo que la fórmula sigue describiendo. Tu
+configuración, la caché y las copias de seguridad viven fuera de la fórmula, así
+que elimínalas por separado si quieres que desaparezcan:
+
+```sh
+rm -rf ~/.config/normfix ~/.cache/normfix ~/.local/share/normfix
+```
+
+Esa última ruta guarda las copias de seguridad y los archivos en cuarentena, que
+son la única copia de todo lo que una ejecución anterior sustituyó o movió.
+
 ## Muestra el plan primero
 
 No se elimina nada antes de que hayas visto exactamente qué se eliminaría:

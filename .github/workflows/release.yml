@@ -204,8 +204,11 @@ jobs:
                 echo "Already on a pre-release? \`upgrade\` follows the preview channel and moves you here:"
                 echo
                 echo '```sh'
-                echo 'normfix upgrade'
+                echo 'normfix upgrade   # a curl or source install'
+                echo 'brew upgrade viniciusnevescosta/normfix/normfix   # a Homebrew install'
                 echo '```'
+                echo
+                echo "\`normfix upgrade\` refuses on a Homebrew-managed binary and points at the second command, because replacing a file the formula still describes leaves \`brew\` as the only way back to a consistent state."
                 echo
                 echo "The unpinned \`curl ... | sh\` form installs the latest stable release instead, and a stable install is never moved onto a pre-release."
                 ;;
@@ -223,8 +226,11 @@ jobs:
                 echo "Already have normfix? Upgrade in place, with the download verified against its published checksum:"
                 echo
                 echo '```sh'
-                echo 'normfix upgrade'
+                echo 'normfix upgrade   # a curl or source install'
+                echo 'brew upgrade viniciusnevescosta/normfix/normfix   # a Homebrew install'
                 echo '```'
+                echo
+                echo "\`normfix upgrade\` refuses on a Homebrew-managed binary and points at the second command, because replacing a file the formula still describes leaves \`brew\` as the only way back to a consistent state."
                 ;;
             esac
             echo

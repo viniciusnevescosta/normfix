@@ -9,6 +9,25 @@ normfix uninstall             # supprime le binaire, garde vos données
 normfix uninstall --purge     # supprime aussi configuration, cache et sauvegardes
 ```
 
+Installé avec Homebrew ? Utilisez `brew`, à qui appartient cette copie :
+
+```sh
+brew uninstall viniciusnevescosta/normfix/normfix
+```
+
+`normfix uninstall` refuse un binaire géré par Homebrew et affiche cette
+commande, plutôt que de supprimer un fichier que la formule décrit encore. Votre
+configuration, le cache et les sauvegardes vivent hors de la formule :
+supprimez-les séparément si vous voulez qu'ils disparaissent :
+
+```sh
+rm -rf ~/.config/normfix ~/.cache/normfix ~/.local/share/normfix
+```
+
+Ce dernier chemin contient les sauvegardes et les fichiers en quarantaine, qui
+sont l'unique copie de tout ce qu'une exécution précédente a remplacé ou
+déplacé.
+
 ## Il montre d'abord le plan
 
 Rien n'est supprimé avant que vous ayez vu exactement ce qui le serait :
