@@ -105,6 +105,12 @@ const english = {
   responseSchema: "The formatter returned an unsupported response schema.",
   responsePath: "The formatter returned an unknown path: {path}.",
   archivePath: "Path is too long for a zip archive: {path}.",
+  importedOne: "Added 1 file.",
+  importedOther: "Added {count} files.",
+  skippedOne: "Skipped 1 file that normfix does not format.",
+  skippedOther: "Skipped {count} files that normfix does not format.",
+  dropHere: "Drop files or a project folder",
+  dropAccepted: "Takes .c, .h, .md, and Makefile. Everything else is skipped.",
   githubFallback: "GitHub star count unavailable; showing the last bundled count.",
   offlineAvailability: "Offline availability",
   offlineInstallable: "Once this page has loaded, it keeps working without a network, and your browser can install it as an app.",
@@ -220,6 +226,12 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     responseSchema: "O formatador retornou um esquema de resposta incompatível.",
     responsePath: "O formatador retornou um caminho desconhecido: {path}.",
     archivePath: "O caminho é longo demais para um arquivo zip: {path}.",
+    importedOne: "1 arquivo adicionado.",
+    importedOther: "{count} arquivos adicionados.",
+    skippedOne: "1 arquivo ignorado porque o normfix não o formata.",
+    skippedOther: "{count} arquivos ignorados porque o normfix não os formata.",
+    dropHere: "Solte arquivos ou uma pasta de projeto",
+    dropAccepted: "Aceita .c, .h, .md e Makefile. O resto é ignorado.",
     githubFallback: "Contagem de estrelas indisponível; exibindo o último valor incluído.",
     offlineAvailability: "Disponibilidade offline",
     offlineInstallable: "Depois que esta página carrega, ela continua funcionando sem rede, e o navegador pode instalá-la como aplicativo.",
@@ -329,6 +341,12 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     responseSchema: "El formateador devolvió un esquema de respuesta incompatible.",
     responsePath: "El formateador devolvió una ruta desconocida: {path}.",
     archivePath: "La ruta es demasiado larga para un archivo zip: {path}.",
+    importedOne: "1 archivo añadido.",
+    importedOther: "{count} archivos añadidos.",
+    skippedOne: "1 archivo omitido porque normfix no lo formatea.",
+    skippedOther: "{count} archivos omitidos porque normfix no los formatea.",
+    dropHere: "Suelta archivos o una carpeta de proyecto",
+    dropAccepted: "Acepta .c, .h, .md y Makefile. Lo demás se omite.",
     githubFallback: "No se pudo obtener la cantidad de estrellas; se muestra el último valor incluido.",
     offlineAvailability: "Disponibilidad sin conexión",
     offlineInstallable: "Una vez cargada esta página, sigue funcionando sin red, y el navegador puede instalarla como aplicación.",
@@ -438,6 +456,12 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     responseSchema: "Le formateur a renvoyé un schéma de réponse incompatible.",
     responsePath: "Le formateur a renvoyé un chemin inconnu : {path}.",
     archivePath: "Le chemin est trop long pour une archive zip : {path}.",
+    importedOne: "1 fichier ajouté.",
+    importedOther: "{count} fichiers ajoutés.",
+    skippedOne: "1 fichier ignoré car normfix ne le formate pas.",
+    skippedOther: "{count} fichiers ignorés car normfix ne les formate pas.",
+    dropHere: "Déposez des fichiers ou un dossier de projet",
+    dropAccepted: "Accepte .c, .h, .md et Makefile. Le reste est ignoré.",
     githubFallback: "Nombre d’étoiles indisponible ; la dernière valeur intégrée est affichée.",
     offlineAvailability: "Disponibilité hors ligne",
     offlineInstallable: "Une fois cette page chargée, elle continue de fonctionner sans réseau, et le navigateur peut l’installer comme application.",
@@ -495,4 +519,28 @@ export function translate(
     (message, [name, value]) => message.replaceAll(`{${name}}`, String(value)),
     messages[locale][key],
   );
+}
+
+/**
+ * Translates a message whose wording depends on a count.
+ *
+ * The catalogue holds one entry per CLDR plural category, named after it —
+ * `importedOne`, `importedOther`. English, Portuguese, Spanish, and French use
+ * only `one` and `other`, but a locale with more categories can add its own
+ * entries without changing any call site, and anything unpublished falls back
+ * to `other`.
+ *
+ * Every pluralized message must depend on exactly one count. A sentence with
+ * two of them cannot agree in every language, so write two sentences.
+ */
+export function translatePlural(
+  locale: Locale,
+  base: string,
+  count: number,
+  values: Readonly<Record<string, string | number>> = {},
+): string {
+  const category = new Intl.PluralRules(locale).select(count);
+  const specific = `${base}${category[0]?.toUpperCase() ?? ""}${category.slice(1)}`;
+  const key = (specific in english ? specific : `${base}Other`) as MessageKey;
+  return translate(locale, key, { ...values, count });
 }

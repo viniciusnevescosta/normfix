@@ -5,6 +5,19 @@ ofrece números de línea, búsqueda, múltiples cursores, pares de corchetes y
 resaltado para C, headers, Markdown y Makefiles. En móviles se usa un editor
 ligero porque Monaco no admite oficialmente navegadores móviles.
 
+## Añadir tu proyecto
+
+Arrastra archivos a la página, o arrastra la carpeta del proyecto entera. Una
+carpeta soltada conserva su estructura, así que `libft/src/ft_strlen.c` llega
+con esa ruta y no aplanado en un montón de nombres.
+
+Un directorio de proyecto real contiene más que código. Los archivos objeto, el
+binario compilado, `.git` y la configuración del editor se omiten en lugar de
+convertirse en un error, y siempre se muestra cuántos se omitieron: la
+importación nunca descarta nada en silencio, ni rechaza todo el drop porque un
+archivo no sea algo que normfix formatea. **Elegir archivos** hace lo mismo con
+un selector.
+
 ## Cabecera de 42
 
 Introduce un correo de estudiante válido en **Identidad 42**. La opción de

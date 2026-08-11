@@ -5,6 +5,18 @@ Monaco oferece números de linha, busca, múltiplos cursores, pares de colchetes
 realce para C, headers, Markdown e Makefiles. Em celulares, ele usa um editor de
 texto leve porque o Monaco não oferece suporte oficial a navegadores móveis.
 
+## Adicionando seu projeto
+
+Arraste arquivos para a página, ou arraste a própria pasta do projeto. Uma
+pasta solta mantém sua estrutura, então `libft/src/ft_strlen.c` chega nesse
+caminho, e não achatado num monte de nomes.
+
+Um diretório de projeto real tem mais do que código. Arquivos objeto, o binário
+compilado, o `.git` e configurações de editor são ignorados em vez de virarem
+erro, e a quantidade de ignorados é sempre exibida — a importação nunca descarta
+nada em silêncio, nem recusa o drop inteiro porque um arquivo não é algo que o
+normfix formata. **Escolher arquivos** faz o mesmo por um seletor.
+
 ## Cabeçalho da 42
 
 Informe um e-mail de estudante válido no painel **Identidade 42**. A opção de

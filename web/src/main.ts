@@ -4,6 +4,7 @@ import {
   SUPPORTED_LOCALES,
   detectLocale,
   translate,
+  translatePlural,
   type Locale,
   type MessageKey,
 } from "./i18n";
@@ -19,6 +20,7 @@ import {
   type ProjectSourceFile,
 } from "./project/files";
 import { ZipArchiveError, buildZip } from "./project/archive";
+import { collectDroppedFiles, type DroppedFile } from "./project/drop";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
@@ -151,6 +153,7 @@ const elements = {
   runtimeLabel: requiredElement<HTMLElement>("#runtime-label"),
   fileList: requiredElement<HTMLElement>("#file-list"),
   filePicker: requiredElement<HTMLInputElement>("#file-picker"),
+  dropOverlay: requiredElement<HTMLElement>("#drop-overlay"),
   addFile: requiredElement<HTMLButtonElement>("#add-file"),
   removeFile: requiredElement<HTMLButtonElement>("#remove-file"),
   editorContainer: requiredElement<HTMLElement>("#monaco-editor"),
@@ -204,6 +207,10 @@ const elements = {
 
 function t(key: MessageKey, values: Readonly<Record<string, string | number>> = {}): string {
   return translate(state.locale, key, values);
+}
+
+function tPlural(base: string, count: number): string {
+  return translatePlural(state.locale, base, count);
 }
 
 function readStoredLocale(): Locale {
@@ -558,8 +565,18 @@ function removeSelected(): void {
   selectFile(next, false);
 }
 
-async function loadFiles(fileList: FileList | null): Promise<void> {
-  if (!fileList || fileList.length === 0) return;
+/**
+ * Imports files, skipping what normfix does not format rather than refusing
+ * the whole batch.
+ *
+ * A student drops a project folder, which contains object files, a binary, and
+ * a README beside the source. Failing the import over those would make the
+ * feature useless for its main use, so they are counted and reported instead.
+ * Nothing is skipped quietly: the count is always shown, and when nothing at
+ * all could be imported the first rejected path explains exactly why.
+ */
+async function loadFiles(incoming: readonly DroppedFile[], skipped = 0): Promise<void> {
+  if (incoming.length === 0 && skipped === 0) return;
   if (state.importing) throw new Error(t("importRunning"));
   syncEditor();
   const startingRevision = state.revision;
@@ -567,8 +584,15 @@ async function loadFiles(fileList: FileList | null): Promise<void> {
   setImportControls(true);
   try {
     const candidates = new Map<string, readonly [string, File]>();
-    for (const file of fileList) {
-      const path = normalizeSourcePath(file.webkitRelativePath || file.name);
+    let ignored = skipped;
+    let firstRejected: string | null = null;
+    for (const { path: rawPath, file } of incoming) {
+      if (sourcePathProblem(rawPath) !== null) {
+        ignored += 1;
+        firstRejected ??= rawPath;
+        continue;
+      }
+      const path = normalizeSourcePath(rawPath);
       const portableKey = portablePathKey(path);
       if (candidates.has(portableKey)) {
         throw new Error(t("importDuplicate", { path }));
@@ -580,6 +604,12 @@ async function loadFiles(fileList: FileList | null): Promise<void> {
         throw new Error(t("fileTooLarge", { path, count: MAX_FILE_BYTES }));
       }
       candidates.set(portableKey, [path, file]);
+    }
+    if (candidates.size === 0) {
+      // Nothing usable arrived. One rejected path explains itself far better
+      // than a count, which matters most when a student dropped a single file.
+      if (firstRejected !== null) normalizeSourcePath(firstRejected);
+      throw new Error(t("onlySupported"));
     }
     if (state.files.size + candidates.size > MAX_FILES) {
       throw new Error(t("maxFiles", { count: MAX_FILES }));
@@ -619,6 +649,8 @@ async function loadFiles(fileList: FileList | null): Promise<void> {
     if (candidates.size > 0) invalidateResults();
     if (imported.selectedPath) selectFile(imported.selectedPath, false);
     renderFileList();
+    const added = tPlural("imported", candidates.size);
+    setRuntime("ready", ignored > 0 ? `${added} ${tPlural("skipped", ignored)}` : added);
   } finally {
     state.importing = false;
     setImportControls(false);
@@ -980,8 +1012,77 @@ function downloadAll(): void {
 }
 
 elements.run.addEventListener("click", runFormatter);
+/**
+ * Whether a drag is carrying files rather than text.
+ *
+ * Monaco drags selected text within the editor, and that must keep working.
+ */
+function dragCarriesFiles(event: DragEvent): boolean {
+  return [...(event.dataTransfer?.types ?? [])].includes("Files");
+}
+
+// dragenter and dragleave both fire while the pointer crosses child elements,
+// so the overlay is driven by a depth counter rather than by the last event.
+let dragDepth = 0;
+
+function setDragging(active: boolean): void {
+  dragDepth = active ? dragDepth : 0;
+  elements.dropOverlay.hidden = !active;
+}
+
+window.addEventListener("dragenter", (event) => {
+  if (!dragCarriesFiles(event)) return;
+  event.preventDefault();
+  dragDepth += 1;
+  elements.dropOverlay.hidden = false;
+});
+
+window.addEventListener("dragover", (event) => {
+  if (!dragCarriesFiles(event)) return;
+  // Without this the browser navigates away to the dropped file, discarding
+  // whatever the student had in the editor.
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+});
+
+window.addEventListener("dragleave", (event) => {
+  if (!dragCarriesFiles(event)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) setDragging(false);
+});
+
+window.addEventListener("drop", (event) => {
+  if (!dragCarriesFiles(event)) return;
+  event.preventDefault();
+  setDragging(false);
+  void importDrop(event.dataTransfer).catch((error: unknown) => {
+    setRuntime("error", error instanceof Error ? error.message : String(error));
+  });
+});
+
+async function importDrop(transfer: DataTransfer | null): Promise<void> {
+  if (!transfer) return;
+  // The entries must be taken before this function first yields: the browser
+  // empties DataTransfer.items as soon as the drop handler returns.
+  const entries = [...transfer.items]
+    .map((item) => item.webkitGetAsEntry())
+    .filter((entry): entry is FileSystemEntry => entry !== null);
+  if (entries.length === 0) {
+    // No entry API, or a drop that carried plain files only. Folders are not
+    // reachable this way, but individual files still are.
+    await loadFiles([...transfer.files].map((file) => ({ path: file.name, file })));
+    return;
+  }
+  const selection = await collectDroppedFiles(entries);
+  await loadFiles(selection.files, selection.skipped);
+}
+
 elements.filePicker.addEventListener("change", () => {
-  void loadFiles(elements.filePicker.files).catch((error: unknown) => {
+  const chosen = [...elements.filePicker.files ?? []].map((file): DroppedFile => ({
+    path: file.webkitRelativePath || file.name,
+    file,
+  }));
+  void loadFiles(chosen).catch((error: unknown) => {
     setRuntime("error", error instanceof Error ? error.message : String(error));
   });
 });

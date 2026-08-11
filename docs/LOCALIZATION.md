@@ -49,16 +49,22 @@ official link.
    user-facing string literals in `web/src/main.ts` or `web/src/editor.ts`.
 4. Use named placeholders such as `{path}` and `{count}`. Every translation
    must preserve the same placeholder set as English.
-5. Format numbers and dates with the selected locale. Do not localize the
+5. When a message contains a count, do not write one sentence with a
+   placeholder in it. Add one entry per CLDR plural category — `importedOne`,
+   `importedOther` — and render it with `translatePlural`, so the noun agrees
+   with its number instead of reading “1 arquivos adicionados”. A pluralized
+   message must depend on exactly one count; a sentence with two of them cannot
+   agree in every language, so write two sentences.
+6. Format numbers and dates with the selected locale. Do not localize the
    fixed 42-header timestamp or other protocol text.
-6. Set the document `lang` value and provide a visible language selector.
-7. Never inject a translation with `innerHTML`. Continue to use `textContent`
+7. Set the document `lang` value and provide a visible language selector.
+8. Never inject a translation with `innerHTML`. Continue to use `textContent`
    and DOM nodes so translated or source-controlled text cannot become markup.
-8. Test the narrow-screen textarea fallback as well as Monaco. Monaco itself
+9. Test the narrow-screen textarea fallback as well as Monaco. Monaco itself
    does not define the product's localization completeness. The offline path
    uses the same fallback, so this is also what a reader sees when they open
    the installed playground with no network.
-9. Translate the app name in `localizedPages` in `web/vite.config.ts`. It is
+10. Translate the app name in `localizedPages` in `web/vite.config.ts`. It is
    the label under the icon of anyone who installs the playground, so it has
    to be short and to read as a name rather than as a page title.
 

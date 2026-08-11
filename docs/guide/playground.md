@@ -10,6 +10,18 @@ bracket matching, and syntax highlighting for every supported file type.
 Mobile and coarse-pointer devices use a lightweight textarea because Monaco
 does not officially support mobile browsers.
 
+## Adding your project
+
+Drag files onto the page, or drag the project folder itself. A dropped folder
+keeps its structure, so `libft/src/ft_strlen.c` arrives under that path rather
+than flattened into a pile of names.
+
+A real project directory holds more than source. Object files, the compiled
+binary, `.git`, and editor settings are skipped rather than treated as errors,
+and the count of what was skipped is always shown — the import never discards
+anything quietly, and never refuses the whole drop because one file is not
+something normfix formats. **Choose files** does the same thing for a picker.
+
 ## Official 42 headers
 
 Enter a valid student email in **42 identity**. **Remember on this device** is

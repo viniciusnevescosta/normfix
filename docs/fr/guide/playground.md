@@ -6,6 +6,19 @@ coloration pour C, headers, Markdown et Makefiles. Sur mobile, un éditeur lége
 est utilisé car Monaco ne prend pas officiellement en charge les navigateurs
 mobiles.
 
+## Ajouter votre projet
+
+Faites glisser des fichiers sur la page, ou le dossier du projet lui-même. Un
+dossier déposé conserve sa structure : `libft/src/ft_strlen.c` arrive sous ce
+chemin plutôt qu’aplati parmi d’autres noms.
+
+Un vrai répertoire de projet contient plus que du code. Les fichiers objets, le
+binaire compilé, `.git` et la configuration de l’éditeur sont ignorés au lieu de
+devenir une erreur, et le nombre d’éléments ignorés est toujours affiché :
+l’import n’écarte jamais rien en silence, et ne refuse pas tout le dépôt parce
+qu’un fichier n’est pas quelque chose que normfix formate. **Choisir des
+fichiers** fait la même chose avec un sélecteur.
+
 ## En-tête 42
 
 Saisissez une adresse étudiante valide dans **Identité 42**. L’option de

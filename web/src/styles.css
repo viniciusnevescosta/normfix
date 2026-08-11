@@ -215,6 +215,45 @@ code {
   cursor: pointer;
 }
 
+/*
+ * The drag indicator. It covers the viewport rather than the workbench so a
+ * student who lets go slightly off target still hits it, and it states what
+ * will be accepted, because the answer decides whether dropping a whole
+ * project folder is going to work.
+ */
+.drop-overlay {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(17 19 17 / 82%);
+}
+
+.drop-overlay[hidden] {
+  display: none;
+}
+
+.drop-card {
+  display: grid;
+  gap: 6px;
+  padding: 26px 34px;
+  text-align: center;
+  border: 1px dashed var(--accent);
+  background: var(--panel);
+}
+
+.drop-card strong {
+  font-size: 15px;
+}
+
+.drop-card span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 main {
   width: min(1320px, calc(100% - 32px));
   margin: 0 auto;
