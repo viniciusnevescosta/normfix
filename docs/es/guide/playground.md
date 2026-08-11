@@ -63,3 +63,13 @@ Una versión nueva nunca reemplaza la página mientras trabajas en ella. Se
 descarga en segundo plano y la cabecera ofrece **Nueva versión lista** con un
 botón **Recargar**. Hasta que lo pulses, conservas la versión con la que
 empezaste.
+
+## Corregir el proyecto
+
+Una ejecución siempre abarca el proyecto entero, porque una cabecera y el
+archivo que la incluye solo se evalúan bien juntos. La elección es qué hacer con
+la respuesta: **Corregir todos los archivos** aplica de una vez todo lo que
+superó las pruebas, y **Corregir este archivo** hace lo mismo solo con el que
+tienes delante. En ambos casos, una corrección deja de ser aplicable si el
+archivo se editó después de la ejecución, ya que se demostró contra el código
+que normfix leyó, no contra lo que hay ahora en el editor.

@@ -35,6 +35,15 @@ source stays without a generated header and the result includes a diagnostic.
 
 ## Getting the result out
 
+A run always covers the whole project, because a header and the file that
+includes it are only judged correctly together. The choice is what to do with
+the answer: apply every proven fix at once, or only the one in front of you.
+Either way a fix stops being applicable once its file has been edited since the
+run, since it was proven against the source normfix read, not against whatever
+is in the buffer now.
+
+- **Fix all files** writes every proven result back into the project at once.
+- **Fix this file** does the same for the file you are looking at.
 - **Copy file** copies the selected stable result. If clipboard access is
   denied, the browser selects the text for a keyboard copy.
 - **Download file** saves the selected result.

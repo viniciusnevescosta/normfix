@@ -62,3 +62,13 @@ Uma versão nova nunca substitui a página enquanto você trabalha nela. Ela é
 baixada em segundo plano e o cabeçalho oferece **Nova versão pronta** com um
 botão **Recarregar**. Até você apertá-lo, continua valendo a versão com que
 você começou.
+
+## Corrigindo o projeto
+
+Uma execução sempre cobre o projeto inteiro, porque um header e o arquivo que
+o inclui só são julgados corretamente juntos. A escolha é o que fazer com a
+resposta: **Corrigir todos os arquivos** aplica de uma vez tudo o que passou
+nas provas, e **Corrigir este arquivo** faz o mesmo só para o que está à sua
+frente. Em ambos os casos, uma correção deixa de valer se o arquivo foi editado
+depois da execução, já que ela foi provada contra o código que o normfix leu, e
+não contra o que está no editor agora.

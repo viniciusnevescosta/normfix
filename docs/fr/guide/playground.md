@@ -64,3 +64,14 @@ Une nouvelle version ne remplace jamais la page pendant que vous y travaillez.
 Elle est téléchargée en arrière-plan et l’en-tête propose **Nouvelle version
 prête** avec un bouton **Recharger**. Tant que vous ne l’avez pas actionné,
 vous gardez la version avec laquelle vous avez commencé.
+
+## Corriger le projet
+
+Une exécution couvre toujours le projet entier, car un en-tête et le fichier
+qui l’inclut ne s’évaluent correctement qu’ensemble. Le choix porte sur ce
+qu’on fait de la réponse : **Corriger tous les fichiers** applique d’un coup
+tout ce qui a passé les preuves, et **Corriger ce fichier** fait de même pour
+celui que vous avez sous les yeux. Dans les deux cas, une correction cesse
+d’être applicable si le fichier a été modifié depuis l’exécution, puisqu’elle a
+été prouvée contre le code que normfix a lu, pas contre ce qui se trouve
+maintenant dans l’éditeur.

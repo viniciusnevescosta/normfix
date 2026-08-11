@@ -165,6 +165,7 @@ const elements = {
   summary: requiredElement<HTMLElement>("#summary"),
   resultFile: requiredElement<HTMLSelectElement>("#result-file"),
   applyResult: requiredElement<HTMLButtonElement>("#apply-result"),
+  applyAll: requiredElement<HTMLButtonElement>("#apply-all"),
   copyCurrent: requiredElement<HTMLButtonElement>("#copy-current"),
   downloadCurrent: requiredElement<HTMLButtonElement>("#download-current"),
   downloadAll: requiredElement<HTMLButtonElement>("#download-all"),
@@ -433,6 +434,10 @@ function invalidateResults(): void {
   state.results.clear();
   state.selectedResult = null;
   elements.results.hidden = true;
+  // The panel is hidden, but an enabled control with nothing to act on is the
+  // kind of state that only stays harmless by accident.
+  elements.applyAll.disabled = true;
+  elements.applyResult.disabled = true;
 }
 
 function syncEditor(): void {
@@ -776,6 +781,7 @@ function renderSelectedResult(): void {
   elements.diffOutput.textContent = result.diff || t("noByteChanges");
   elements.diagnosticCount.textContent = String(result.diagnostics.length);
   elements.applyResult.disabled = Boolean(result.error) || !result.stable;
+  elements.applyAll.disabled = applicableResults().length === 0;
   elements.downloadCurrent.disabled = Boolean(result.error) || !result.stable;
   elements.copyCurrent.disabled = Boolean(result.error) || !result.stable;
   resetCopyLabel();
@@ -921,11 +927,42 @@ function activateTab(view: string): void {
 function applySelectedResult(): void {
   const result = selectedResult();
   if (!result || result.error || !result.stable) return;
-  state.files.set(result.path, result.formatted);
-  state.revision += 1;
-  invalidateResults();
+  applyResults([result]);
   selectFile(result.path, false);
   state.editor?.focus();
+}
+
+/**
+ * Every result that is still safe to apply.
+ *
+ * A result stops being applicable once its file has been edited since the run
+ * that produced it, because the fix was proven against the source it read, not
+ * against whatever is in the buffer now.
+ */
+function applicableResults(): ResultRecord[] {
+  return [...state.results.values()].filter(
+    (result) =>
+      !result.error
+      && result.stable
+      && state.files.get(result.path) === result.inputSource
+      && result.formatted !== result.inputSource,
+  );
+}
+
+function applyAllResults(): void {
+  const results = applicableResults();
+  if (results.length === 0) return;
+  applyResults(results);
+  if (state.selected) selectFile(state.selected, false);
+  setRuntime("ready", tPlural("fixed", results.length));
+  state.editor?.focus();
+}
+
+function applyResults(results: readonly ResultRecord[]): void {
+  for (const result of results) state.files.set(result.path, result.formatted);
+  state.revision += 1;
+  invalidateResults();
+  renderFileList();
 }
 
 function downloadBlob(blob: Blob, filename: string): void {
@@ -1112,6 +1149,7 @@ elements.resultFile.addEventListener("change", () => {
   renderSelectedResult();
 });
 elements.applyResult.addEventListener("click", applySelectedResult);
+elements.applyAll.addEventListener("click", applyAllResults);
 elements.copyCurrent.addEventListener("click", () => {
   void copyCurrent();
 });
