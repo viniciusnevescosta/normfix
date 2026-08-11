@@ -1,4 +1,5 @@
 import { createSourceEditor, type SourceEditor } from "./editor";
+import { startOfflineSupport, type OfflineState, type OfflineSupport } from "./pwa";
 import {
   SUPPORTED_LOCALES,
   detectLocale,
@@ -120,6 +121,8 @@ interface AppState {
   revision: number;
   identityEmail: string | null;
   locale: Locale;
+  offlineState: OfflineState;
+  offlineSupport: OfflineSupport | null;
 }
 
 function requiredElement<T extends Element>(selector: string): T {
@@ -140,6 +143,8 @@ const state: AppState = {
   revision: 0,
   identityEmail: null,
   locale: readStoredLocale(),
+  offlineState: "unsupported",
+  offlineSupport: null,
 };
 
 const elements = {
@@ -177,9 +182,13 @@ const elements = {
   forgetIdentity: requiredElement<HTMLButtonElement>("#forget-identity"),
   identityStatus: requiredElement<HTMLElement>("#identity-status"),
   starCount: requiredElement<HTMLElement>("#star-count"),
+  offlineStatus: requiredElement<HTMLElement>("#offline-status"),
+  offlineLabel: requiredElement<HTMLElement>("#offline-label"),
+  offlineUpdate: requiredElement<HTMLButtonElement>("#offline-update"),
   docsLink: requiredElement<HTMLAnchorElement>("#docs-link"),
   brand: requiredElement<HTMLAnchorElement>(".brand"),
   canonical: requiredElement<HTMLLinkElement>("#canonical-url"),
+  manifest: requiredElement<HTMLLinkElement>("#manifest-link"),
   metaDescription: requiredElement<HTMLMetaElement>("#meta-description"),
   ogTitle: requiredElement<HTMLMetaElement>("#og-title"),
   ogDescription: requiredElement<HTMLMetaElement>("#og-description"),
@@ -327,9 +336,11 @@ function applyTranslations(): void {
       if (meta) meta.content = locale;
     });
   elements.canonical.href = canonical;
+  elements.manifest.href = `${route}site.webmanifest`;
   elements.brand.href = route;
   elements.docsLink.href = state.locale === "en" ? "/docs/" : `/docs/${state.locale}/`;
   updateEditorMeta();
+  renderOfflineStatus();
   if (state.results.size > 0) renderRunResult();
   else resetCopyLabel();
 }
@@ -376,6 +387,19 @@ function setRuntime(stateName: RuntimeState, label: string): void {
 function setRuntimeMessage(stateName: RuntimeState, key: MessageKey): void {
   setRuntime(stateName, t(key));
   elements.runtimeLabel.dataset.i18nState = key;
+}
+
+/**
+ * The badge says nothing while offline support is simply working, because that
+ * is the normal state of an installed playground. It speaks for the two events
+ * that change what the reader can do.
+ */
+function renderOfflineStatus(): void {
+  elements.offlineStatus.dataset.state = state.offlineState;
+  const updateReady = state.offlineState === "update-ready";
+  elements.offlineUpdate.hidden = !updateReady;
+  elements.offlineLabel.textContent = updateReady ? t("offlineUpdate") : t("offlineActive");
+  elements.offlineStatus.title = updateReady ? "" : t("offlineActiveTitle");
 }
 
 function setStateMessage(element: HTMLElement, key: MessageKey): void {
@@ -1007,6 +1031,9 @@ elements.language.addEventListener("change", () => {
   const locale = elements.language.value as Locale;
   if (SUPPORTED_LOCALES.includes(locale)) changeLocale(locale);
 });
+elements.offlineUpdate.addEventListener("click", () => {
+  state.offlineSupport?.applyUpdate();
+});
 elements.saveIdentity.addEventListener("click", saveIdentity);
 elements.forgetIdentity.addEventListener("click", forgetIdentity);
 elements.identityEmail.addEventListener("keydown", (event) => {
@@ -1019,6 +1046,15 @@ elements.identityEmail.addEventListener("keydown", (event) => {
 async function initialize(): Promise<void> {
   applyTranslations();
   loadIdentity();
+  state.offlineSupport = startOfflineSupport({
+    onState: (offlineState) => {
+      state.offlineState = offlineState;
+      renderOfflineStatus();
+    },
+    onConnectivity: (online) => {
+      elements.offlineStatus.dataset.online = String(online);
+    },
+  });
   renderFileList();
   const formatterPromise = loadFormatter();
   state.editor = await createSourceEditor(

@@ -29,6 +29,33 @@ function monacoSupported(): boolean {
   return window.matchMedia("(min-width: 761px) and (pointer: fine)").matches;
 }
 
+function createFallbackEditor(
+  monacoContainer: HTMLElement,
+  fallback: HTMLTextAreaElement,
+  initialSource: string,
+  callbacks: EditorCallbacks,
+): SourceEditor {
+  monacoContainer.hidden = true;
+  fallback.hidden = false;
+  fallback.value = initialSource;
+  fallback.addEventListener("input", callbacks.onChange);
+  fallback.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      callbacks.onRun();
+    }
+  });
+  return {
+    usingMonaco: false,
+    getValue: () => fallback.value,
+    setFile: (_path, source) => {
+      fallback.value = source;
+    },
+    removeFile: () => undefined,
+    focus: () => fallback.focus(),
+  };
+}
+
 export async function createSourceEditor(
   monacoContainer: HTMLElement,
   fallback: HTMLTextAreaElement,
@@ -37,27 +64,27 @@ export async function createSourceEditor(
   callbacks: EditorCallbacks,
 ): Promise<SourceEditor> {
   if (!monacoSupported()) {
-    monacoContainer.hidden = true;
-    fallback.hidden = false;
-    fallback.value = initialSource;
-    fallback.addEventListener("input", callbacks.onChange);
-    fallback.addEventListener("keydown", (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-        event.preventDefault();
-        callbacks.onRun();
-      }
-    });
-    return {
-      usingMonaco: false,
-      getValue: () => fallback.value,
-      setFile: (_path, source) => {
-        fallback.value = source;
-      },
-      removeFile: () => undefined,
-      focus: () => fallback.focus(),
-    };
+    return createFallbackEditor(monacoContainer, fallback, initialSource, callbacks);
   }
+  try {
+    return await createMonacoEditor(monacoContainer, fallback, initialPath, initialSource, callbacks);
+  } catch (error) {
+    // Monaco is a convenience, not the product. It is a large dynamic import,
+    // so it is the first thing to fail on a lost connection or a cold offline
+    // start — and losing it must cost syntax highlighting, not the ability to
+    // format code at all.
+    console.error(error);
+    return createFallbackEditor(monacoContainer, fallback, initialSource, callbacks);
+  }
+}
 
+async function createMonacoEditor(
+  monacoContainer: HTMLElement,
+  fallback: HTMLTextAreaElement,
+  initialPath: string,
+  initialSource: string,
+  callbacks: EditorCallbacks,
+): Promise<SourceEditor> {
   fallback.hidden = true;
   monacoContainer.hidden = false;
   (globalThis as typeof globalThis & { MonacoEnvironment?: MonacoEnvironmentShape })

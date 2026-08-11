@@ -56,7 +56,7 @@
     <link rel="alternate" hreflang="es" href="https://normfix.vercel.app/es/">
     <link rel="alternate" hreflang="fr" href="https://normfix.vercel.app/fr/">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="manifest" href="/site.webmanifest">
+    <link id="manifest-link" rel="manifest" href="/site.webmanifest">
     <title>normfix browser playground · 42 C formatter</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
@@ -95,6 +95,24 @@
         <div class="runtime-status" id="runtime-status" data-state="loading" role="status">
           <span class="status-dot" aria-hidden="true"></span>
           <span id="runtime-label" data-i18n="loadingFormatter">Loading formatter…</span>
+        </div>
+        <div
+          class="offline-status"
+          id="offline-status"
+          data-state="unsupported"
+          data-online="true"
+          data-i18n-aria="offlineAvailability"
+        >
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="offline-label" role="status"></span>
+          <button
+            class="offline-update"
+            id="offline-update"
+            type="button"
+            hidden
+            data-i18n="offlineUpdateAction"
+            data-i18n-title="offlineUpdateTitle"
+          >Reload</button>
         </div>
       </div>
     </header>
@@ -237,6 +255,9 @@
         <div>
           <p data-i18n="scopeText">
             The playground runs native safe C/header, Makefile, and Markdown formatting. Native diagnostics remain in English. The CLI adds the official checker, compiler, Git scopes, transactions, backups, and undo.
+          </p>
+          <p data-i18n="offlineInstallable">
+            Once this page has loaded, it keeps working without a network, and your browser can install it as an app.
           </p>
           <nav class="dependency-links" aria-label="Official dependencies" data-i18n-aria="officialDependencies">
             <span data-i18n="dependencies">Official tools</span>

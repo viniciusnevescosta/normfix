@@ -10,6 +10,45 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## Unreleased
+
+### Added
+
+- **The playground works with no network, and can be installed as an app.**
+  Open it once and the page, the WebAssembly formatter, and the interface are
+  stored on the device. After that it runs on a plane, on school wifi at its
+  worst, or while the site itself is down. Nothing was ever uploaded, so this
+  changes how a student reaches the tool, not what it does.
+
+  Two boundaries are deliberate. The desktop editor is not part of the install:
+  Monaco would roughly double a first visit to buy syntax highlighting, so it
+  is fetched only when there is a connection and kept afterwards, and a cold
+  offline start falls back to the plain text area, which formats identically.
+  And the worker answers only for the playground; the documentation shares the
+  origin and is passed through, because a stale cached document is worse than a
+  missing one.
+
+  A new release never swaps itself in under an open tab. It downloads in the
+  background and the header offers **New version ready** with **Reload**; until
+  that is pressed, the reader keeps the version they started with.
+
+- **Each language installs as its own app.** The playground publishes one web
+  app manifest per locale, so an installed playground opens under the name and
+  in the language its reader chose.
+
+### Fixed
+
+- **A failure to load the desktop editor no longer takes the playground with
+  it.** Monaco is a large dynamic import and therefore the first thing to fail
+  on a lost connection; it now falls back to the text area instead of leaving
+  the page with no editor at all.
+
+- **The contributor localization guide no longer promises a translation that
+  is not coming.** The Portuguese, Spanish, and French guides still said native
+  diagnostics would be translated "until CLI 1.1". They now state the shipped
+  rule: normfix translates the findings it writes, and relays Norminette and
+  compiler output in the language those tools produced it.
+
 ## [1.2.0] / 2026-08-11
 
 Accessibility for students who do not read English comfortably: the findings

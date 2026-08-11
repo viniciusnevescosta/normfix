@@ -180,6 +180,41 @@ code {
   background: var(--error);
 }
 
+/*
+ * Same rule as the runtime badge. Working offline is the normal state of an
+ * installed playground, so saying so on every visit would be noise; the badge
+ * appears only when it changes what the reader can do — the network dropped
+ * and this tab kept working, or a newer build is waiting for a reload.
+ */
+.offline-status {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 7px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.offline-status[data-state="ready"][data-online="false"],
+.offline-status[data-state="update-ready"] {
+  display: flex;
+}
+
+.offline-status[data-state="update-ready"] .status-dot {
+  background: var(--accent);
+}
+
+.offline-update {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid currentcolor;
+  font: inherit;
+  cursor: pointer;
+}
+
 main {
   width: min(1320px, calc(100% - 32px));
   margin: 0 auto;

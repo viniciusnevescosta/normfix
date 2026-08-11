@@ -36,6 +36,30 @@ analytics dependency, or formatting backend. The only external request is an
 unauthenticated, no-referrer fetch of the official repository's public GitHub
 star count; the UI uses a bundled fallback when that request is unavailable.
 
+## Working offline
+
+The playground installs itself the first time you open it. After that the page,
+the WebAssembly formatter, and the interface need no network at all: open the
+same address on a plane, on school wifi at its worst, or while the site itself
+is down, and formatting runs exactly as it did before. Nothing was ever
+uploaded, so working offline changes how you reach the tool, not what it does.
+
+Your browser can also install it as an app from its address bar or menu. It
+then opens in its own window, under the name of the language you selected.
+
+Two things are worth knowing:
+
+- The desktop editor is not part of the install. Monaco is a large download
+  that buys syntax highlighting and search, so it is fetched only when you have
+  a connection, and kept once you do. Opening the playground offline before it
+  has ever loaded gives you the plain text area, which formats identically.
+- Only the playground is stored. The documentation you are reading now is a
+  separate site and still needs a network.
+
+A new release never replaces the page while you are working in it. It is
+downloaded in the background, and the header offers **New version ready** with
+a **Reload** button. Until you press it, you keep the version you started with.
+
 ## CLI and playground boundaries
 
 | Capability | CLI | Playground |

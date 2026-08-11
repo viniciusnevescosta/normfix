@@ -379,6 +379,24 @@ only its static output. Keeping the UI old-school and dependency-light reduces
 the browser supply-chain and runtime surface, at the cost of editor features
 provided by larger web IDE frameworks.
 
+The playground is also installable and works with no network. Because nothing
+was ever uploaded, offline support does not change what the tool does — only
+how a reader reaches it — so it is an honest promise rather than a degraded
+mode. Both decisions it depends on live in `web/precache.ts` as pure functions:
+which built files must exist before the shell can start, and which requests the
+service worker may answer at all. The precache list is derived from the real
+bundle at build time, because a hand-written list of content-hashed URLs would
+go stale in the worst possible way — an install that succeeds and caches the
+previous build.
+
+Two boundaries are deliberate. Monaco is reached only through dynamic imports
+and is therefore excluded from the install: it would roughly double a first
+visit to buy syntax highlighting, and the textarea path formats identically, so
+it is cached opportunistically once a reader has actually loaded it. And the
+worker answers only for the playground's own pages and hashed assets; the
+documentation site shares the origin and is passed through untouched, since a
+stale cached document is worse than a missing one.
+
 ## Core source model
 
 ### UTF-8 ranges

@@ -108,6 +108,13 @@ const english = {
   downloadPath: "Path is too long for a portable tar archive: {path}.",
   archiveField: "A tar archive field is too long.",
   githubFallback: "GitHub star count unavailable; showing the last bundled count.",
+  offlineAvailability: "Offline availability",
+  offlineInstallable: "Once this page has loaded, it keeps working without a network, and your browser can install it as an app.",
+  offlineActive: "Offline — still working",
+  offlineActiveTitle: "There is no network. Formatting runs on this device exactly as before.",
+  offlineUpdate: "New version ready",
+  offlineUpdateAction: "Reload",
+  offlineUpdateTitle: "Reload this tab to use the version that was just downloaded.",
 } as const;
 
 export type MessageKey = keyof typeof english;
@@ -218,6 +225,13 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     downloadPath: "O caminho é longo demais para um arquivo tar portátil: {path}.",
     archiveField: "Um campo do arquivo tar é longo demais.",
     githubFallback: "Contagem de estrelas indisponível; exibindo o último valor incluído.",
+    offlineAvailability: "Disponibilidade offline",
+    offlineInstallable: "Depois que esta página carrega, ela continua funcionando sem rede, e o navegador pode instalá-la como aplicativo.",
+    offlineActive: "Offline — continua funcionando",
+    offlineActiveTitle: "Não há rede. A formatação roda neste dispositivo exatamente como antes.",
+    offlineUpdate: "Nova versão pronta",
+    offlineUpdateAction: "Recarregar",
+    offlineUpdateTitle: "Recarregue esta aba para usar a versão que acabou de ser baixada.",
   },
   es: {
     ...english,
@@ -322,6 +336,13 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     downloadPath: "La ruta es demasiado larga para un archivo tar portátil: {path}.",
     archiveField: "Un campo del archivo tar es demasiado largo.",
     githubFallback: "No se pudo obtener la cantidad de estrellas; se muestra el último valor incluido.",
+    offlineAvailability: "Disponibilidad sin conexión",
+    offlineInstallable: "Una vez cargada esta página, sigue funcionando sin red, y el navegador puede instalarla como aplicación.",
+    offlineActive: "Sin conexión: sigue funcionando",
+    offlineActiveTitle: "No hay red. El formateo se ejecuta en este dispositivo igual que antes.",
+    offlineUpdate: "Nueva versión lista",
+    offlineUpdateAction: "Recargar",
+    offlineUpdateTitle: "Recarga esta pestaña para usar la versión recién descargada.",
   },
   fr: {
     ...english,
@@ -426,6 +447,13 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     downloadPath: "Le chemin est trop long pour une archive tar portable : {path}.",
     archiveField: "Un champ de l’archive tar est trop long.",
     githubFallback: "Nombre d’étoiles indisponible ; la dernière valeur intégrée est affichée.",
+    offlineAvailability: "Disponibilité hors ligne",
+    offlineInstallable: "Une fois cette page chargée, elle continue de fonctionner sans réseau, et le navigateur peut l’installer comme application.",
+    offlineActive: "Hors ligne — toujours fonctionnel",
+    offlineActiveTitle: "Il n’y a pas de réseau. Le formatage s’exécute sur cet appareil comme avant.",
+    offlineUpdate: "Nouvelle version prête",
+    offlineUpdateAction: "Recharger",
+    offlineUpdateTitle: "Rechargez cet onglet pour utiliser la version qui vient d’être téléchargée.",
   },
 };
 

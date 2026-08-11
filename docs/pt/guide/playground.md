@@ -23,3 +23,30 @@ backend de formatação.
 O navegador não executa a [Norminette oficial](https://github.com/42school/norminette),
 compilador, Git ou Make. Use a CLI para uma verificação oficial e para backups,
 transações e undo.
+
+## Uso offline
+
+O playground se instala na primeira vez que você o abre. Depois disso, a
+página, o formatador em WebAssembly e a interface não precisam de rede alguma:
+abra o mesmo endereço num avião, no wifi da escola no seu pior dia, ou mesmo
+com o site fora do ar, e a formatação roda exatamente como antes. Nada nunca
+foi enviado a lugar nenhum, então o uso offline muda como você chega à
+ferramenta, não o que ela faz.
+
+O navegador também pode instalá-lo como aplicativo, pela barra de endereço ou
+pelo menu. Ele passa a abrir em janela própria, com o nome no idioma que você
+escolheu.
+
+Vale saber duas coisas:
+
+- O editor de desktop não faz parte da instalação. O Monaco é um download
+  grande que dá realce de sintaxe e busca, então só é baixado quando há
+  conexão, e guardado assim que houver. Abrir o playground offline antes disso
+  entrega a área de texto simples, que formata de forma idêntica.
+- Só o playground fica guardado. A documentação que você está lendo agora é
+  outro site e continua precisando de rede.
+
+Uma versão nova nunca substitui a página enquanto você trabalha nela. Ela é
+baixada em segundo plano e o cabeçalho oferece **Nova versão pronta** com um
+botão **Recarregar**. Até você apertá-lo, continua valendo a versão com que
+você começou.

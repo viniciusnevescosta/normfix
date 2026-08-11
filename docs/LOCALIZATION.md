@@ -32,6 +32,7 @@ official link.
 | Surface | Source of translated text | Published behavior |
 |---|---|---|
 | Browser playground | `web/i18n.ts` and `data-i18n*` attributes in `web/index.html` | Complete `en`, `pt`, `es`, and `fr` UI; a language choice only changes the language and is remembered until it is changed again |
+| Installed playground | Per-locale web app manifests generated in `web/vite.config.ts` | Each language installs under its own name, identity, and start URL, so an installed playground opens in the language its reader chose |
 | Documentation | Locale trees under `docs/` plus locale navigation in `docs/.vitepress/config.ts` | Localized landing, installation, playground, safety, compatibility, and contributor paths, with English as the explicit fallback for pages not yet published |
 | SEO | VitePress head/config, `web/index.html`, sitemaps, and `robots.txt` | Canonical URLs and `hreflang` only for pages that really exist |
 | Native CLI | `crates/normfix-i18n` catalogue, selected with `--lang` or the process locale | Announcement, report prose, safety prompts, `explain` articles, and this project's own diagnostics in `en`, `pt`, `es`, and `fr`; findings relayed from the official checker or the C compiler stay as those tools produced them; commands, flags, JSON, rule IDs, and exit codes remain language-neutral |
@@ -54,7 +55,12 @@ official link.
 7. Never inject a translation with `innerHTML`. Continue to use `textContent`
    and DOM nodes so translated or source-controlled text cannot become markup.
 8. Test the narrow-screen textarea fallback as well as Monaco. Monaco itself
-   does not define the product's localization completeness.
+   does not define the product's localization completeness. The offline path
+   uses the same fallback, so this is also what a reader sees when they open
+   the installed playground with no network.
+9. Translate the app name in `localizedPages` in `web/vite.config.ts`. It is
+   the label under the icon of anyone who installs the playground, so it has
+   to be short and to read as a name rather than as a page title.
 
 Native Rust diagnostics returned by WebAssembly currently stay in English.
 The UI must say this plainly instead of presenting a partially translated

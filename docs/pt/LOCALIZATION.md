@@ -21,8 +21,15 @@ Texto estático deve usar `data-i18n`, `data-i18n-title`,
 `translate()`. Preserve placeholders como `{path}` e `{count}` e nunca injete
 traduções com `innerHTML`.
 
-Os diagnósticos nativos em Rust continuam em inglês até a localização da CLI
-1.1. A interface deve informar essa limitação claramente.
+Os diagnósticos que o próprio normfix escreve são traduzidos. Um achado
+repassado da Norminette oficial ou do compilador continua no idioma em que
+aquela ferramenta o produziu, para que o relatório não discorde do que
+`norminette` imprime. A interface deve dizer de onde vêm essas palavras, e não
+prometer uma tradução futura.
+
+Cada idioma publica seu próprio web app manifest, gerado em
+`web/vite.config.ts`. Traduza o nome do aplicativo junto com a página: é o
+rótulo que aparece embaixo do ícone de quem instalar o playground.
 
 ## Documentação e validação
 

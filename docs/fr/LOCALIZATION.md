@@ -21,8 +21,15 @@ accessibles. Le texte statique utilise `data-i18n`, `data-i18n-title`,
 `translate()`. Préservez les placeholders comme `{path}` et `{count}` et
 n’injectez jamais une traduction avec `innerHTML`.
 
-Les diagnostics Rust natifs restent en anglais jusqu’à la localisation de la
-CLI 1.1. L’interface doit expliquer cette limite clairement.
+Les diagnostics que normfix rédige lui-même sont traduits. Un résultat relayé
+depuis la Norminette officielle ou depuis le compilateur reste dans la langue
+où cet outil l’a produit, afin que le rapport ne contredise pas ce
+qu’affiche `norminette`. L’interface doit dire d’où viennent ces mots, et non
+promettre une traduction à venir.
+
+Chaque langue publie son propre web app manifest, généré dans
+`web/vite.config.ts`. Traduisez le nom de l’application en même temps que la
+page : c’est le libellé affiché sous l’icône de qui installe le playground.
 
 ## Documentation et validation
 

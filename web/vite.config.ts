@@ -1,9 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { build, defineConfig, type Plugin } from "vite";
 
-const outputDirectory = resolve(fileURLToPath(new URL(".", import.meta.url)), "dist");
+import { offlineShell, type Bundle } from "./precache";
+import { version } from "./package.json" with { type: "json" };
+
+const projectDirectory = resolve(fileURLToPath(new URL(".", import.meta.url)));
+const outputDirectory = resolve(projectDirectory, "dist");
 
 const localizedPages = {
   pt: {
@@ -12,6 +16,7 @@ const localizedPages = {
     description:
       "Formate C, headers, Makefiles e Markdown da 42 com privacidade no navegador usando WebAssembly.",
     ogLocale: "pt_BR",
+    appName: "normfix playground no navegador",
   },
   es: {
     lang: "es-ES",
@@ -19,6 +24,7 @@ const localizedPages = {
     description:
       "Formatea C, headers, Makefiles y Markdown de 42 de forma privada en el navegador con WebAssembly.",
     ogLocale: "es_ES",
+    appName: "normfix playground en el navegador",
   },
   fr: {
     lang: "fr-FR",
@@ -26,6 +32,7 @@ const localizedPages = {
     description:
       "Formatez C, headers, Makefiles et Markdown de 42 en privé dans le navigateur avec WebAssembly.",
     ogLocale: "fr_FR",
+    appName: "normfix playground dans le navigateur",
   },
 } as const;
 
@@ -59,17 +66,99 @@ function localizedPlaygroundPages(): Plugin {
         localized = replaceMeta(localized, "twitter-title", "content", metadata.title);
         localized = replaceMeta(localized, "twitter-description", "content", metadata.description);
         localized = replaceMeta(localized, "canonical-url", "href", canonical);
+        localized = replaceMeta(localized, "manifest-link", "href", `/${locale}/site.webmanifest`);
         const localeDirectory = resolve(outputDirectory, locale);
         await mkdir(localeDirectory, { recursive: true });
         await writeFile(resolve(localeDirectory, "index.html"), localized, "utf8");
+        // An installed app shows its manifest name under the icon, so a reader
+        // who installed the Portuguese playground should not find an English
+        // label on their home screen.
+        const manifest = JSON.parse(
+          await readFile(resolve(outputDirectory, "site.webmanifest"), "utf8"),
+        ) as Record<string, unknown>;
+        await writeFile(
+          resolve(localeDirectory, "site.webmanifest"),
+          `${JSON.stringify({
+            ...manifest,
+            id: `/${locale}/`,
+            name: metadata.appName,
+            description: metadata.description,
+            lang: metadata.lang,
+            start_url: `/${locale}/`,
+          }, null, 2)}\n`,
+          "utf8",
+        );
       }
+    },
+  };
+}
+
+/**
+ * Builds /sw.js from the real output of this build.
+ *
+ * The precache list is derived from the finished bundle rather than written by
+ * hand, because every asset URL carries a content hash: a hand-maintained list
+ * would be wrong the first time a chunk changed, and wrong in the worst way —
+ * an install that succeeds and caches the previous build.
+ */
+function offlineServiceWorker(): Plugin {
+  let shell: string[] = [];
+  return {
+    name: "normfix-offline-service-worker",
+    generateBundle(_options, bundle) {
+      const summary: Record<string, Bundle[string]> = {};
+      for (const [fileName, output] of Object.entries(bundle)) {
+        summary[fileName] = output.type === "chunk"
+          ? {
+            type: "chunk",
+            isEntry: output.isEntry,
+            imports: output.imports,
+            moduleIds: Object.keys(output.modules),
+            importedCss: [
+              ...((output as { viteMetadata?: { importedCss?: Set<string> } })
+                .viteMetadata?.importedCss ?? []),
+            ],
+          }
+          : { type: "asset" };
+      }
+      shell = offlineShell(summary);
+    },
+    async closeBundle() {
+      // Naming the cache after the shell makes eviction automatic: a build that
+      // changes nothing reuses the cache, and any change to a cached file
+      // produces a new name that the activate step then cleans up after.
+      const { createHash } = await import("node:crypto");
+      const digest = createHash("sha256").update(shell.join("\n")).digest("hex").slice(0, 16);
+      await build({
+        configFile: false,
+        logLevel: "warn",
+        define: {
+          __NORMFIX_CACHE__: JSON.stringify(`normfix-playground-${version}-${digest}`),
+          __NORMFIX_PRECACHE__: JSON.stringify(shell),
+        },
+        build: {
+          outDir: outputDirectory,
+          emptyOutDir: false,
+          target: "baseline-widely-available",
+          copyPublicDir: false,
+          // A service worker has no import map and no module graph of its own.
+          // IIFE output cannot accidentally emit syntax that a classic worker
+          // registration would fail to parse.
+          lib: {
+            entry: resolve(projectDirectory, "sw.ts"),
+            name: "normfixServiceWorker",
+            formats: ["iife"],
+            fileName: () => "sw.js",
+          },
+        },
+      });
     },
   };
 }
 
 export default defineConfig({
   base: "/",
-  plugins: [localizedPlaygroundPages()],
+  plugins: [localizedPlaygroundPages(), offlineServiceWorker()],
   build: {
     assetsInlineLimit: 0,
     // Monaco is a desktop-only dynamic import; its two core chunks are large
