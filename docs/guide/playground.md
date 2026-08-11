@@ -26,7 +26,8 @@ source stays without a generated header and the result includes a diagnostic.
 - **Copy file** copies the selected stable result. If clipboard access is
   denied, the browser selects the text for a keyboard copy.
 - **Download file** saves the selected result.
-- **Download all (.tar)** saves every stable result in one portable archive.
+- **Download all (.zip)** saves every stable result in one archive that
+  every desktop platform opens without installing anything.
 - **Use as new input** feeds a result back into the editor for another run.
 
 ## Privacy and network behavior
@@ -82,8 +83,8 @@ and the complete pre-defense workflow.
 ## Limits and portability
 
 The playground accepts at most 128 files, 1 MiB per file, and 4 MiB total.
-Paths must be NFC-normalized portable relative paths of at most 240 UTF-8 bytes
-and must fit a portable tar header. It rejects case-insensitive duplicates,
+Paths must be NFC-normalized portable relative paths of at most 240 UTF-8
+bytes. It rejects case-insensitive duplicates,
 reserved platform names, invalid UTF-8, and archive-unsafe paths before running
 the formatter. A leading UTF-8 BOM is consumed consistently. Any formatter
 result that does not reach a fixed point is discarded instead of exposed as a

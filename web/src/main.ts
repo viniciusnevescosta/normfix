@@ -12,14 +12,13 @@ import {
   MAX_FILES,
   MAX_FILE_BYTES,
   MAX_PROJECT_BYTES,
-  TarArchiveError,
-  buildTar,
   canonicalIdentityEmail,
   portablePathKey,
   readImportBatch,
   sourcePathProblem,
   type ProjectSourceFile,
 } from "./project/files";
+import { ZipArchiveError, buildZip } from "./project/archive";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
@@ -501,7 +500,6 @@ function normalizeSourcePath(path: string): string {
   if (problem.code === "path_bytes") {
     throw new Error(t("pathBytes", { count: problem.count }));
   }
-  if (problem.code === "tar_path") throw new Error(t("tarPath"));
   throw new Error(t("portablePath"));
 }
 
@@ -967,18 +965,14 @@ function downloadAll(): void {
     .map((file) => ({ path: file.path, source: file.formatted }));
   if (files.length === 0) return;
   try {
-    const archive = buildTar(files satisfies ProjectSourceFile[]);
+    const archive = buildZip(files satisfies ProjectSourceFile[]);
     downloadBlob(
-      new Blob([archive], { type: "application/x-tar" }),
-      "normfix-formatted.tar",
+      new Blob([archive], { type: "application/zip" }),
+      "normfix-formatted.zip",
     );
   } catch (error) {
-    if (error instanceof TarArchiveError && error.code === "path_too_long" && error.path) {
-      setRuntime("error", t("downloadPath", { path: error.path }));
-      return;
-    }
-    if (error instanceof TarArchiveError) {
-      setRuntime("error", t("archiveField"));
+    if (error instanceof ZipArchiveError) {
+      setRuntime("error", t("archivePath", { path: error.path }));
       return;
     }
     throw error;

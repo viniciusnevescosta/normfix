@@ -42,7 +42,7 @@ src/i18n.ts           the complete UI catalogue for en, pt, es, and fr
 src/editor.ts         Monaco, and the textarea it falls back to
 src/github.ts         the one external request the playground makes
 src/offline/          what is stored on the device and which requests are served
-src/project/          import validation, path rules, and UTF-8 decoding
+src/project/          import validation, path rules, decoding, and zip output
 src/types/            ambient declarations for WASM and Monaco contributions
 scripts/              the POSIX build scripts, run through npm
 tests/                node:test suites over the pure modules above
@@ -99,9 +99,9 @@ rather than presenting a half-translated finding as a complete one.
 
 The browser accepts `.c`, `.h`, `.md`, and files named `Makefile`. Requests are
 bounded to 128 files, 1 MiB per file, and 4 MiB total. Paths must be NFC-normalized
-portable relative paths no longer than 240 UTF-8 bytes and must also fit a
-portable tar header. Case-insensitive path collisions are rejected before the
-WASM call. Imported files must be valid UTF-8; a leading UTF-8 BOM is consumed.
+portable relative paths no longer than 240 UTF-8 bytes. Case-insensitive path
+collisions are rejected before the WASM call. Imported files must be valid
+UTF-8; a leading UTF-8 BOM is consumed.
 Any non-convergent result is discarded instead of exposed as a usable edit.
 
 ## 42 identity and privacy boundary
