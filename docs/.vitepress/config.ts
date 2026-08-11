@@ -149,6 +149,7 @@ export default defineConfig({
               { text: "explain", link: "/pt/commands/explain" },
               { text: "undo", link: "/pt/commands/undo" },
               { text: "upgrade", link: "/pt/commands/upgrade" },
+              { text: "uninstall", link: "/pt/commands/uninstall" },
             ],
           },
           {
@@ -236,6 +237,7 @@ export default defineConfig({
               { text: "explain", link: "/es/commands/explain" },
               { text: "undo", link: "/es/commands/undo" },
               { text: "upgrade", link: "/es/commands/upgrade" },
+              { text: "uninstall", link: "/es/commands/uninstall" },
             ],
           },
           {
@@ -323,6 +325,7 @@ export default defineConfig({
               { text: "explain", link: "/fr/commands/explain" },
               { text: "undo", link: "/fr/commands/undo" },
               { text: "upgrade", link: "/fr/commands/upgrade" },
+              { text: "uninstall", link: "/fr/commands/uninstall" },
             ],
           },
           {
@@ -428,6 +431,7 @@ export default defineConfig({
           { text: "explain", link: "/commands/explain" },
           { text: "undo", link: "/commands/undo" },
           { text: "upgrade", link: "/commands/upgrade" },
+              { text: "uninstall", link: "/commands/uninstall" },
         ],
       },
       {

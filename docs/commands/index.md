@@ -21,6 +21,7 @@ review.
 | [`explain`](/commands/explain) | no | You want a rule explained without scanning anything |
 | [`undo`](/commands/undo) | yes | You want a previous run restored |
 | [`upgrade`](/commands/upgrade) | yes | You want the newest release, verified |
+| [`uninstall`](/commands/uninstall) | yes | You want normfix removed from this machine |
 
 ## Every example on these pages is real
 

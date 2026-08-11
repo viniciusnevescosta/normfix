@@ -25,6 +25,7 @@ normfix undo --run RUN_ID
 | `preflight` | no | A check-oriented run with the strict compiler check enabled; it does not execute `make` or the program |
 | `explain` | no | Prints the bundled English explanation for one stable rule ID, without scanning a project |
 | `undo` | yes | Lists or restores an intact transaction backup |
+| `uninstall` | yes | Removes this binary, and with `--purge` the data it created |
 
 `undo` refuses to overwrite bytes changed after the run it restores. With no
 `--run` it selects the newest valid recovery point after interactive

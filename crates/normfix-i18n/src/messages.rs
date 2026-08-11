@@ -186,6 +186,17 @@ pub struct Messages {
     pub undo_cancelled: &'static str,
     /// Reassurance printed under a failed run.
     pub error_nothing_written: &'static str,
+
+    /// Warning shown when an uninstall would delete recovery data.
+    pub uninstall_recovery_warning: &'static str,
+    /// Uninstall confirmation question. The `[y/N]` token stays literal.
+    pub uninstall_prompt: &'static str,
+    /// An uninstall outside an interactive terminal.
+    pub uninstall_needs_confirmation: &'static str,
+    /// The person declined the uninstall confirmation.
+    pub uninstall_cancelled: &'static str,
+    /// Confirmation that the tool removed itself.
+    pub uninstall_done: &'static str,
 }
 
 /// Returns the catalogue for `locale`.
@@ -287,6 +298,12 @@ const ENGLISH: Messages = Messages {
     undo_prompt: "Continue? [y/N] ",
     undo_cancelled: "undo was cancelled; no files were changed",
     error_nothing_written: "No unvalidated changes were written.",
+
+    uninstall_recovery_warning: "This also deletes backups and quarantined files, which is the only copy of anything a previous run replaced or moved.",
+    uninstall_prompt: "Remove the files listed above? [y/N] ",
+    uninstall_needs_confirmation: "uninstall requires an interactive y/N confirmation or --force",
+    uninstall_cancelled: "uninstall was cancelled; nothing was removed",
+    uninstall_done: "normfix has been removed.",
 };
 
 const PORTUGUESE: Messages = Messages {
@@ -377,6 +394,12 @@ const PORTUGUESE: Messages = Messages {
     undo_prompt: "Continuar? [y/N] ",
     undo_cancelled: "o desfazer foi cancelado; nenhum arquivo foi alterado",
     error_nothing_written: "Nenhuma alteração não validada foi gravada.",
+
+    uninstall_recovery_warning: "Isso também apaga os backups e os arquivos em quarentena, que são a única cópia de qualquer coisa que uma execução anterior tenha substituído ou movido.",
+    uninstall_prompt: "Remover os arquivos listados acima? [y/N] ",
+    uninstall_needs_confirmation: "a desinstalação exige uma confirmação interativa y/N ou --force",
+    uninstall_cancelled: "a desinstalação foi cancelada; nada foi removido",
+    uninstall_done: "o normfix foi removido.",
 };
 
 const SPANISH: Messages = Messages {
@@ -467,6 +490,12 @@ const SPANISH: Messages = Messages {
     undo_prompt: "¿Continuar? [y/N] ",
     undo_cancelled: "el deshacer se canceló; no se modificó ningún archivo",
     error_nothing_written: "No se escribió ningún cambio sin validar.",
+
+    uninstall_recovery_warning: "Esto también borra las copias de seguridad y los archivos en cuarentena, que son la única copia de todo lo que una ejecución anterior sustituyó o movió.",
+    uninstall_prompt: "¿Eliminar los archivos listados arriba? [y/N] ",
+    uninstall_needs_confirmation: "la desinstalación requiere una confirmación interactiva y/N o --force",
+    uninstall_cancelled: "la desinstalación se canceló; no se eliminó nada",
+    uninstall_done: "normfix se ha eliminado.",
 };
 
 const FRENCH: Messages = Messages {
@@ -557,6 +586,12 @@ const FRENCH: Messages = Messages {
     undo_prompt: "Continuer ? [y/N] ",
     undo_cancelled: "l'annulation a été abandonnée ; aucun fichier n'a été modifié",
     error_nothing_written: "Aucune modification non validée n'a été écrite.",
+
+    uninstall_recovery_warning: "Cela supprime aussi les sauvegardes et les fichiers en quarantaine, qui sont l'unique copie de tout ce qu'une exécution précédente a remplacé ou déplacé.",
+    uninstall_prompt: "Supprimer les fichiers listés ci-dessus ? [y/N] ",
+    uninstall_needs_confirmation: "la désinstallation exige une confirmation interactive y/N ou --force",
+    uninstall_cancelled: "la désinstallation a été annulée ; rien n'a été supprimé",
+    uninstall_done: "normfix a été supprimé.",
 };
 
 #[cfg(test)]
@@ -696,6 +731,17 @@ mod tests {
             ("undo_prompt", messages.undo_prompt),
             ("undo_cancelled", messages.undo_cancelled),
             ("error_nothing_written", messages.error_nothing_written),
+            (
+                "uninstall_recovery_warning",
+                messages.uninstall_recovery_warning,
+            ),
+            ("uninstall_prompt", messages.uninstall_prompt),
+            (
+                "uninstall_needs_confirmation",
+                messages.uninstall_needs_confirmation,
+            ),
+            ("uninstall_cancelled", messages.uninstall_cancelled),
+            ("uninstall_done", messages.uninstall_done),
         ]
     }
 

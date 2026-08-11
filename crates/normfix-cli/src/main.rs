@@ -5,6 +5,7 @@
 mod execution;
 mod rules;
 mod scope_guard;
+mod uninstall;
 mod upgrade;
 
 use std::collections::BTreeMap;
@@ -203,6 +204,19 @@ enum Command {
     Undo(UndoArguments),
     /// Replace this binary with the newest published release.
     Upgrade(UpgradeArguments),
+    /// Remove this binary, and optionally the data it created.
+    Uninstall(UninstallArguments),
+}
+
+#[derive(Debug, Args)]
+struct UninstallArguments {
+    /// Also remove configuration, cache, backups, and quarantined files.
+    #[arg(long)]
+    purge: bool,
+
+    /// Show exactly what would be removed and stop.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Debug, Args)]
@@ -323,6 +337,9 @@ fn run(cli: &Cli) -> ExitCode {
     if let Some(Command::Upgrade(arguments)) = &cli.command {
         return run_upgrade(cli.format, cli_messages(cli), arguments.check);
     }
+    if let Some(Command::Uninstall(arguments)) = &cli.command {
+        return run_uninstall(cli, arguments);
+    }
     let (mut paths, workflow) = selected_workflow(cli);
     let mut git_unexpected = Vec::new();
     let git_scoped = cli.changed || cli.staged;
@@ -414,6 +431,66 @@ fn finish_run(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCode {
 }
 
 /// Replaces the running binary with the newest published release.
+/// Removes this binary, and under `--purge` the data it created.
+///
+/// The plan is printed before anything is deleted, for the same reason a run
+/// announces its scope: the destructive step must be visible while it can still
+/// be refused.
+fn run_uninstall(cli: &Cli, arguments: &UninstallArguments) -> ExitCode {
+    let messages = cli_messages(cli);
+    let plan = match uninstall::plan(arguments.purge) {
+        Ok(plan) => plan,
+        Err(message) => {
+            print_run_error(cli.format, messages, &message);
+            return ExitCode::from(2);
+        }
+    };
+
+    eprint!("{}", uninstall::describe(&plan));
+    if plan.removes_recovery_data() {
+        eprintln!("{}", messages.uninstall_recovery_warning);
+    }
+    if arguments.dry_run {
+        return ExitCode::SUCCESS;
+    }
+
+    if let Err(message) = confirm_uninstall(cli, messages) {
+        print_run_error(cli.format, messages, &message);
+        return ExitCode::from(2);
+    }
+
+    match uninstall::remove(&plan) {
+        Ok(()) => {
+            eprintln!("{}", messages.uninstall_done);
+            ExitCode::SUCCESS
+        }
+        Err(message) => {
+            print_run_error(cli.format, messages, &message);
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn confirm_uninstall(cli: &Cli, messages: &normfix_i18n::Messages) -> Result<(), String> {
+    if cli.force {
+        return Ok(());
+    }
+    if cli.format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal()
+    {
+        return Err(messages.uninstall_needs_confirmation.to_owned());
+    }
+    eprint!("{}", messages.uninstall_prompt);
+    let _ = io::stderr().flush();
+    let mut answer = String::new();
+    // `y` is the accepted answer in every language; see `confirm_undo`.
+    let confirmed = io::stdin()
+        .read_line(&mut answer)
+        .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
+    confirmed
+        .then_some(())
+        .ok_or_else(|| messages.uninstall_cancelled.to_owned())
+}
+
 fn run_upgrade(
     format: OutputFormat,
     messages: &normfix_i18n::Messages,
@@ -1007,9 +1084,9 @@ fn selected_workflow(cli: &Cli) -> (Vec<PathBuf>, Workflow) {
         Some(Command::Check(arguments)) => (arguments.paths.clone(), Workflow::Check),
         Some(Command::Budget(arguments)) => (arguments.paths.clone(), Workflow::Budget),
         Some(Command::Preflight(arguments)) => (arguments.paths.clone(), Workflow::Preflight),
-        Some(Command::Explain(_) | Command::Undo(_) | Command::Upgrade(_)) => {
-            (Vec::new(), Workflow::Default)
-        }
+        Some(
+            Command::Explain(_) | Command::Undo(_) | Command::Upgrade(_) | Command::Uninstall(_),
+        ) => (Vec::new(), Workflow::Default),
         None => (cli.paths.clone(), Workflow::Default),
     }
 }

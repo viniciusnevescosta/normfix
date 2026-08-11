@@ -189,7 +189,7 @@ fn reject_managed_install(executable: &Path) -> Result<(), String> {
     let path = executable.to_string_lossy();
     if path.contains("/Cellar/") || path.contains("/homebrew/") || path.contains("/linuxbrew/") {
         return Err(format!(
-            "{path} is managed by Homebrew. Upgrade it with:\n  brew upgrade viniciusnevescosta/normfix/normfix"
+            "{path} is managed by Homebrew; upgrade it with `brew upgrade viniciusnevescosta/normfix/normfix`"
         ));
     }
     Ok(())

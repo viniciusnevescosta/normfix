@@ -21,6 +21,7 @@ scripts, en CI et pendant une relecture.
 | [`explain`](/fr/commands/explain) | non | Vous voulez une règle expliquée sans rien analyser |
 | [`undo`](/fr/commands/undo) | oui | Vous voulez restaurer une exécution précédente |
 | [`upgrade`](/fr/commands/upgrade) | oui | Vous voulez la version la plus récente, vérifiée |
+| [`uninstall`](/fr/commands/uninstall) | oui | Vous voulez retirer normfix de cette machine |
 
 ## Chaque exemple de ces pages est réel
 

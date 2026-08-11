@@ -21,6 +21,7 @@ durante una revisión.
 | [`explain`](/es/commands/explain) | no | Quieres una regla explicada sin analizar nada |
 | [`undo`](/es/commands/undo) | sí | Quieres restaurar una ejecución anterior |
 | [`upgrade`](/es/commands/upgrade) | sí | Quieres la versión más reciente, verificada |
+| [`uninstall`](/es/commands/uninstall) | sí | Quieres eliminar normfix de esta máquina |
 
 ## Cada ejemplo de estas páginas es real
 
