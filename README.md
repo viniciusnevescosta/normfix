@@ -159,29 +159,15 @@ The documentation lives at
 | [Architecture](https://normfix.vercel.app/docs/ARCHITECTURE) | What each crate owns and why the boundaries exist |
 | [Compatibility](https://normfix.vercel.app/docs/COMPATIBILITY) | Supported Norminette, MSRV, and what versioning covers |
 
-## Development
+## Contributing
 
-```sh
-cargo fmt --all --check
-cargo test --workspace --all-targets --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked
-cargo +1.85.0 test --workspace --all-targets --locked
-cargo deny --all-features check
-cargo test --locked -p normfix-engine --test differential -- --ignored
-```
+Building from source, the complete gate list every change must pass, and the
+npm workspace that produces the playground and the documentation are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-The last one needs the official Norminette on `PATH`. It asserts the claim the
-whole project rests on: a run never leaves a file with more official
+The gate that matters most is the differential one: it asserts the claim the
+whole project rests on, that a run never leaves a file with more official
 diagnostics than it started with.
-
-The site is one npm workspace:
-
-```sh
-npm ci && npm run build   # playground into web/dist, documentation into web/dist/docs
-npm run dev               # the playground
-npm run docs:dev          # the documentation
-```
 
 ## Project
 
