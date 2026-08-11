@@ -201,7 +201,13 @@ jobs:
                 echo 'brew install viniciusnevescosta/normfix/normfix'
                 echo '```'
                 echo
-                echo "The unpinned \`curl ... | sh\` form installs the latest stable release instead."
+                echo "Already on a pre-release? \`upgrade\` follows the preview channel and moves you here:"
+                echo
+                echo '```sh'
+                echo 'normfix upgrade'
+                echo '```'
+                echo
+                echo "The unpinned \`curl ... | sh\` form installs the latest stable release instead, and a stable install is never moved onto a pre-release."
                 ;;
               *)
                 echo '```sh'
@@ -212,6 +218,12 @@ jobs:
                 echo
                 echo '```sh'
                 echo 'brew install viniciusnevescosta/normfix/normfix'
+                echo '```'
+                echo
+                echo "Already have normfix? Upgrade in place, with the download verified against its published checksum:"
+                echo
+                echo '```sh'
+                echo 'normfix upgrade'
                 echo '```'
                 ;;
             esac
