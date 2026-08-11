@@ -40,6 +40,73 @@ this release: a run still never leaves a file with more official diagnostics
 than it started with, a second run changes nothing, and a file that compiled
 still compiles.
 
+## [1.2.0] / 2026-08-11
+
+Accessibility for students who do not read English comfortably: the findings
+normfix writes itself now arrive in their language.
+
+### Added
+
+- **normfix's own diagnostics in four languages.** A student running with
+  `--lang pt` — or simply with a Portuguese system locale — now reads the
+  project's own findings in Portuguese, not just the report's headings.
+
+  The scope is deliberate and permanent. A finding relayed from the official
+  Norminette or from the C compiler is *not* translated and never will be: that
+  text is those tools' own output, and rewriting it would make the report
+  disagree with what running `norminette` directly prints. The notice under a
+  non-English report now says exactly that, as a fact about where the words come
+  from rather than an apology for something missing.
+
+  A diagnostic can now carry a reader-language rendering beside its English
+  text. Three properties make that safe on a type that is serialized,
+  deduplicated, and sorted: it never reaches JSON, equality ignores it — which
+  is why `PartialEq` is hand-written rather than derived, since `dedup` relies
+  on it and two diagnostics differing only by language are the same finding —
+  and ordering ignores it, so a report's order does not depend on who is
+  reading. Verified rather than assumed: `--lang pt --format json` still emits
+  the English `message`.
+
+### Fixed
+
+- **Preflight stopped implying that a piscina exercise is missing something.** A
+  piscina exercise is expected to contain only `.c` files, so a Makefile and
+  project headers are both optional. The score was already correct, but the
+  advisory read as a to-do list: "add or select the required Makefile before
+  relying on preflight." It now says the check did not run, that this is normal
+  for loose `.c` files, and that only the subject can say whether a Makefile is
+  required — which normfix cannot read. A regression test locks it: loose `.c`
+  files with no Makefile and no header score 100 with no hard failures.
+
+### Changed
+
+- **The Norminette repository owns its own install instructions.** Every page,
+  the installer, the Homebrew caveat, and the release notes printed
+  `pipx install norminette==3.3.59`. That command is not this project's to give:
+  when 42School changes how their checker is installed, every copy here goes
+  stale at once and a student follows an instruction that no longer works. All
+  of them now point at [42School/norminette](https://github.com/42School/norminette),
+  which is the only source that stays correct. The tested compatibility baseline
+  is still named, because that is a fact about normfix rather than an
+  installation step.
+
+- Dependency updates: blake3 1.8.6, clap 4.6.6, criterion 0.7.0, and
+  `actions/setup-python` v7. Criterion 0.8 is deliberately not taken because it
+  requires Rust 1.86 and the supported minimum is 1.85.
+
+### Notes
+
+Choosing a language in the browser playground only changes the language: it
+rewrites no files, re-runs no analysis, and issues no network request. That was
+verified in a browser, and the choice is remembered until it is changed again.
+
+The differential gate was re-run against the installed official Norminette for
+this release.
+
+`docs/ROADMAP.md` is rewritten for the next lines: the playground as a
+workspace, project initialization, platform hardening including BSD, Valgrind
+leak checking, and Python.
+
 ## [1.1.0] / 2026-08-11
 
 Two things: `normfix explain` now answers in your language, and the engine's
@@ -800,6 +867,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.2.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.2.0
 [1.1.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.0
 [1.0.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0
 [1.0.0-rc.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.3
