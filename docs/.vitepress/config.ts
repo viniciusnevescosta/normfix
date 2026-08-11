@@ -289,7 +289,7 @@ export default defineConfig({
           { text: "Accueil", link: "/fr/" },
           { text: "Installation", link: "/fr/guide/getting-started" },
           { text: "Playground", link: "/fr/guide/playground" },
-          { text: "Référence en anglais", link: "/guide/command-line" },
+          { text: "Commandes", link: "/fr/commands/" },
           {
             text: "Projet",
             items: [
@@ -304,9 +304,38 @@ export default defineConfig({
             text: "Guide",
             items: [
               { text: "Vue d’ensemble", link: "/fr/" },
+              { text: "Pourquoi normfix", link: "/fr/why" },
               { text: "Bien démarrer", link: "/fr/guide/getting-started" },
+              { text: "Ligne de commande", link: "/fr/guide/command-line" },
               { text: "Playground navigateur", link: "/fr/guide/playground" },
+              { text: "Agents d’IA", link: "/fr/guide/ai-agents" },
+            ],
+          },
+          {
+            text: "Commandes",
+            items: [
+              { text: "Vue d’ensemble", link: "/fr/commands/" },
+              { text: "format", link: "/fr/commands/format" },
+              { text: "lint", link: "/fr/commands/lint" },
+              { text: "check", link: "/fr/commands/check" },
+              { text: "budget", link: "/fr/commands/budget" },
+              { text: "preflight", link: "/fr/commands/preflight" },
+              { text: "explain", link: "/fr/commands/explain" },
+              { text: "undo", link: "/fr/commands/undo" },
+              { text: "upgrade", link: "/fr/commands/upgrade" },
+            ],
+          },
+          {
+            text: "Référence",
+            items: [
+              { text: "Toutes les options", link: "/fr/reference/flags" },
+              { text: "Ce qui est corrigé", link: "/fr/reference/fixes" },
               { text: "Sécurité et récupération", link: "/fr/reference/safety" },
+              { text: "En-têtes officiels", link: "/fr/reference/headers" },
+              { text: "Projets et Makefiles", link: "/fr/reference/projects" },
+              { text: "Rapports", link: "/fr/reference/reporting" },
+              { text: "Performance", link: "/fr/reference/performance" },
+              { text: "Limites connues", link: "/fr/reference/boundaries" },
               { text: "Compatibilité", link: "/fr/COMPATIBILITY" },
               { text: "Guide de localisation", link: "/fr/LOCALIZATION" },
             ],
