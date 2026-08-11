@@ -4,7 +4,10 @@ The roadmap separates changes by compatibility promise. Dates are deliberately
 absent: a release moves only after its tests, real-project checks, native
 archives, and browser build are green.
 
-## 1.0 release candidates
+`1.0.0` is released. The command surface, rule IDs, exit codes, and the
+`schema_version: 2` JSON report are stable for all of 1.x.
+
+## Shipped: the 1.0 line
 
 ### 1.0.0-rc.2 — evaluator and safe automation
 
@@ -36,11 +39,9 @@ lockfile are all published. This candidate carries what took their place.
 
 ### 1.0.0 — stable contract
 
-- no new feature after the final candidate;
-- complete native, MSRV, Clippy, rustdoc, WASM, site, security, and
-  real-project gates;
-- immutable four-platform archives and checksum/provenance publication;
-- verified installer and Homebrew formula update.
+Released with the complete documentation in English, Portuguese, Spanish, and
+French, and with `normfix uninstall` so the tool can be removed as cleanly as
+it is installed.
 
 The first code change after the 1.0.0 tag is splitting
 `crates/normfix-engine/src/pipeline.rs` into smaller internal modules. It is

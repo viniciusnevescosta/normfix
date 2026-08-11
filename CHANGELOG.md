@@ -10,6 +10,127 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.0.0] / 2026-08-10
+
+The stable release.
+
+`normfix` started from one observation: a 42 student's scarcest resource is
+hours, and a meaningful share of those hours goes into whitespace. Fixing
+indentation. Moving declarations. Breaking lines at 80 columns. Pasting
+headers. Across a cursus that is thousands of files, in project after project,
+none of which teaches you anything the second time you do it.
+
+This is the version that gives those hours back and is willing to be held to
+it.
+
+### What it does
+
+One command, in a project directory:
+
+```sh
+normfix
+```
+
+It reads the project, applies every fix it can prove is safe, and explains the
+rest in a sentence instead of a rule name. No configuration file is required,
+nothing is uploaded, and every file it rewrites is backed up outside the project
+first.
+
+The proof is not a figure of speech. The installed official Norminette runs
+before and after every batch of edits, and if a batch introduces a rule
+violation that was not there before, the whole batch is reverted and your
+original bytes stay. Edits touch the byte range they proved something about and
+nothing else, so the diff is reviewable and the rest of the file is identical.
+That is why you can run this on work in progress.
+
+### What 1.0.0 promises
+
+A stable contract, and the restraint that makes it worth something.
+
+- **The command surface is stable.** Command names, flag spellings, rule IDs,
+  exit codes, configuration keys, and `--format json` values do not change
+  inside 1.x. A script written today keeps working.
+- **`schema_version: 2` is the JSON contract.** Branch on it and the rest is
+  yours to depend on.
+- **Every write is recoverable.** One transaction, external backups, a journal,
+  and a `undo` that refuses to restore over work you did afterwards.
+- **Destructive means authorized.** Nothing is removed without a capability
+  flag and a confirmation, every removal keeps recovery storage, and an
+  unproven case is reported rather than guessed.
+- **Refusals are the feature.** Extracting a long function, reordering includes
+  across a conditional, and guaranteeing 80 columns with no safe break are all
+  left to you, with the reason and the next step.
+
+### What is in it
+
+Everything from the three release candidates, and it is worth reading them
+together because they are one argument in three parts.
+
+**rc.1 — see the error.** Every diagnostic is shown against its own source,
+with carets under the exact bytes the rule is about, rendered with the library
+`rustc` uses for its own errors. Shared context is stated once per rule instead
+of repeated under every occurrence.
+
+**rc.2 — know whether you would pass.** `preflight` ends with a transparent
+0–100 estimate, a letter band, a verdict, and exactly located hard failures —
+evaluated against the bytes on disk, not the bytes normfix could write, because
+a repair you have not written is not part of what an evaluator will open. Every
+run announces its action, scope, and safety configuration before touching
+anything, and filesystem roots, home directories, and operating-system trees
+are refused outright. Orphan header prototypes and trivia-only Makefile sources
+became visible. Untested Norminette releases became usable, with the
+compatibility gap named rather than hidden.
+
+**rc.3 — read it in your language.** The run announcement, the report, and every
+safety-critical prompt in English, Portuguese, Spanish, and French, from a
+catalogue that cannot be half-translated because a missing entry fails the
+build. JSON stays language-neutral in every locale, so automation never has to
+pick a language.
+
+**And for 1.0.0:** the complete documentation — 25 pages — in all four
+languages, and `normfix uninstall`, which prints exactly what it will remove,
+keeps your backups unless you name them, and refuses a Homebrew-managed install
+with the command that actually works.
+
+### What it will not do
+
+The honest list, unchanged since the first commit, because it is the point of
+the tool rather than a gap in it:
+
+- it will not extract a long function for you;
+- it will not redesign control flow, rename across a project, or change a public
+  signature;
+- it will not prove your program is leak-free — the analyzer can suggest a leak,
+  never its absence;
+- it will not guarantee 80 columns when no safe break exists;
+- and it will never present its own estimate as a 42 grade. `conclusive` is
+  `false` in every report this tool can produce.
+
+### The rule it is built on
+
+> Change what can be proven, explain what cannot, and never turn uncertainty
+> into permission.
+
+Every decision here follows from that sentence, including the ones that make
+the tool do less than it could.
+
+### Thanks
+
+To the official [Norminette](https://github.com/42School/norminette), which
+remains the authority this tool never argues with, and to everyone who ran a
+release candidate against real work and said what broke.
+
+### Notes
+
+Splitting `crates/normfix-engine/src/pipeline.rs` into smaller internal modules
+is the first change after this tag. It has been deferred through three
+candidates so that release-candidate behavior was never obscured by a large
+structural diff.
+
+Backend rule messages remain English; 1.1 finishes that translation, and until
+then a non-English run says so in one line rather than implying a completeness
+it does not have.
+
 ## [1.0.0-rc.3] / 2026-08-10
 
 The third release candidate. normfix now speaks the reader's language for the
@@ -571,6 +692,7 @@ pytest suite. These versions were developed in the repository but never
 published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
+[1.0.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0
 [1.0.0-rc.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.0.0-rc.1

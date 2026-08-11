@@ -25,7 +25,7 @@ durante uma revisão.
 
 ## Todo exemplo destas páginas é real
 
-A saída mostrada foi produzida por `normfix 1.0.0-rc.3` sobre este arquivo:
+A saída mostrada foi produzida por `normfix 1.0.0` sobre este arquivo:
 
 ```c
 # include "libft.h"
