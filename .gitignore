@@ -22,6 +22,25 @@ htmlcov/
 /docs/changelog.md
 /docs/contributing.md
 /docs/security.md
+# Generated mirrors of the English-only pages, one per locale.
+/docs/pt/ARCHITECTURE.md
+/docs/es/ARCHITECTURE.md
+/docs/fr/ARCHITECTURE.md
+/docs/pt/RELEASING.md
+/docs/es/RELEASING.md
+/docs/fr/RELEASING.md
+/docs/pt/ROADMAP.md
+/docs/es/ROADMAP.md
+/docs/fr/ROADMAP.md
+/docs/pt/changelog.md
+/docs/es/changelog.md
+/docs/fr/changelog.md
+/docs/pt/contributing.md
+/docs/es/contributing.md
+/docs/fr/contributing.md
+/docs/pt/security.md
+/docs/es/security.md
+/docs/fr/security.md
 /docs/.vitepress/dist/
 /.vercel-rust/
 /.vercel/
