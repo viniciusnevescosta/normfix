@@ -54,6 +54,12 @@ npm audit --audit-level=moderate
 npm run build
 ```
 
+The differential gate needs the official Norminette on `PATH`. It is the gate
+that matters most, because it asserts the claim the whole project rests on: a
+run never leaves a file with more official diagnostics than it started with. It
+also asserts that a second run changes nothing, and that a file that compiled
+still compiles.
+
 Benchmarks are not a gate, but run them when you touch the parser, the tape, or
 the scheduler:
 
@@ -61,10 +67,19 @@ the scheduler:
 cargo bench -p normfix-c-actions
 ```
 
-The last one of the gates above needs the official Norminette on `PATH`. It is the gate that
-matters most: it asserts that a run never leaves a file with more official
-diagnostics than it started with, that a second run changes nothing, and that
-a file that compiled still compiles.
+## The site
+
+The playground and the documentation are one npm workspace, built together:
+
+```sh
+npm ci && npm run build   # playground into web/dist, documentation into web/dist/docs
+npm run dev               # the playground
+npm run docs:dev          # the documentation
+```
+
+The documentation build fails on a dead internal link, which is what actually
+keeps the four locale trees honest: a page that links to a translation that
+does not exist yet stops the build rather than shipping a 404.
 
 ## Adding a transformation
 

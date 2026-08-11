@@ -129,6 +129,7 @@ since.
 | [`explain`](https://normfix.vercel.app/docs/commands/explain) | no | Explain one rule offline |
 | [`undo`](https://normfix.vercel.app/docs/commands/undo) | yes | Restore a previous run |
 | [`upgrade`](https://normfix.vercel.app/docs/commands/upgrade) | yes | Replace this binary with the newest release in its channel |
+| [`uninstall`](https://normfix.vercel.app/docs/commands/uninstall) | yes | Remove this binary, and with `--purge` the data it created |
 
 Exit codes: `0` clean or fixed, `1` work remains, `2` the run itself failed,
 `130` an interactive review was cancelled.
