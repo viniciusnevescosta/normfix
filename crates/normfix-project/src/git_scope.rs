@@ -646,12 +646,29 @@ mod tests {
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
             .expect("executable permissions");
         let options = GitScopeOptions {
-            timeout: Duration::from_millis(20),
+            timeout: Duration::from_millis(200),
             git_executable: executable,
             ..GitScopeOptions::default()
         };
 
-        let error = resolve_git_scope(temporary.path(), GitScope::Staged, &options)
+        // The same ETXTBSY window the oracle tests already wait out: a child
+        // forked by another test thread still holds a write descriptor to this
+        // script until it reaches its own exec, and Linux will not execute a
+        // file while a writer exists. That surfaces as a spawn failure rather
+        // than the timeout this test is about.
+        let error = (0..100)
+            .find_map(
+                |_| match resolve_git_scope(temporary.path(), GitScope::Staged, &options) {
+                    Err(GitScopeError::Spawn { ref message, .. })
+                        if message.contains("Text file busy") =>
+                    {
+                        std::thread::sleep(Duration::from_millis(20));
+                        None
+                    }
+                    outcome => Some(outcome),
+                },
+            )
+            .expect("the fake Git executable never became runnable")
             .expect_err("timeout must fail closed");
 
         assert!(matches!(error, GitScopeError::Timeout { .. }));

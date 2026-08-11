@@ -10,6 +10,18 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## Unreleased
+
+### Fixed
+
+- **The release gate no longer fails at random.** Two test suites spawned a
+  shell script they had just written, and Linux refuses to execute a file while
+  any process holds it open for writing — which happens whenever a sibling test
+  thread forks between its own `fork` and `exec`. `normfix-oracle` already
+  waited that window out; the engine and Git-scope suites now do too. The
+  Git-scope timeout test also allowed only 20 ms to start a shell, which is
+  under the real cost of doing so on a loaded, instrumented runner.
+
 ## [1.3.0] / 2026-08-11
 
 The playground stops needing a network, and starts behaving like a workbench

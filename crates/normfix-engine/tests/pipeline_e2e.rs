@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use normfix_core::{DiagnosticSource, Severity};
 use normfix_destructive::{DestructiveCapability, DestructiveRequest};
-use normfix_engine::{BackupPolicy, FixOptions, WriteApproval, run_fixes};
+use normfix_engine::{BackupPolicy, FixOptions, FixRunError, WriteApproval, run_fixes};
 use normfix_header::{Identity42, RunClock, build_c_header};
-use normfix_report::{FileStatus, ReportMode};
+use normfix_report::{FileStatus, ReportMode, RunReport};
 use tempfile::TempDir;
 
 const CLEAN_SOURCE: &str = "int\tanswer(void)\n{\n\treturn (42);\n}\n";
@@ -85,6 +85,29 @@ fn executable_script(directory: &TempDir, name: &str, body: &str) -> PathBuf {
     path
 }
 
+/// Runs the pipeline, waiting out a stub the kernel still reports as busy.
+///
+/// These tests run on parallel threads, and every one of them spawns the fake
+/// Norminette it just wrote. A child forked by another thread still holds a
+/// write descriptor to that file until it reaches its own `exec`, and Linux
+/// refuses to `execve` a file while any writer exists. The result is an
+/// occasional `Text file busy` that has nothing to do with normfix.
+///
+/// The same window is already waited out inside `normfix-oracle`'s own tests.
+/// Retrying here only makes the fixture ready; every other error is returned
+/// unchanged, so a test that means to observe a failure still observes it.
+fn run_ready(inputs: &[PathBuf], options: &FixOptions) -> Result<RunReport, FixRunError> {
+    for _ in 0..100 {
+        match run_fixes(inputs, options) {
+            Err(error) if error.to_string().contains("Text file busy") => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            outcome => return outcome,
+        }
+    }
+    run_fixes(inputs, options)
+}
+
 fn identity() -> Identity42 {
     Identity42 {
         login: "student".to_owned(),
@@ -101,7 +124,7 @@ fn check_mode_plans_the_official_header_without_writing() {
     let source_path = fixture.project.path().join("answer.c");
     fs::write(&source_path, CLEAN_SOURCE).expect("write source fixture");
 
-    let report = run_fixes(&[], &fixture.options(ReportMode::Check)).expect("check pipeline");
+    let report = run_ready(&[], &fixture.options(ReportMode::Check)).expect("check pipeline");
 
     assert_eq!(
         fs::read_to_string(&source_path).expect("unchanged source"),
@@ -130,7 +153,7 @@ fn lint_only_reports_original_source_without_planning_a_header() {
     let mut options = fixture.options(ReportMode::Check);
     options.lint_only = true;
 
-    let report = run_fixes(&[], &options).expect("lint pipeline");
+    let report = run_ready(&[], &options).expect("lint pipeline");
 
     assert_eq!(
         fs::read_to_string(&source_path).expect("unchanged source"),
@@ -152,7 +175,7 @@ fn allowed_function_diagnostic_range_tracks_the_final_header_inserted_source() {
     )
     .expect("policy fixture");
 
-    let report = run_fixes(&[], &fixture.options(ReportMode::Check)).expect("policy pipeline");
+    let report = run_ready(&[], &fixture.options(ReportMode::Check)).expect("policy pipeline");
     let source_report = report
         .files
         .iter()
@@ -197,7 +220,7 @@ fn partial_selection_uses_non_static_definitions_from_the_complete_project() {
     )
     .expect("policy fixture");
 
-    let report = run_fixes(&[selected], &fixture.options(ReportMode::Check))
+    let report = run_ready(&[selected], &fixture.options(ReportMode::Check))
         .expect("partial policy pipeline");
 
     assert_eq!(report.files.len(), 1);
@@ -227,7 +250,7 @@ fn a_static_definition_in_another_file_does_not_authorize_a_call() {
     )
     .expect("policy fixture");
 
-    let report = run_fixes(&[selected], &fixture.options(ReportMode::Check))
+    let report = run_ready(&[selected], &fixture.options(ReportMode::Check))
         .expect("static policy pipeline");
 
     assert!(
@@ -255,7 +278,7 @@ fn incomplete_complete_project_source_disables_all_allowlist_findings() {
     )
     .expect("policy fixture");
 
-    let report = run_fixes(&[selected], &fixture.options(ReportMode::Check))
+    let report = run_ready(&[selected], &fixture.options(ReportMode::Check))
         .expect("incomplete policy pipeline");
 
     assert!(
@@ -283,7 +306,7 @@ fn a_makefile_only_scope_does_not_load_an_unrelated_function_policy() {
     )
     .expect("invalid policy fixture");
 
-    let report = run_fixes(&[makefile], &fixture.options(ReportMode::Check))
+    let report = run_ready(&[makefile], &fixture.options(ReportMode::Check))
         .expect("Makefile-only pipeline");
 
     assert!(report.files[0].after.iter().all(|diagnostic| {
@@ -300,7 +323,7 @@ fn explicit_empty_scope_does_not_fall_back_to_recursive_discovery() {
     options.empty_input_is_empty = true;
     options.norminette_executable = Some(fixture.project.path().join("not-used"));
 
-    let report = run_fixes(&[], &options).expect("empty scope");
+    let report = run_ready(&[], &options).expect("empty scope");
 
     assert_eq!(report.summary.files, 0);
     assert_eq!(report.exit_code(), 0);
@@ -316,7 +339,7 @@ fn fix_mode_can_commit_an_approved_subset_after_full_project_analysis() {
     let clock = RunClock::fixed("2026/07/24 12:34:56").expect("fixed run clock");
     let mut preview_options = fixture.options(ReportMode::Check);
     preview_options.run_clock = Some(clock.clone());
-    let preview = run_fixes(&[], &preview_options).expect("preview pipeline");
+    let preview = run_ready(&[], &preview_options).expect("preview pipeline");
     let approved = preview
         .files
         .iter()
@@ -330,7 +353,7 @@ fn fix_mode_can_commit_an_approved_subset_after_full_project_analysis() {
     options.run_clock = Some(clock);
     options.write_approvals = Some(BTreeMap::from([(first.clone(), approval)]));
 
-    let report = run_fixes(&[], &options).expect("selective fix pipeline");
+    let report = run_ready(&[], &options).expect("selective fix pipeline");
 
     assert!(
         fs::read_to_string(&first)
@@ -354,7 +377,7 @@ fn fix_mode_keeps_an_external_backup_and_the_second_run_is_idempotent() {
     let mut options = fixture.options(ReportMode::Fix);
     options.backup = BackupPolicy::Directory(backups.path().to_path_buf());
 
-    let first = run_fixes(&[], &options).expect("first fixing pipeline");
+    let first = run_ready(&[], &options).expect("first fixing pipeline");
 
     assert_eq!(first.exit_code(), 0);
     assert_eq!(first.summary.changed, 1);
@@ -376,7 +399,7 @@ fn fix_mode_keeps_an_external_backup_and_the_second_run_is_idempotent() {
     let fixed_once = fs::read(&source_path).expect("first fixed bytes");
     assert!(fixed_once.starts_with(b"/* ********"));
 
-    let second = run_fixes(&[], &options).expect("second fixing pipeline");
+    let second = run_ready(&[], &options).expect("second fixing pipeline");
 
     assert_eq!(second.exit_code(), 0);
     assert_eq!(second.summary.changed, 0);
@@ -408,7 +431,7 @@ fn authorized_quarantine_removes_an_unexpected_file_but_preserves_recovery_bytes
     options.quarantine_unexpected = true;
     options.destructive_authorization = Some(authorization);
 
-    let report = run_fixes(&[], &options).expect("quarantine pipeline");
+    let report = run_ready(&[], &options).expect("quarantine pipeline");
 
     assert_eq!(report.exit_code(), 0);
     assert_eq!(
@@ -471,7 +494,7 @@ echo "$1: OK!"
     options.preflight = true;
     options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &options).expect("VLA pipeline");
+    let report = run_ready(&[], &options).expect("VLA pipeline");
 
     let before = &report.files[0].before;
     let after = &report.files[0].after;
@@ -517,7 +540,7 @@ fn raw_va_arg_type_recovery_is_a_non_blocking_parser_advisory() {
     );
     fs::write(&source_path, source).expect("write variadic fixture");
 
-    let report = run_fixes(&[], &fixture.options(ReportMode::Check))
+    let report = run_ready(&[], &fixture.options(ReportMode::Check))
         .expect("variadic compatibility pipeline");
 
     assert_eq!(report.summary.remaining, 0);
@@ -570,7 +593,7 @@ exit 1
     options.compiler_executable = Some(compiler);
     options.analyzer = true;
 
-    let report = run_fixes(&[], &options).expect("compiler diagnostics pipeline");
+    let report = run_ready(&[], &options).expect("compiler diagnostics pipeline");
 
     assert!(
         report.files[0].written,
@@ -629,7 +652,7 @@ exit 1
     options.compiler_preflight = true;
     options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &options).expect("compiler include context pipeline");
+    let report = run_ready(&[], &options).expect("compiler include context pipeline");
 
     assert!(report.files.iter().all(|file| {
         file.after
@@ -659,7 +682,7 @@ exit 1
     options.compiler_preflight = true;
     options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &options).expect("incomplete compiler context pipeline");
+    let report = run_ready(&[], &options).expect("incomplete compiler context pipeline");
     let source = report
         .files
         .iter()
@@ -693,7 +716,7 @@ fn missing_makefile_source_is_reported_then_removed_only_when_explicitly_enabled
     fs::write(fixture.project.path().join("present.c"), CLEAN_SOURCE).expect("present source");
     let mut check = fixture.options(ReportMode::Check);
 
-    let reported = run_fixes(&[], &check).expect("missing source report");
+    let reported = run_ready(&[], &check).expect("missing source report");
 
     let make_report = reported
         .files
@@ -717,7 +740,7 @@ fn missing_makefile_source_is_reported_then_removed_only_when_explicitly_enabled
             .authorize_forced(true, true)
             .expect("explicit Makefile-source removal authorization"),
     );
-    let fixed = run_fixes(&[], &check).expect("missing source removal");
+    let fixed = run_ready(&[], &check).expect("missing source removal");
     let make_report = fixed
         .files
         .iter()
@@ -762,7 +785,7 @@ fn nested_makefile_sources_are_resolved_from_the_makefile_directory() {
     let options = fixture.options(ReportMode::Check);
 
     let report =
-        run_fixes(std::slice::from_ref(&makefile), &options).expect("nested Makefile check");
+        run_ready(std::slice::from_ref(&makefile), &options).expect("nested Makefile check");
 
     assert!(
         report.files[0]
@@ -804,7 +827,7 @@ fn makefile_source_removal_refuses_paths_through_symbolic_links() {
             .expect("explicit Makefile-source removal authorization"),
     );
 
-    let report = run_fixes(&[makefile], &options).expect("symlink-safe source reconciliation");
+    let report = run_ready(&[makefile], &options).expect("symlink-safe source reconciliation");
     let make_report = &report.files[0];
 
     assert!(
@@ -843,7 +866,7 @@ echo "$1: OK!"
     let mut options = fixture.options(ReportMode::Check);
     options.lint_only = true;
 
-    let report = run_fixes(&[], &options).expect("header-only compatibility run");
+    let report = run_ready(&[], &options).expect("header-only compatibility run");
     let warnings = report
         .files
         .iter()
@@ -875,7 +898,7 @@ exit 1
     let mut options = fixture.options(ReportMode::Check);
     options.lint_only = true;
 
-    let report = run_fixes(&[], &options).expect("untested-version lint");
+    let report = run_ready(&[], &options).expect("untested-version lint");
     let source = &report.files[0].after;
 
     assert!(source.iter().any(|diagnostic| {
@@ -914,7 +937,7 @@ exit 1
     options.preflight = true;
     options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &options).expect("multi-location lint");
+    let report = run_ready(&[], &options).expect("multi-location lint");
     let official = report.files[0]
         .after
         .iter()
@@ -960,7 +983,7 @@ echo "$1: OK!"
     options.preflight = true;
     options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &options).expect("unproven VLA pipeline");
+    let report = run_ready(&[], &options).expect("unproven VLA pipeline");
     let file = &report.files[0];
 
     assert!(file.before.iter().any(|diagnostic| {
@@ -1017,7 +1040,7 @@ exit 0
     options.preflight = true;
     options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &options).expect("automatic analyzer preflight");
+    let report = run_ready(&[], &options).expect("automatic analyzer preflight");
 
     assert!(report.files[0].after.iter().any(|diagnostic| {
         diagnostic.rule_id == "CC_ANALYZER_MALLOC_LEAK"
@@ -1034,7 +1057,7 @@ fn readme_advisory_is_present_only_when_a_readme_exists_and_never_hard_fails() {
     let mut options = fixture.options(ReportMode::Check);
     options.preflight = true;
 
-    let with_readme = run_fixes(&[], &options).expect("README preflight");
+    let with_readme = run_ready(&[], &options).expect("README preflight");
 
     assert!(with_readme.files[0].after.iter().any(|diagnostic| {
         diagnostic.rule_id == "README_42_CRITERIA_REVIEW" && diagnostic.severity == Severity::Info
@@ -1050,7 +1073,7 @@ fn readme_advisory_is_present_only_when_a_readme_exists_and_never_hard_fails() {
     );
 
     fs::remove_file(&readme).expect("remove README fixture");
-    let without_readme = run_fixes(&[], &options).expect("no README preflight");
+    let without_readme = run_ready(&[], &options).expect("no README preflight");
 
     assert!(without_readme.files.is_empty());
 }
@@ -1062,7 +1085,7 @@ fn missing_makefile_is_an_advisory_until_subject_policy_can_require_one() {
     let mut options = fixture.options(ReportMode::Check);
     options.preflight = true;
 
-    let absent = run_fixes(&[], &options).expect("preflight without Makefile");
+    let absent = run_ready(&[], &options).expect("preflight without Makefile");
 
     assert!(
         absent
@@ -1082,7 +1105,7 @@ fn missing_makefile_is_an_advisory_until_subject_policy_can_require_one() {
     );
 
     fs::write(fixture.project.path().join("Makefile"), "all:\n").expect("Makefile fixture");
-    let present = run_fixes(&[], &options).expect("preflight with Makefile");
+    let present = run_ready(&[], &options).expect("preflight with Makefile");
 
     assert!(
         present
@@ -1104,7 +1127,7 @@ fn explicit_header_preflight_reports_an_existing_unselected_root_makefile() {
     options.preflight = true;
 
     let partial =
-        run_fixes(std::slice::from_ref(&header), &options).expect("explicit header-only preflight");
+        run_ready(std::slice::from_ref(&header), &options).expect("explicit header-only preflight");
 
     assert!(partial.files.iter().all(|file| file.path != "Makefile"));
     assert!(
@@ -1116,7 +1139,7 @@ fn explicit_header_preflight_reports_an_existing_unselected_root_makefile() {
                 && diagnostic.severity == Severity::Warning)
     );
 
-    let complete = run_fixes(&[header, makefile], &options).expect("Makefile-selected preflight");
+    let complete = run_ready(&[header, makefile], &options).expect("Makefile-selected preflight");
 
     assert!(complete.files.iter().any(|file| file.path == "Makefile"));
     assert!(
@@ -1144,7 +1167,7 @@ fn trivia_only_makefile_source_is_reported_then_removed_only_with_authorization(
     )
     .expect("placeholder source");
 
-    let report = run_fixes(&[], &fixture.options(ReportMode::Check)).expect("empty source check");
+    let report = run_ready(&[], &fixture.options(ReportMode::Check)).expect("empty source check");
     let make_report = report
         .files
         .iter()
@@ -1169,7 +1192,7 @@ fn trivia_only_makefile_source_is_reported_then_removed_only_with_authorization(
             .expect("explicit destructive authorization"),
     );
 
-    let removed = run_fixes(&[], &authorized).expect("empty source removal");
+    let removed = run_ready(&[], &authorized).expect("empty source removal");
     let make_report = removed
         .files
         .iter()
@@ -1196,7 +1219,7 @@ fn default_check_reports_header_prototype_without_project_implementation_at_the_
     let header_source = "int\tmissing_api(void);\n";
     fs::write(&header, header_source).expect("header");
 
-    let report = run_fixes(&[], &fixture.options(ReportMode::Check))
+    let report = run_ready(&[], &fixture.options(ReportMode::Check))
         .expect("missing implementation warning");
     let header_report = report
         .files
@@ -1234,7 +1257,7 @@ fn default_check_reports_a_trivia_only_implementation_without_removing_it() {
     .expect("implementation");
 
     let report =
-        run_fixes(&[], &fixture.options(ReportMode::Check)).expect("empty implementation warning");
+        run_ready(&[], &fixture.options(ReportMode::Check)).expect("empty implementation warning");
     let header_report = report
         .files
         .iter()
@@ -1276,7 +1299,7 @@ fn authorized_unsafe_mode_removes_only_an_unused_orphan_header_prototype() {
             .expect("explicit destructive authorization"),
     );
 
-    let report = run_fixes(&[], &options).expect("orphan removal");
+    let report = run_ready(&[], &options).expect("orphan removal");
     let header_report = report
         .files
         .iter()
@@ -1316,7 +1339,7 @@ fn unsafe_orphan_removal_is_blocked_when_project_code_references_the_api() {
             .expect("explicit destructive authorization"),
     );
 
-    let report = run_fixes(&[], &options).expect("blocked orphan removal");
+    let report = run_ready(&[], &options).expect("blocked orphan removal");
     let header_report = report
         .files
         .iter()
@@ -1356,7 +1379,7 @@ fn orphan_prototype_removal_refuses_a_partial_path_scope() {
             .expect("authorization"),
     );
 
-    let report = run_fixes(std::slice::from_ref(&header), &options).expect("partial scope");
+    let report = run_ready(std::slice::from_ref(&header), &options).expect("partial scope");
 
     assert!(report.files[0].after.iter().any(
         |diagnostic| diagnostic.rule_id == "UNSAFE_ORPHAN_PROTOTYPE_CLOSED_SET_INCOMPLETE"
@@ -1409,7 +1432,7 @@ exit 1
     options.preflight = true;
     options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &options).expect("snapshot-based preflight");
+    let report = run_ready(&[], &options).expect("snapshot-based preflight");
     let evaluation = report.evaluation.as_ref().expect("evaluation");
 
     assert!(!evaluation.conclusive);
@@ -1458,7 +1481,7 @@ fn a_piscina_scope_of_loose_c_files_is_a_clean_preflight() {
     options.preflight = true;
     options.compiler_executable = Some(compiler);
 
-    let report = run_fixes(&[], &options).expect("piscina preflight");
+    let report = run_ready(&[], &options).expect("piscina preflight");
     let evaluation = report.evaluation.as_ref().expect("preflight evaluation");
 
     assert!(evaluation.hard_failures.is_empty());
