@@ -1,7 +1,7 @@
 # Architecture
 
 This document describes the native Rust architecture implemented by
-`normfix` `1.4.0`. It records both what the system does and why
+`normfix` `1.5.0`. It records both what the system does and why
 the boundaries exist. Where a useful library exists but is not part of the
 default CLI pipeline, that distinction is explicit.
 
@@ -34,8 +34,8 @@ single parser/formatter pass.
 | Choice | What | Why | Principal tradeoff |
 |---|---|---|---|
 | Native Rust workspace | Small crates with explicit ownership | Strong types, predictable performance, one deployable binary, and enforceable boundaries | More integration code than a monolithic script |
-| Prebuilt Unix release archives | Publish one checked binary for Linux x86-64/ARM64 and macOS Intel/Apple Silicon | Students can install without compiling the workspace | Each target needs a trusted native release runner; Norminette remains an external dependency |
-| Windows through WSL or the browser | Keep the full CLI on its tested Unix process/filesystem boundary; offer the WASM preview in any modern browser | Avoids claiming native Windows safety before subprocess termination and transaction proofs exist there | Windows users need WSL for the full Norminette-backed workflow |
+| Prebuilt release archives | Publish one checked binary for Linux, macOS, Windows, and FreeBSD | Students can install without compiling the workspace | Each target needs a trusted native release runner; Norminette remains an external dependency |
+| Native Windows and FreeBSD, on evidence | Run the whole suite, the real official checker, and the differential proof on each platform in CI before claiming it | A platform is supported when it is measured, not when it compiles; four silent differences were found this way | Two documented differences remain on Windows: a narrow containment window, and a rename that is not written through |
 | Immutable shadow buffers | Analyze and edit strings in memory before any write | Failed proofs cannot partially mutate a source file | Temporary memory scales with selected source size |
 | Tree-sitter behind an adapter | `tree-sitter-c` provides resilient C structure | Fast parsing and useful ranges without coupling every crate to one backend | Tree-sitter is not a compiler and can recover around valid macro-heavy C |
 | Lossless token tape | Every byte is classified as token, trivia, or unknown | Structural parsing must not discard whitespace/comments required by the Norm | A second lexical representation must be maintained |
@@ -53,6 +53,7 @@ single parser/formatter pass.
 | Capability-scoped destructive grants | Authorization names a closed operation set | `--unsafe` cannot become an open “do anything” switch | Confirmation occurs before candidate planning |
 | Recoverable transaction boundary | Preflight, backup, stage, journal, ordered commit, rollback | Filesystem changes have one auditable owner | Multiple files cannot be made truly atomic by a single cross-file rename |
 | One reporting layer | Human UI and stable JSON derive from the same report model | Terminal and automation consumers see the same facts | Report schema evolution must be deliberate |
+| Leak checking as its own command | `normfix leaks` runs a binary the reader points it at, under a checker found on PATH | Executing a program is a different act from reading one, so it is opt-in, confirmed, and never reached by a default run | normfix never builds the program, and a clean report is one run on one path rather than a proof |
 | Browser-only WASM subset | Reuse native parser/actions in memory behind a small old-school Vite 8.1.5 workbench | A local or Vercel-hosted playground can preview code privately without installing the CLI | It cannot claim official Norminette, compiler, Git, header, or transaction results |
 
 ## System shape

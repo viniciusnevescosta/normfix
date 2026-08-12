@@ -10,7 +10,10 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
-## Unreleased
+## [1.5.0] / 2026-08-12
+
+A leak check you can actually run, with the boundary it needed drawn where a
+reader can see it.
 
 ### Added
 
@@ -1063,6 +1066,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.5.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.5.0
 [1.4.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.4.0
 [1.3.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.2
 [1.3.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.1

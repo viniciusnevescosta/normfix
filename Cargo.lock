@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "normfix"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "clap",
  "normfix-actions",
@@ -725,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-actions"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "blake3",
  "filetime",
@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-c-actions"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "blake3",
  "camino",
@@ -754,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-c-semantics"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "normfix-c-syntax",
  "normfix-core",
@@ -762,7 +762,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-c-syntax"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "normfix-core",
  "proptest",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-cache"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "blake3",
  "redb",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-core"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "blake3",
  "camino",
@@ -794,7 +794,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-destructive"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "blake3",
  "camino",
@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-engine"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "blake3",
  "camino",
@@ -834,7 +834,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-header"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "chrono",
  "regex",
@@ -846,11 +846,11 @@ dependencies = [
 
 [[package]]
 name = "normfix-i18n"
-version = "1.4.0"
+version = "1.5.0"
 
 [[package]]
 name = "normfix-makefile"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "normfix-header",
  "regex",
@@ -860,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-markdown"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "comrak",
  "serde",
@@ -869,7 +869,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-oracle"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "blake3",
  "nix",
@@ -883,7 +883,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-project"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "blake3",
  "ignore",
@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-report"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "annotate-snippets",
  "anstyle",
@@ -908,7 +908,7 @@ dependencies = [
 
 [[package]]
 name = "normfix-wasm"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "camino",
  "normfix-c-actions",

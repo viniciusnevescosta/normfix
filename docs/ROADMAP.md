@@ -95,9 +95,11 @@ against.
 
 ## 1.5 — leak checking
 
-Add Valgrind support so a run can report leaks in the student's code, within the
+Shipped. `normfix leaks` reports leaks in a program you already built, within the
 same rule as every other backend: what it cannot prove, it reports rather than
-asserts. A clean report is not a proof that a program never leaks — it is what
+asserts. It is the only command that executes your code, so it asks first, and
+normfix never builds the program — you build it, normfix runs it. `preflight`
+says whether a checker is installed and what to type, without running anything. A clean report is not a proof that a program never leaks — it is what
 one run observed on one path.
 
 The checker is located on `PATH` and verified by its own `--version`, so which
