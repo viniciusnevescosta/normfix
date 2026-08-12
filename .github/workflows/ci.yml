@@ -75,6 +75,31 @@ jobs:
         run: |
           cargo build --release --locked -p normfix --target ${{ matrix.target }}
           ./packaging/archive.ps1 -Target "${{ matrix.target }}" -Archive "normfix-${{ matrix.target }}.zip"
+      # The installer is a POSIX script and unpacks the Windows archive with
+      # whichever tool is present. Which one that is was an assumption until
+      # this step: it runs the same chain, in the same shell the installer runs
+      # in, against an archive this job just built.
+      - name: Unpack the archive the way the installer does
+        shell: bash
+        run: |
+          set -eu
+          archive="dist/normfix-${{ matrix.target }}.zip"
+          work="$(mktemp -d)"
+          if command -v unzip >/dev/null 2>&1; then
+            echo "using unzip"
+            unzip -q "$archive" -d "$work"
+          elif tar -xf "$archive" -C "$work" 2>/dev/null; then
+            echo "using tar"
+          elif command -v powershell >/dev/null 2>&1; then
+            echo "using powershell"
+            powershell -NoProfile -NonInteractive -Command \
+              "Expand-Archive -Path '$(cygpath -w "$archive")' -DestinationPath '$(cygpath -w "$work")' -Force"
+          else
+            echo "no extractor available to the installer" >&2
+            exit 1
+          fi
+          test -f "$work/normfix.exe"
+          "$work/normfix.exe" --version
 
   coverage:
     name: Line coverage

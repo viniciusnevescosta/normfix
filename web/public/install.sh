@@ -56,25 +56,21 @@ fi
 
 os="$(uname -s)"
 arch="$(uname -m)"
-case "$os" in
-    # Git Bash, MSYS2, and Cygwin all report a Windows kernel. There are
-    # prebuilt Windows archives, but installing one is a different job from
-    # this script's: a `.zip` into a Windows path, not a `.tar.gz` into
-    # `~/.local/bin`. Naming the manager that does it is more useful than
-    # reporting an unrecognized platform.
-    MINGW* | MSYS* | CYGWIN* | Windows_NT*)
-        die "this installer is for Linux and macOS. On Windows, use Scoop:
-  scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
-  scoop install normfix
-Or download the archive for your machine from https://github.com/viniciusnevescosta/normfix/releases/latest"
-        ;;
-esac
-
 case "$os:$arch" in
     Linux:x86_64) archive="normfix-x86_64-linux-gnu.tar.gz" ;;
     Linux:aarch64 | Linux:arm64) archive="normfix-aarch64-linux-gnu.tar.gz" ;;
     Darwin:x86_64) archive="normfix-x86_64-macos.tar.gz" ;;
     Darwin:arm64) archive="normfix-aarch64-macos.tar.gz" ;;
+    # Git Bash, MSYS2, and Cygwin all report a Windows kernel and all run this
+    # script. Windows ships `.zip` because that is what the platform opens on
+    # its own; unpacking one from here is a question of which tool is present,
+    # handled below.
+    MINGW*:x86_64 | MSYS*:x86_64 | CYGWIN*:x86_64 | Windows_NT*:x86_64)
+        archive="normfix-x86_64-windows.zip"
+        ;;
+    MINGW*:aarch64 | MSYS*:aarch64 | CYGWIN*:aarch64 | Windows_NT*:aarch64 | MINGW*:arm64 | MSYS*:arm64 | CYGWIN*:arm64 | Windows_NT*:arm64)
+        archive="normfix-aarch64-windows.zip"
+        ;;
     *)
         die "no prebuilt binary for $os $arch. Build from source, or use the browser playground at https://normfix.vercel.app"
         ;;
@@ -168,12 +164,36 @@ Refusing to install. Report this at https://github.com/$REPO/security/advisories
 fi
 note "checksum verified"
 
-tar -xzf "$work/$archive" -C "$work"
-[ -f "$work/normfix" ] || die "the archive did not contain a normfix binary"
+case "$archive" in
+    *.zip)
+        # No single unzip tool is guaranteed on Windows. `unzip` is common in
+        # MSYS2 but absent from a stock Git for Windows; the system `tar` is
+        # bsdtar, which reads zip; PowerShell is always there. Try each, and
+        # say which ones were missing rather than failing on one name.
+        if command -v unzip >/dev/null 2>&1; then
+            unzip -q "$work/$archive" -d "$work"
+        elif tar -xf "$work/$archive" -C "$work" 2>/dev/null; then
+            :
+        elif command -v powershell >/dev/null 2>&1; then
+            powershell -NoProfile -NonInteractive -Command \
+                "Expand-Archive -Path '$(cygpath -w "$work/$archive" 2>/dev/null || printf '%s' "$work/$archive")' -DestinationPath '$(cygpath -w "$work" 2>/dev/null || printf '%s' "$work")' -Force" ||
+                die "could not unpack $archive"
+        else
+            die "this installer needs unzip, a tar that reads zip, or powershell to unpack $archive"
+        fi
+        ;;
+    *)
+        tar -xzf "$work/$archive" -C "$work"
+        ;;
+esac
+
+binary=normfix
+[ -f "$work/normfix.exe" ] && binary=normfix.exe
+[ -f "$work/$binary" ] || die "the archive did not contain a normfix binary"
 
 mkdir -p "$BIN_DIR"
-install -m 0755 "$work/normfix" "$BIN_DIR/normfix"
-note "installed $BIN_DIR/normfix"
+install -m 0755 "$work/$binary" "$BIN_DIR/$binary"
+note "installed $BIN_DIR/$binary"
 
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
