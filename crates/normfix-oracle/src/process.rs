@@ -115,6 +115,9 @@ pub(crate) fn run_bounded(
     let mut child = command
         .spawn()
         .map_err(|error| ProcessError::Spawn(error.to_string()))?;
+    // Held for the child's whole lifetime: on Windows the containment *is* this
+    // value, and dropping it kills anything the tool left running.
+    let _containment = Containment::around(&child);
     let started = Instant::now();
 
     let status = loop {
@@ -187,6 +190,45 @@ fn terminate_and_reap(child: &mut std::process::Child) {
     let _ = child.wait();
 }
 
+/// Keeps a tool's whole process tree bounded, not just the process spawned.
+///
+/// A checker that spawns helpers must not be able to leave them running after
+/// its own deadline, or the bound this module exists to enforce is only a bound
+/// on one process.
+///
+/// The two platforms reach that guarantee from opposite directions. Unix
+/// establishes it before the program starts — `process_group(0)` applies
+/// between fork and exec, so no descendant can ever escape — and signals the
+/// group on the way out. Windows has no equivalent pre-start hook, so the child
+/// is placed in a job object immediately after spawn, and the job kills
+/// everything in it as soon as its last handle closes. That leaves a window
+/// between spawn and assignment in which a grandchild could break away; it is
+/// microseconds wide and it is the reason the compatibility policy states the
+/// two platforms separately instead of claiming they are identical.
+struct Containment {
+    #[cfg(windows)]
+    _job: Option<win32job::Job>,
+}
+
+impl Containment {
+    #[cfg(windows)]
+    fn around(child: &std::process::Child) -> Self {
+        use std::os::windows::io::AsRawHandle as _;
+
+        let mut limits = win32job::ExtendedLimitInfo::new();
+        limits.limit_kill_on_job_close();
+        let job = win32job::Job::create_with_limit_info(&limits)
+            .ok()
+            .filter(|job| job.assign_process(child.as_raw_handle() as isize).is_ok());
+        Self { _job: job }
+    }
+
+    #[cfg(not(windows))]
+    fn around(_child: &std::process::Child) -> Self {
+        Self {}
+    }
+}
+
 #[cfg(unix)]
 fn configure_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt;
@@ -207,5 +249,7 @@ fn terminate_process_group(child: &std::process::Child) {
     }
 }
 
+/// On Windows the tree dies when the job object closes, which `Containment`
+/// owns. Killing the direct child here would leave its descendants running.
 #[cfg(not(unix))]
 fn terminate_process_group(_child: &std::process::Child) {}

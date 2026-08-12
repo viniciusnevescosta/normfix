@@ -75,14 +75,37 @@ pub(super) fn absolute_lexical(path: &Path) -> PathBuf {
     normalized
 }
 
+/// The user-owned directory backups live in, per platform.
+///
+/// `XDG_DATA_HOME` wins wherever it is set, which keeps a configured location
+/// authoritative. Otherwise Windows uses `LOCALAPPDATA` — the same variable the
+/// cache already resolves through, and a directory whose ACL is already
+/// restricted to that user — and Unix uses the XDG fallback.
+///
+/// Returning `None` is not a detail: with no external directory the writer
+/// refuses to write at all, so a platform without a branch here has a tool that
+/// cannot perform its default action.
 pub(super) fn automatic_backup_root() -> Option<PathBuf> {
+    platform_data_base().map(|base| base.join("normfix/backups"))
+}
+
+fn platform_data_base() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("XDG_DATA_HOME").filter(|path| !path.is_empty()) {
-        return Some(PathBuf::from(path).join("normfix/backups"));
+        return Some(PathBuf::from(path));
     }
-    std::env::var_os("HOME")
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .map(|home| home.join(".local/share/normfix/backups"))
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .map(|home| home.join(".local/share"))
+    }
 }
 
 pub(super) fn run_id() -> String {
@@ -94,27 +117,48 @@ pub(super) fn run_id() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::transaction_root;
+
+    /// Absolute paths as each platform writes them.
+    ///
+    /// A Unix literal such as `/project` is not absolute in the Windows sense:
+    /// it names the root of whatever drive is current, so the function resolves
+    /// it against one and the assertion is comparing two different ideas.
+    #[cfg(unix)]
+    const PREFIX: &str = "";
+    #[cfg(windows)]
+    const PREFIX: &str = r"C:";
+
+    fn path(suffix: &str) -> String {
+        let separated = if cfg!(windows) {
+            suffix.replace('/', "\\")
+        } else {
+            suffix.to_owned()
+        };
+        format!("{PREFIX}{separated}")
+    }
 
     #[test]
     fn transaction_root_is_the_common_ancestor_and_falls_back_to_the_cwd() {
-        let cwd = std::path::Path::new("/project");
-        let inside = [
-            std::path::Path::new("/project/src/main.c"),
-            std::path::Path::new("/project/src/util.c"),
-        ];
+        let cwd = path("/project");
+        let cwd = Path::new(&cwd);
+
+        let first = path("/project/src/main.c");
+        let second = path("/project/src/util.c");
+        let inside = [Path::new(&first), Path::new(&second)];
         assert_eq!(
             transaction_root(inside.iter().copied(), cwd),
-            std::path::Path::new("/project/src")
+            Path::new(&path("/project/src")),
         );
 
-        let disjoint = [
-            std::path::Path::new("/project/main.c"),
-            std::path::Path::new("/elsewhere/main.c"),
-        ];
+        let here = path("/project/main.c");
+        let there = path("/elsewhere/main.c");
+        let disjoint = [Path::new(&here), Path::new(&there)];
         assert_eq!(
             transaction_root(disjoint.iter().copied(), cwd),
-            std::path::Path::new("/")
+            Path::new(&path("/")),
         );
     }
 }

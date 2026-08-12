@@ -38,6 +38,36 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps --locked
 
+  windows:
+    name: Tests on ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86-64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          - name: Windows ARM64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    # The compatibility policy does not claim Windows yet, and this job is what
+    # will let it: every platform difference found so far — a protected-scope
+    # guard that recognized nothing, a durability step that made every write
+    # fail, a backup directory that did not resolve, a process bound that bound
+    # one process — was invisible until the suite ran here. Without this job the
+    # next change reintroduces one silently.
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Show pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Build the workspace
+        run: cargo build --workspace --locked
+      - name: Run all tests
+        run: cargo test --workspace --all-targets --locked
+
   coverage:
     name: Line coverage
     runs-on: ubuntu-24.04

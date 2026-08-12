@@ -1537,8 +1537,26 @@ fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+/// Makes a newly created or replaced entry durable.
+///
+/// POSIX requires the parent directory to be flushed before a create or rename
+/// survives a crash, which is why this exists at all.
+///
+/// Windows has no counterpart. A directory handle cannot even be opened without
+/// `FILE_FLAG_BACKUP_SEMANTICS`, and flushing one is not a supported operation —
+/// `File::open` on a directory is what made every commit and every backup fail
+/// there with "Access is denied". The file's own `sync_all` has already run, and
+/// NTFS journals the metadata, so nothing is skipped here that Windows would
+/// otherwise have done. What remains different is that a rename is not written
+/// through, which `docs/COMPATIBILITY.md` states rather than papers over.
+#[cfg(unix)]
 fn sync_directory(path: &Path) -> io::Result<()> {
     File::open(path)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 #[cfg(unix)]
