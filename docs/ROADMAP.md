@@ -97,7 +97,17 @@ against.
 
 Add Valgrind support so a run can report leaks in the student's code, within the
 same rule as every other backend: what it cannot prove, it reports rather than
-asserts.
+asserts. A clean report is not a proof that a program never leaks — it is what
+one run observed on one path.
+
+The checker is located on `PATH` and verified by its own `--version`, so which
+build answers is not normfix's business. Linux and FreeBSD have it. macOS works
+through [`LouisBrunner/valgrind-macos`](https://github.com/LouisBrunner/valgrind-macos),
+whose Apple Silicon support is limited — worth saying, since most 42 Macs are
+now ARM. Windows is answered with WSL rather than with a second tool: Dr. Memory
+would mean a different output format, a second version to pin, a second proof in
+CI, and findings that cannot be compared with Valgrind's, on a platform whose
+documented path for the full CLI already runs through WSL.
 
 ## 1.6 — Python projects
 

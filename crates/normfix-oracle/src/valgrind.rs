@@ -8,6 +8,16 @@
 //! which is a second and much larger category of arbitrary execution, and "you
 //! built it, I ran it" is a far smaller promise than "I built and ran it".
 //!
+//! Which checker is found is deliberately not this module's business: it
+//! resolves `valgrind` on `PATH` and verifies that it answers `--version`, so a
+//! platform port satisfies it as readily as the upstream build. That is what
+//! makes macOS work through `LouisBrunner/valgrind-macos` without a line of
+//! code here, and it is why Windows is answered with WSL rather than with a
+//! second tool: a different checker means a different output format, a second
+//! version to pin, a second proof in CI, and findings that cannot be compared
+//! with these. One oracle per question is the rule the Norminette adapter
+//! follows, and a leak checker is not the place to break it.
+//!
 //! What comes back is evidence, not a verdict. Valgrind reports what it
 //! observed on the one path the program took with the arguments it was given;
 //! a clean report is not a proof that the program never leaks. The one thing
