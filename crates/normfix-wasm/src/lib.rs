@@ -13,6 +13,7 @@ use std::sync::Arc;
 use camino::{Utf8Component, Utf8Path};
 use normfix_c_actions::{
     CActionOptions, Fix as CFix, FunctionBudget, analyze_budget, apply_c_actions,
+    syntax_recovery_diagnostics,
 };
 use normfix_core::{Applicability, Diagnostic, DiagnosticSource, LineIndex, Severity};
 use normfix_header::{
@@ -551,17 +552,25 @@ fn format_c_source(
                 error: None,
             }
         }
-        Err(error) => BrowserFileResult {
-            path: file.path,
-            formatted: file.source,
-            changed: false,
-            stable: false,
-            fixes: Vec::new(),
-            diagnostics: Vec::new(),
-            budget: Vec::new(),
-            diff: String::new(),
-            error: Some(error.to_string()),
-        },
+        // Source the parser could not read reaches here, and this is the one
+        // case where saying nothing is worse than saying anything: an unchanged
+        // file with an empty diagnostic list reads as approval of code that
+        // does not parse. The command line has always reported what the parser
+        // could not read; now the browser does too.
+        Err(error) => {
+            let recovered = syntax_recovery_diagnostics(&path.to_path_buf(), &file.source);
+            BrowserFileResult {
+                diagnostics: browser_diagnostics(&file.source, recovered),
+                path: file.path,
+                formatted: file.source,
+                changed: false,
+                stable: false,
+                fixes: Vec::new(),
+                budget: Vec::new(),
+                diff: String::new(),
+                error: Some(error.to_string()),
+            }
+        }
     }
 }
 

@@ -16,9 +16,11 @@ mod transforms;
 
 use std::collections::{BTreeSet, HashSet};
 
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use normfix_c_syntax::{CParser, ParseFailure};
-pub use normfix_core::{Applicability, Diagnostic, Severity, TextRange, TextSize};
+pub use normfix_core::{
+    Applicability, Diagnostic, DiagnosticSource, Severity, TextRange, TextSize,
+};
 use thiserror::Error;
 
 pub use analysis::{
@@ -432,3 +434,133 @@ fn validate_candidate(
 
 #[cfg(test)]
 mod tests;
+
+/// Diagnostics describing what the parser could not read.
+///
+/// This lives here rather than in the engine because the browser playground
+/// needs the same answer and cannot reach the engine. Without it, a reader who
+/// pasted C with an unbalanced parenthesis was told "0 diagnostics" and handed
+/// their file back unchanged — which reads as approval of code that does not
+/// parse.
+#[must_use]
+pub fn syntax_recovery_diagnostics(path: &Utf8PathBuf, source: &str) -> Vec<Diagnostic> {
+    let mut parser = match CParser::new() {
+        Ok(parser) => parser,
+        Err(error) => {
+            return vec![point_diagnostic(
+                path,
+                "C_PARSER_FAILURE",
+                Severity::Error,
+                error.to_string(),
+                DiagnosticSource::Parser,
+                Some("Repair the source syntax before running automatic fixes.".to_owned()),
+            )];
+        }
+    };
+    match parser.parse(source) {
+        Ok(parsed) => parsed
+            .issues()
+            .iter()
+            .map(|issue| {
+                let va_arg_compatibility = recovery_is_inside_va_arg(source, issue.range());
+                Diagnostic {
+                    rule_id: if va_arg_compatibility {
+                        "C_PARSER_VA_ARG_COMPAT"
+                    } else {
+                        "C_SYNTAX_RECOVERY"
+                    }
+                    .to_owned(),
+                    path: path.clone(),
+                    range: issue.range(),
+                    severity: if va_arg_compatibility {
+                        Severity::Info
+                    } else {
+                        Severity::Warning
+                    },
+                    message: if va_arg_compatibility {
+                        "The native parser preserved a raw `va_arg` type argument through its compatibility path."
+                            .to_owned()
+                    } else {
+                        format!(
+                            "The C parser recovered around syntax node `{}`.",
+                            issue.syntax_kind()
+                        )
+                    },
+                    source: DiagnosticSource::Parser,
+                    notes: vec![
+                        if va_arg_compatibility {
+                            "This is a tree-sitter-c grammar limitation; the source bytes and official Norminette result remain authoritative."
+                        } else {
+                            "Automatic syntax-aware edits were disabled for this file."
+                        }
+                        .to_owned(),
+                    ],
+                    help: Some(
+                        if va_arg_compatibility {
+                            "No source change is required; native syntax-aware edits remain disabled for this file."
+                        } else {
+                            "Repair the malformed or unsupported construct, then rerun normfix."
+                        }
+                        .to_owned(),
+                    ),
+                    localized: None,
+                }
+            })
+            .collect(),
+        Err(error) => vec![point_diagnostic(
+            path,
+            "C_PARSER_FAILURE",
+            Severity::Error,
+            error.to_string(),
+            DiagnosticSource::Parser,
+            Some("Repair the source syntax before running automatic fixes.".to_owned()),
+        )],
+    }
+}
+
+/// Whether a recovery sits on a line using `va_arg`.
+///
+/// The tree-sitter C grammar cannot read a raw type argument, so this one
+/// recovery is a grammar limitation rather than a defect in the source, and is
+/// reported as information instead of a warning.
+fn recovery_is_inside_va_arg(source: &str, range: TextRange) -> bool {
+    let Ok(start) = usize::try_from(range.start().get()) else {
+        return false;
+    };
+    if start > source.len() || !source.is_char_boundary(start) {
+        return false;
+    }
+    let line_start = source[..start].rfind('\n').map_or(0, |newline| newline + 1);
+    let line_end = source[start..]
+        .find('\n')
+        .map_or(source.len(), |newline| start + newline);
+    source[line_start..line_end]
+        .find("va_arg")
+        .is_some_and(|offset| {
+            source[line_start + offset + "va_arg".len()..line_end]
+                .trim_start()
+                .starts_with('(')
+        })
+}
+
+/// A diagnostic with no meaningful range, anchored at the start of the file.
+fn point_diagnostic(
+    path: &Utf8PathBuf,
+    rule_id: &str,
+    severity: Severity,
+    message: String,
+    source: DiagnosticSource,
+    help: Option<String>,
+) -> Diagnostic {
+    Diagnostic {
+        rule_id: rule_id.to_owned(),
+        path: path.clone(),
+        range: TextRange::empty(TextSize::new(0)),
+        severity,
+        message,
+        source,
+        notes: Vec::new(),
+        help,
+        localized: None,
+    }
+}
