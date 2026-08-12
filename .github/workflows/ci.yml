@@ -38,8 +38,8 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps --locked
 
-  platform-survey:
-    name: Survey ${{ matrix.name }}
+  windows:
+    name: Tests on ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
@@ -52,10 +52,12 @@ jobs:
             target: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
-    # Temporary: this job exists to find out what actually fails on a platform
-    # the project does not claim yet, so the 1.4 work starts from real errors
-    # rather than from guesses. It is allowed to fail.
-    continue-on-error: true
+    # The compatibility policy does not claim Windows yet, and this job is what
+    # will let it: every platform difference found so far — a protected-scope
+    # guard that recognized nothing, a durability step that made every write
+    # fail, a backup directory that did not resolve, a process bound that bound
+    # one process — was invisible until the suite ran here. Without this job the
+    # next change reintroduces one silently.
     steps:
       - name: Check out source
         uses: actions/checkout@v7
