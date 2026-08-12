@@ -116,6 +116,32 @@ jobs:
       - name: Prove a run never worsens the official result
         run: cargo test --locked -p normfix-engine --test differential -- --ignored
 
+  freebsd:
+    name: Tests on FreeBSD x86-64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      # GitHub has no FreeBSD runner, so the suite runs in a virtual machine on
+      # this one. Without it the platform would be cross-compiled and never
+      # executed, which is the difference between shipping a binary and
+      # supporting a system.
+      - name: Run the suite on FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.2"
+          usesh: true
+          prepare: |
+            pkg install -y curl git
+          run: |
+            set -eu
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain 1.97.1
+            . "$HOME/.cargo/env"
+            cargo build --workspace --locked
+            cargo test --workspace --all-targets --locked
+
   coverage:
     name: Line coverage
     runs-on: ubuntu-24.04

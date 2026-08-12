@@ -59,7 +59,7 @@ default channel is the latest stable GitHub release. Before the first stable
 release exists, it falls back to the newest release candidate; set
 `NORMFIX_VERSION=vX.Y.Z` to request one exact tag.
 
-With Homebrew:
+With Homebrew (MacOS ):
 
 ```sh
 brew install viniciusnevescosta/normfix/normfix
