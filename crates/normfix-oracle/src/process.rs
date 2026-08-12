@@ -253,3 +253,93 @@ fn terminate_process_group(child: &std::process::Child) {
 /// owns. Killing the direct child here would leave its descendants running.
 #[cfg(not(unix))]
 fn terminate_process_group(_child: &std::process::Child) {}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::process::Command;
+    use std::thread;
+    use std::time::Duration;
+
+    use tempfile::TempDir;
+
+    use super::{ProcessError, ProcessLimits, run_bounded};
+
+    /// A tool that outlives its own deadline by spawning a helper.
+    ///
+    /// The helper records that it started, waits past the parent's deadline,
+    /// and then records that it survived. Both marks matter: without the first
+    /// the test could pass because the helper never ran at all, which would
+    /// prove nothing about containment.
+    fn escaping_tool(directory: &TempDir) -> Command {
+        let script = directory.path().join(if cfg!(windows) {
+            "escape.cmd"
+        } else {
+            "escape.sh"
+        });
+
+        #[cfg(windows)]
+        let body = concat!(
+            "@echo off\r\n",
+            // `ping` rather than `timeout`: this module gives every tool a null
+            // stdin, and `timeout` refuses to run without a console.
+            "start \"\" /b cmd /c \"echo x> started & ping -n 4 127.0.0.1 >nul & echo x> escaped\"\r\n",
+            "ping -n 60 127.0.0.1 >nul\r\n",
+        );
+        #[cfg(not(windows))]
+        let body = concat!(
+            "#!/bin/sh\n",
+            ": > started\n",
+            "( sleep 3; : > escaped ) &\n",
+            "sleep 60\n",
+        );
+
+        fs::write(&script, body).expect("write escaping tool");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+                .expect("make the tool executable");
+        }
+
+        let mut command = if cfg!(windows) {
+            let mut command = Command::new("cmd");
+            command.arg("/c").arg(&script);
+            command
+        } else {
+            Command::new(&script)
+        };
+        command.current_dir(directory.path());
+        command
+    }
+
+    #[test]
+    fn a_timeout_takes_the_whole_process_tree_with_it() {
+        let directory = TempDir::new().expect("temporary directory");
+        let mut command = escaping_tool(&directory);
+
+        let error = run_bounded(
+            &mut command,
+            ProcessLimits {
+                timeout: Duration::from_millis(700),
+                output_bytes: 1024,
+            },
+        )
+        .expect_err("the tool sleeps far past its deadline");
+        assert!(matches!(error, ProcessError::Timeout { .. }), "{error:?}");
+
+        // Long enough that a helper which was merely orphaned, rather than
+        // killed, would have finished writing by now.
+        thread::sleep(Duration::from_secs(6));
+
+        assert!(
+            directory.path().join("started").exists(),
+            "the helper never ran, so this proves nothing about containment",
+        );
+        assert!(
+            !directory.path().join("escaped").exists(),
+            "a helper outlived the deadline of the tool that spawned it",
+        );
+    }
+}
