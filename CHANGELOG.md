@@ -10,6 +10,53 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.4.0] / 2026-08-12
+
+Windows and FreeBSD, on the evidence CI produces for them rather than on the
+assumption that portable code ports.
+
+### Added
+
+- **Native Windows on x86-64 and ARM64, and FreeBSD on x86-64.** Every one of
+  them runs the complete test suite, drives the real official Norminette, and
+  proves on the platform itself that a run never leaves a file with more
+  official diagnostics than it started with.
+
+- **The one-line installer installs everywhere.** It downloads the Windows
+  archive, verifies the same published checksum, and installs `normfix.exe`;
+  Homebrew and Scoop are conveniences on top of it rather than the only route.
+  On Windows it needs a POSIX shell — Git Bash, MSYS2, Cygwin, or WSL — which
+  the documentation states where a reader meets it.
+
+### Fixed
+
+- **The protected-scope guard recognized nothing on Windows.** The lists of
+  filesystem roots, home directories, and operating-system trees were Unix path
+  shapes, so a Windows build would have shipped with the refusal to scan them
+  silently absent. System trees are now read from the environment, because
+  Windows can be installed on any drive, and two spellings of one directory no
+  longer disagree.
+
+- **Every commit and every backup failed on Windows.** Durability flushed the
+  parent directory with `File::open`, which POSIX requires and Windows refuses.
+
+- **The backup directory did not resolve on Windows**, so the default action
+  would have been unavailable behind a message about configuration rather than
+  about the platform.
+
+- **The process bound bounded one process.** A checker that spawned helpers
+  could leave them running past its own deadline on any non-Unix platform. The
+  tool now goes into a job object, and a test proves the tree dies — verified to
+  fail when containment is bypassed, so it is not passing by accident.
+
+### Changed
+
+- **The compatibility policy claims Windows and FreeBSD, and names what is
+  still different.** Containment has a window on Windows that Unix does not
+  have, and a rename is not written through there. FreeBSD on ARM64 is not
+  published: it has no prebuilt standard library on the pinned toolchain and no
+  runner to execute a suite on.
+
 ## [1.3.2] / 2026-08-12
 
 What a first visit costs, and what a finger and a screen reader can reach.
@@ -982,6 +1029,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.4.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.4.0
 [1.3.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.2
 [1.3.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.1
 [1.3.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.0

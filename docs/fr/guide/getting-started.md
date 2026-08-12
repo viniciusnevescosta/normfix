@@ -52,7 +52,7 @@ candidat de release courant reste installable.
 Deux variables d’environnement changent son comportement :
 
 ```sh
-NORMFIX_VERSION=v1.3.2 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+NORMFIX_VERSION=v1.4.0 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
 
@@ -90,10 +90,10 @@ vérifiez-la contre `SHA256SUMS`, et placez `normfix` dans le `PATH`.
 | Windows x86-64 | `normfix-x86_64-windows.zip` |
 | Windows ARM64 | `normfix-aarch64-windows.zip` |
 
-Par exemple, sur Apple Silicon avec la release `1.3.2` :
+Par exemple, sur Apple Silicon avec la release `1.4.0` :
 
 ```sh
-version=1.3.2
+version=1.4.0
 archive="normfix-aarch64-macos.tar.gz"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/${archive}"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/SHA256SUMS"

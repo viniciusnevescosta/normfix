@@ -77,12 +77,21 @@ Shipped, across three releases:
 
 ## 1.4 — Windows and BSD
 
-Native support for Windows and BSD on x86-64 and ARM64. Support means
-filesystem, terminal, compiler, archive, installer, and CI behavior — bounded
-subprocess termination, symlink and path handling, and the transaction proofs
-all currently have Unix-specific evidence. Producing a binary alone does not
-count, and until the evidence exists the compatibility policy will keep saying
-so.
+Shipped. Native Windows on x86-64 and ARM64, and FreeBSD on x86-64. Support
+means what the roadmap always said it meant: every platform runs the complete
+suite, drives the real official Norminette, and proves the differential property
+on the platform itself, in CI.
+
+Four things had to be fixed before any of that was true, and none of them
+announced itself — the protected-scope guard recognized only Unix path shapes,
+the transaction flushed a directory in a way Windows refuses, the backup
+directory resolved through variables Windows does not set, and the process bound
+bounded one process instead of a tree.
+
+FreeBSD on ARM64 is not published: `aarch64-unknown-freebsd` has no prebuilt
+standard library on the pinned toolchain, and there is no runner to execute a
+suite on. Publishing it would be the binary-without-evidence this roadmap warns
+against.
 
 ## 1.5 — correctness, security, speed, and leak checking
 

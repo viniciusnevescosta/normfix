@@ -16,7 +16,7 @@ precisar ser óbvia para quem ler o script depois.
 
 ```console
 $ normfix format
-normfix 1.3.2
+normfix 1.4.0
 Safe automatic fixes for the 42 Norm v4.1
 
 Files

@@ -74,6 +74,7 @@ Prebuilt releases cover the Unix environments used by 42 students:
 | macOS | Apple Silicon | `normfix-aarch64-macos.tar.gz` |
 | Windows | x86-64 | `normfix-x86_64-windows.zip` |
 | Windows | ARM64 | `normfix-aarch64-windows.zip` |
+| FreeBSD | x86-64 | `normfix-x86_64-freebsd.tar.gz` |
 
 Public archive names deliberately omit Rust vendor placeholders and
 machine-vendor labels. Toolchain target identifiers remain internal build
@@ -104,6 +105,19 @@ over:
 Windows archives are `.zip`, which the platform opens by itself. The one-line
 installer works from any POSIX shell there — Git Bash, MSYS2, Cygwin, or WSL.
 Running the Linux build inside WSL remains supported and is unchanged.
+
+FreeBSD x86-64 is supported on the same terms. It is a Unix, so it shares the
+process-group containment and the directory flush rather than needing Windows'
+substitutes, and CI runs the complete suite, the official checker, and the
+differential proof inside a FreeBSD virtual machine — GitHub has no FreeBSD
+runner, and cross-compiling would publish a binary that had never run on the
+system it targets. Its release archive is built in that same virtual machine
+for the same reason.
+
+FreeBSD on ARM64 is not published. `aarch64-unknown-freebsd` has no prebuilt
+standard library on the pinned toolchain, so building it would require an
+unpinned nightly compiler, and there is no way to run the suite on it. Either
+one alone would be enough to make the claim unsupportable.
 
 ## C and build diagnostics
 
