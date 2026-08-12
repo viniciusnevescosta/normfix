@@ -206,6 +206,21 @@ enum Command {
     Upgrade(UpgradeArguments),
     /// Remove this binary, and optionally the data it created.
     Uninstall(UninstallArguments),
+    /// Run a program you already built under a leak checker.
+    ///
+    /// This is the one command that executes your code rather than reading it,
+    /// so it asks first. normfix never builds the program: point it at one.
+    Leaks(LeaksArguments),
+}
+
+#[derive(Debug, Args)]
+struct LeaksArguments {
+    /// The already-built program to run.
+    program: PathBuf,
+
+    /// Arguments passed to your program, not to the checker.
+    #[arg(last = true)]
+    program_arguments: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -326,6 +341,7 @@ fn run_standalone_command(cli: &Cli, cwd: &std::path::Path) -> Option<ExitCode> 
             Some(run_upgrade(cli.format, cli_messages(cli), arguments.check))
         }
         Some(Command::Uninstall(arguments)) => Some(run_uninstall(cli, arguments)),
+        Some(Command::Leaks(arguments)) => Some(run_leaks(cli, arguments)),
         _ => None,
     }
 }
@@ -505,6 +521,134 @@ fn confirm_uninstall(cli: &Cli, messages: &normfix_i18n::Messages) -> Result<(),
     confirmed
         .then_some(())
         .ok_or_else(|| messages.uninstall_cancelled.to_owned())
+}
+
+/// Runs a program the student already built, under the leak checker.
+///
+/// The confirmation is not ceremony. Every other command reads source, and
+/// reading source cannot delete a file or open a socket; this one executes a
+/// binary, which can do both. So it says which program, and waits — unless
+/// `--force` was given, which is how a script says it meant it.
+fn run_leaks(cli: &Cli, arguments: &LeaksArguments) -> ExitCode {
+    let messages = cli_messages(cli);
+    let checker =
+        match normfix_oracle::ValgrindChecker::locate(normfix_oracle::ValgrindConfig::default()) {
+            Ok(checker) => checker,
+            Err(error) => {
+                print_run_error(
+                    cli.format,
+                    messages,
+                    &format!(
+                        "{} {} ({error})",
+                        messages.leaks_unavailable,
+                        leaks_install_hint(messages)
+                    ),
+                );
+                return ExitCode::from(2);
+            }
+        };
+
+    if let Err(refusal) = confirm_leaks(cli, messages, &arguments.program) {
+        print_run_error(cli.format, messages, &refusal);
+        return ExitCode::from(2);
+    }
+
+    let report = match checker.check(&arguments.program, &arguments.program_arguments) {
+        Ok(report) => report,
+        Err(error) => {
+            print_run_error(cli.format, messages, &error.to_string());
+            return ExitCode::from(2);
+        }
+    };
+
+    if cli.format == OutputFormat::Json {
+        match serde_json::to_string_pretty(&report) {
+            Ok(json) => println!("{json}"),
+            Err(error) => {
+                print_run_error(cli.format, messages, &error.to_string());
+                return ExitCode::from(2);
+            }
+        }
+    } else {
+        if report.lost_anything() {
+            println!(
+                "{}",
+                normfix_i18n::fill(
+                    messages.leaks_lost,
+                    &[
+                        ("definite", &report.definitely_lost_bytes.to_string()),
+                        ("indirect", &report.indirectly_lost_bytes.to_string()),
+                    ],
+                )
+            );
+        } else {
+            println!("{}", messages.leaks_none);
+        }
+        if report.error_count > 0 {
+            println!(
+                "{}",
+                normfix_i18n::fill(
+                    messages.leaks_errors,
+                    &[("count", &report.error_count.to_string())],
+                )
+            );
+        }
+        println!("{}", messages.leaks_not_a_proof);
+    }
+
+    // A leak is a finding about the project, which is what exit 1 means
+    // everywhere else in this tool. It is not an operational failure.
+    if report.lost_anything() {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// What to tell a reader whose platform has no checker.
+///
+/// The answer is different in kind on each one: a package manager away on Linux
+/// and FreeBSD, a community port on macOS because upstream does not build
+/// there, and another operating system on Windows because Valgrind does not
+/// exist for it at all. One generic sentence would be wrong on two of the three.
+const fn leaks_install_hint(messages: &normfix_i18n::Messages) -> &'static str {
+    if cfg!(target_os = "macos") {
+        messages.leaks_install_hint_macos
+    } else if cfg!(windows) {
+        messages.leaks_install_hint_windows
+    } else {
+        messages.leaks_install_hint
+    }
+}
+
+fn confirm_leaks(
+    cli: &Cli,
+    messages: &normfix_i18n::Messages,
+    program: &std::path::Path,
+) -> Result<(), String> {
+    if cli.force {
+        return Ok(());
+    }
+    if cli.format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal()
+    {
+        return Err(messages.leaks_needs_confirmation.to_owned());
+    }
+    eprint!(
+        "{}",
+        normfix_i18n::fill(
+            messages.leaks_prompt,
+            &[("program", &program.display().to_string())],
+        )
+    );
+    let _ = io::stderr().flush();
+    let mut answer = String::new();
+    // `y` is the accepted answer in every language; see `confirm_undo`.
+    let confirmed = io::stdin()
+        .read_line(&mut answer)
+        .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
+    confirmed
+        .then_some(())
+        .ok_or_else(|| messages.leaks_cancelled.to_owned())
 }
 
 fn run_upgrade(
@@ -1107,7 +1251,11 @@ fn selected_workflow(cli: &Cli) -> (Vec<PathBuf>, Workflow) {
         Some(Command::Budget(arguments)) => (arguments.paths.clone(), Workflow::Budget),
         Some(Command::Preflight(arguments)) => (arguments.paths.clone(), Workflow::Preflight),
         Some(
-            Command::Explain(_) | Command::Undo(_) | Command::Upgrade(_) | Command::Uninstall(_),
+            Command::Explain(_)
+            | Command::Undo(_)
+            | Command::Upgrade(_)
+            | Command::Uninstall(_)
+            | Command::Leaks(_),
         ) => (Vec::new(), Workflow::Default),
         None => (cli.paths.clone(), Workflow::Default),
     }

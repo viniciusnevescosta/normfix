@@ -198,6 +198,29 @@ pub struct Messages {
     /// Confirmation that the tool removed itself.
     pub uninstall_done: &'static str,
 
+    /// Leak-check confirmation question. The `{program}` and `[y/N]` tokens stay literal.
+    pub leaks_prompt: &'static str,
+    /// A leak check requested outside an interactive terminal.
+    pub leaks_needs_confirmation: &'static str,
+    /// The person declined to run their program.
+    pub leaks_cancelled: &'static str,
+    /// No leak checker is installed. Followed by the platform hint below.
+    pub leaks_unavailable: &'static str,
+    /// How to install a leak checker, on a platform Valgrind supports directly.
+    pub leaks_install_hint: &'static str,
+    /// How to install one on macOS, where upstream Valgrind does not build.
+    pub leaks_install_hint_macos: &'static str,
+    /// How to reach one on Windows, where Valgrind does not exist.
+    pub leaks_install_hint_windows: &'static str,
+    /// Nothing was lost on the path the program took.
+    pub leaks_none: &'static str,
+    /// Bytes lost outright. Placeholders: `{definite}`, `{indirect}`.
+    pub leaks_lost: &'static str,
+    /// Memory errors beyond leaks. Placeholder: `{count}`.
+    pub leaks_errors: &'static str,
+    /// The standing caveat printed with every leak result.
+    pub leaks_not_a_proof: &'static str,
+
     /// Section label: why the rule exists.
     pub explain_why: &'static str,
     /// Section label: the reader's next step.
@@ -313,6 +336,17 @@ const ENGLISH: Messages = Messages {
     uninstall_needs_confirmation: "uninstall requires an interactive y/N confirmation or --force",
     uninstall_cancelled: "uninstall was cancelled; nothing was removed",
     uninstall_done: "normfix has been removed.",
+    leaks_prompt: "normfix is about to run {program} under the leak checker. This executes your program. Continue? [y/N] ",
+    leaks_needs_confirmation: "checking for leaks runs your program, which requires an interactive y/N confirmation or --force",
+    leaks_cancelled: "the leak check was cancelled; your program was not run",
+    leaks_unavailable: "No leak checker is installed.",
+    leaks_install_hint: "Install Valgrind from your package manager.",
+    leaks_install_hint_macos: "Upstream Valgrind does not build for macOS. The LouisBrunner/valgrind-macos port does: brew install LouisBrunner/valgrind/valgrind. Its Apple Silicon support is limited.",
+    leaks_install_hint_windows: "Valgrind does not exist for Windows. Run normfix inside WSL, where the Linux checker works normally.",
+    leaks_none: "Nothing was lost on the path this run took.",
+    leaks_lost: "Lost {definite} bytes outright, and {indirect} more reachable only through them.",
+    leaks_errors: "The checker also reported {count} memory errors that are not leaks.",
+    leaks_not_a_proof: "This is what one run observed with the arguments it was given. It is not a proof that the program never leaks.",
 
     explain_why: "Why",
     explain_next: "Next",
@@ -414,6 +448,17 @@ const PORTUGUESE: Messages = Messages {
     uninstall_needs_confirmation: "a desinstalação exige uma confirmação interativa y/N ou --force",
     uninstall_cancelled: "a desinstalação foi cancelada; nada foi removido",
     uninstall_done: "o normfix foi removido.",
+    leaks_prompt: "O normfix vai executar {program} sob o verificador de vazamentos. Isso roda o seu programa. Continuar? [y/N] ",
+    leaks_needs_confirmation: "verificar vazamentos executa o seu programa, o que exige uma confirmação interativa y/N ou --force",
+    leaks_cancelled: "a verificação foi cancelada; seu programa não foi executado",
+    leaks_unavailable: "Nenhum verificador de vazamentos está instalado.",
+    leaks_install_hint: "Instale o Valgrind pelo gerenciador de pacotes do seu sistema.",
+    leaks_install_hint_macos: "O Valgrind oficial não compila no macOS. O port LouisBrunner/valgrind-macos compila: brew install LouisBrunner/valgrind/valgrind. O suporte dele a Apple Silicon é limitado.",
+    leaks_install_hint_windows: "O Valgrind não existe para Windows. Rode o normfix dentro do WSL, onde o verificador de Linux funciona normalmente.",
+    leaks_none: "Nada foi perdido no caminho que esta execução percorreu.",
+    leaks_lost: "Perdidos {definite} bytes de vez, e mais {indirect} alcançáveis só por eles.",
+    leaks_errors: "O verificador também relatou {count} erros de memória que não são vazamentos.",
+    leaks_not_a_proof: "Isto é o que uma execução observou com os argumentos que recebeu. Não é prova de que o programa nunca vaza.",
 
     explain_why: "Por quê",
     explain_next: "A seguir",
@@ -515,6 +560,17 @@ const SPANISH: Messages = Messages {
     uninstall_needs_confirmation: "la desinstalación requiere una confirmación interactiva y/N o --force",
     uninstall_cancelled: "la desinstalación se canceló; no se eliminó nada",
     uninstall_done: "normfix se ha eliminado.",
+    leaks_prompt: "normfix va a ejecutar {program} bajo el verificador de fugas. Esto ejecuta tu programa. ¿Continuar? [y/N] ",
+    leaks_needs_confirmation: "comprobar fugas ejecuta tu programa, lo que exige una confirmación interactiva y/N o --force",
+    leaks_cancelled: "la comprobación se canceló; tu programa no se ejecutó",
+    leaks_unavailable: "No hay ningún verificador de fugas instalado.",
+    leaks_install_hint: "Instala Valgrind desde el gestor de paquetes de tu sistema.",
+    leaks_install_hint_macos: "Valgrind oficial no compila en macOS. El port LouisBrunner/valgrind-macos sí: brew install LouisBrunner/valgrind/valgrind. Su soporte para Apple Silicon es limitado.",
+    leaks_install_hint_windows: "Valgrind no existe para Windows. Ejecuta normfix dentro de WSL, donde el verificador de Linux funciona con normalidad.",
+    leaks_none: "No se perdió nada en el camino que tomó esta ejecución.",
+    leaks_lost: "Se perdieron {definite} bytes del todo, y {indirect} más alcanzables solo a través de ellos.",
+    leaks_errors: "El verificador también informó de {count} errores de memoria que no son fugas.",
+    leaks_not_a_proof: "Esto es lo que observó una ejecución con los argumentos que recibió. No es una prueba de que el programa nunca tenga fugas.",
 
     explain_why: "Por qué",
     explain_next: "A continuación",
@@ -616,6 +672,17 @@ const FRENCH: Messages = Messages {
     uninstall_needs_confirmation: "la désinstallation exige une confirmation interactive y/N ou --force",
     uninstall_cancelled: "la désinstallation a été annulée ; rien n'a été supprimé",
     uninstall_done: "normfix a été supprimé.",
+    leaks_prompt: "normfix va exécuter {program} sous le détecteur de fuites. Cela exécute votre programme. Continuer ? [y/N] ",
+    leaks_needs_confirmation: "vérifier les fuites exécute votre programme, ce qui exige une confirmation interactive y/N ou --force",
+    leaks_cancelled: "la vérification a été annulée ; votre programme n’a pas été exécuté",
+    leaks_unavailable: "Aucun détecteur de fuites n’est installé.",
+    leaks_install_hint: "Installez Valgrind depuis le gestionnaire de paquets de votre système.",
+    leaks_install_hint_macos: "Valgrind amont ne se compile pas sur macOS. Le port LouisBrunner/valgrind-macos, si : brew install LouisBrunner/valgrind/valgrind. Sa prise en charge d’Apple Silicon est limitée.",
+    leaks_install_hint_windows: "Valgrind n’existe pas pour Windows. Exécutez normfix dans WSL, où le détecteur Linux fonctionne normalement.",
+    leaks_none: "Rien n’a été perdu sur le chemin emprunté par cette exécution.",
+    leaks_lost: "Perdus {definite} octets définitivement, et {indirect} de plus accessibles uniquement par eux.",
+    leaks_errors: "Le détecteur a aussi signalé {count} erreurs mémoire qui ne sont pas des fuites.",
+    leaks_not_a_proof: "Voici ce qu’une exécution a observé avec les arguments reçus. Ce n’est pas une preuve que le programme ne fuit jamais.",
 
     explain_why: "Pourquoi",
     explain_next: "Ensuite",

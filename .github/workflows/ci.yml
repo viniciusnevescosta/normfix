@@ -285,3 +285,20 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y valgrind
       - name: Drive the real leak checker
         run: cargo test --locked -p normfix-oracle installed_valgrind_smoke_test -- --ignored
+      # The adapter passing says the parser is right. This says the command a
+      # student actually types does what it claims: it runs a program that
+      # leaks, reports the loss, and exits 1 the way every other finding does.
+      - name: Check a leaking program end to end
+        run: |
+          set -eu
+          printf '#include <stdlib.h>\nint main(void){char *p = malloc(2048); (void)p; return 0;}\n' > /tmp/leak.c
+          cc -g -o /tmp/leak /tmp/leak.c
+          cargo build --release --locked -p normfix
+          set +e
+          output="$(./target/release/normfix leaks --force /tmp/leak 2>&1)"
+          status=$?
+          set -e
+          echo "$output"
+          test "$status" -eq 1 || { echo "a leak must exit 1, got $status" >&2; exit 1; }
+          echo "$output" | grep -q 2048 || { echo "the report did not name the lost bytes" >&2; exit 1; }
+          echo "$output" | grep -qi "not a proof" || { echo "the caveat was not printed" >&2; exit 1; }

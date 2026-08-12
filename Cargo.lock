@@ -714,6 +714,7 @@ dependencies = [
  "normfix-engine",
  "normfix-header",
  "normfix-i18n",
+ "normfix-oracle",
  "normfix-project",
  "normfix-report",
  "serde",
