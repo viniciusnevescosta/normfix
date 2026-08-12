@@ -10,6 +10,41 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.3.2] / 2026-08-12
+
+What a first visit costs, and what a finger and a screen reader can reach.
+Site only; nothing in the versioned surface moved.
+
+### Fixed
+
+- **The playground stopped making a phone wait for what it does not need.**
+  Measured on a throttled mobile connection, the largest paint took 5.8 s. Three
+  things caused it, and all three are gone: the GitHub star count — decoration —
+  sat on the critical path for 900 ms and now waits for an idle moment after
+  load; the stylesheet blocked the first render for its own round trip and is
+  now inlined; and the WebAssembly module was three hops down the chain, since
+  the browser could not learn it existed until the entry script had loaded the
+  wasm-bindgen glue. It is now announced in the HTML and starts downloading
+  immediately.
+
+- **Every control can be hit with a finger.** On a phone the remember-identity
+  checkbox measured 13×13, Forget 40×19, the dependency links 14 tall, and both
+  header selects 23 — under the 24 CSS pixels WCAG asks for. They are raised
+  for coarse pointers only, so a mouse keeps the dense layout the workbench was
+  designed around.
+
+- **The primary documentation button is legible in the dark theme.** White on
+  the light green brand color measured 1.9:1. The label is now dark on that
+  background, which measures 8.0:1.
+
+- **The documentation landing pages expose a main landmark.** Every other page
+  gets one from the theme, so the landing page was the single page where a
+  screen reader had nothing to skip to.
+
+- **`llms.txt` says what it is supposed to say.** It listed its links as plain
+  text rather than as Markdown links, so a reader parsing it found none. It now
+  follows the published format, with a summary and grouped sections.
+
 ## [1.3.1] / 2026-08-11
 
 Site and documentation only. No CLI flag, exit code, JSON field, or on-disk
@@ -947,6 +982,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.3.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.2
 [1.3.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.1
 [1.3.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.0
 [1.2.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.2.0

@@ -45,7 +45,7 @@ individuales superaron sus pruebas y 2 hallazgos aún necesitan a una persona.
 $ normfix check --format json
 {
   "schema_version": 2,
-  "tool_version": "1.3.1",
+  "tool_version": "1.3.2",
   "mode": "check",
   "summary": {
     "files": 4,

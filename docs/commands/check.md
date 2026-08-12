@@ -44,7 +44,7 @@ their proof gates, and 2 findings still need a human.
 $ normfix check --format json
 {
   "schema_version": 2,
-  "tool_version": "1.3.1",
+  "tool_version": "1.3.2",
   "mode": "check",
   "summary": {
     "files": 4,
