@@ -6,28 +6,28 @@
 class Normfix < Formula
   desc "Safe automatic fixes and clear diagnostics for the 42 Norm"
   homepage "https://normfix.vercel.app"
-  version "1.4.0"
+  version "1.5.0"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/viniciusnevescosta/normfix/releases/download/v1.4.0/normfix-aarch64-macos.tar.gz"
-      sha256 "1ac872efdb2565ac0334827cc2fe856d0f34e3b5dc10459d313024229b76848e"
+      url "https://github.com/viniciusnevescosta/normfix/releases/download/v1.5.0/normfix-aarch64-macos.tar.gz"
+      sha256 "aeea8bd13d0922385cfc4f567490d7e600ecdf50431de3e55709a6939419ecb6"
     end
     on_intel do
-      url "https://github.com/viniciusnevescosta/normfix/releases/download/v1.4.0/normfix-x86_64-macos.tar.gz"
-      sha256 "552175816a023bdede8174a311d896edd82345cb22b5920d8cb2fac15ef5f946"
+      url "https://github.com/viniciusnevescosta/normfix/releases/download/v1.5.0/normfix-x86_64-macos.tar.gz"
+      sha256 "ffc3b9a41a6d09fca2623c01170c3d4940570ef9380336c99c0c052e81581a63"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/viniciusnevescosta/normfix/releases/download/v1.4.0/normfix-aarch64-linux-gnu.tar.gz"
-      sha256 "742e99f155b5b2307653ee27eb76d3f7372e5aea5dbdea0a10bc5979c44e4633"
+      url "https://github.com/viniciusnevescosta/normfix/releases/download/v1.5.0/normfix-aarch64-linux-gnu.tar.gz"
+      sha256 "24e4bec7b062406a1417d931659be55aff7c02ef8c94215b88bba105bcb302b4"
     end
     on_intel do
-      url "https://github.com/viniciusnevescosta/normfix/releases/download/v1.4.0/normfix-x86_64-linux-gnu.tar.gz"
-      sha256 "6d6b4265495e084cc7925caccee5d3f3e949b3e59ba5a51d5bd6f64bff613547"
+      url "https://github.com/viniciusnevescosta/normfix/releases/download/v1.5.0/normfix-x86_64-linux-gnu.tar.gz"
+      sha256 "c909f805801d90943dfb4f1b58c4635beca53a69dd821e4eb709cb667d733b3e"
     end
   end
 
