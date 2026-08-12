@@ -104,6 +104,7 @@ pub(super) fn append_preflight_diagnostics(
             )
         },
     );
+    let leak_checker = leak_checker_note();
     diagnostics
         .entry(file.path.clone())
         .or_default()
@@ -133,6 +134,7 @@ pub(super) fn append_preflight_diagnostics(
                     .to_owned(),
                 "LeakSanitizer support varies by compiler and operating system; run the subject's required leak tool as the final runtime check."
                     .to_owned(),
+                leak_checker,
                 clang_tidy,
             ],
             help: Some(
@@ -162,6 +164,35 @@ pub(super) fn root_regular_makefiles(root: &Path) -> Vec<PathBuf> {
     makefiles.sort();
     makefiles.dedup();
     makefiles
+}
+
+/// Whether a leak checker is available, and what to do about it either way.
+///
+/// Preflight looks for the tool rather than running it. Checking a `PATH` entry
+/// reads a directory; running a leak checker runs the student's program, which
+/// is the one thing preflight promises not to do — and it could not do it
+/// anyway, because it reads source and has no way to know which binary is the
+/// project's output or what arguments would exercise anything.
+///
+/// So it answers the question a reader has the evening before a defense: is the
+/// tool here, and what exactly do I type.
+fn leak_checker_note() -> String {
+    if let Some(executable) = executable_on_path("valgrind") {
+        return format!(
+            "A leak checker is available at `{}`; check a built binary with `normfix leaks ./your_program`, which runs it and reports what one run observed.",
+            executable.display()
+        );
+    }
+    let install = if cfg!(target_os = "macos") {
+        "upstream Valgrind does not build for macOS, but the LouisBrunner/valgrind-macos port does (`brew install LouisBrunner/valgrind/valgrind`), with limited Apple Silicon support"
+    } else if cfg!(windows) {
+        "Valgrind does not exist for Windows; run normfix inside WSL, where the Linux checker works normally"
+    } else {
+        "install Valgrind from your package manager"
+    };
+    format!(
+        "No leak checker was found on PATH; to check a built binary with `normfix leaks`, {install}."
+    )
 }
 
 pub(super) fn executable_on_path(name: &str) -> Option<PathBuf> {
