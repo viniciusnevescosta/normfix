@@ -111,7 +111,28 @@ would mean a different output format, a second version to pin, a second proof in
 CI, and findings that cannot be compared with Valgrind's, on a platform whose
 documented path for the full CLI already runs through WSL.
 
-## 1.6 — Python projects
+## 1.6 — correctness, security, and speed
+
+A pass over the whole project for bugs, vulnerabilities, and measured
+performance changes.
+
+### 1.6.1 — say it in language people actually understand
+
+A translation and documentation pass across the whole project, English
+included. Some strings do not read as the language they claim to be, some use
+terms nobody outside the project knows, and some contradict each other — three
+were found and fixed during 1.4 and 1.5 alone, each one a sentence that had been
+true one release earlier.
+
+Calling Homebrew and Scoop "conveniences" goes too: it reads as dismissing the
+way many people will actually install the tool. They are supported ways to
+install it, and the one-line installer is the one that works everywhere.
+
+The documentation is rewritten alongside the strings to be clearer and easier to
+follow. The point of translating was accessibility, and a sentence a reader has
+to decode is not accessible in any language.
+
+## 1.7 — Python projects
 
 A separate Python pipeline on the same oracle model the Norminette uses, plus a
 Python-capable playground. The C/Norminette contract stays available and
@@ -121,26 +142,13 @@ What matters is the result a student needs: strict type checking and lint
 findings they can act on. mypy `--strict` and flake8 are the reference for that
 result, and the decision of which tools produce it is open — Astral's `ruff` and
 `ty` may reach the same answers faster, and being faster matters for a tool a
-student runs before every push. The choice will be made by comparing what each
-reports on real 42 Python projects, not by reputation, and whichever is chosen
-becomes the versioned oracle the way Norminette 3.3.59 is.
+student runs before every push. Whether either can be embedded, so that nothing
+has to be installed, is part of that comparison. The choice will be made by what
+each reports on real 42 Python projects, and whichever is chosen becomes the
+versioned oracle the way Norminette 3.3.59 is.
 
-## 1.7 — starting a project
+## 1.8 — starting a project
 
 Create a project from explicit choices: its name and allowed function list, then
 `main.c`, the header, the Makefile, a `README.md` carrying the student's login,
 `src/`, `tests/`, and an initialized Git repository. For C and for Python.
-
-## 1.8 — correctness, security, and speed
-
-A pass over the whole project for bugs, vulnerabilities, and measured
-performance changes.
-
-### 1.8.1 — say it in language people actually understand
-
-A translation and documentation pass across the whole project, English
-included. Some strings do not read as the language they claim to be, some use
-terms nobody outside the project knows, and some contradict each other. The
-documentation is rewritten alongside them to be clearer and easier to follow —
-the point of translating was accessibility, and a sentence a reader has to
-decode is not accessible in any language.
