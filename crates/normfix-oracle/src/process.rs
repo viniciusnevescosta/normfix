@@ -320,7 +320,7 @@ mod tests {
         // Under a loaded machine the deadline can arrive first, and a run where
         // the helper never ran says nothing either way — so such a run is
         // retried rather than being allowed to pass or fail on timing.
-        for attempt in 1..=3 {
+        for _ in 1..=3 {
             let directory = TempDir::new().expect("temporary directory");
             let mut command = escaping_tool(&directory);
 
