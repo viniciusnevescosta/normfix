@@ -75,14 +75,37 @@ pub(super) fn absolute_lexical(path: &Path) -> PathBuf {
     normalized
 }
 
+/// The user-owned directory backups live in, per platform.
+///
+/// `XDG_DATA_HOME` wins wherever it is set, which keeps a configured location
+/// authoritative. Otherwise Windows uses `LOCALAPPDATA` — the same variable the
+/// cache already resolves through, and a directory whose ACL is already
+/// restricted to that user — and Unix uses the XDG fallback.
+///
+/// Returning `None` is not a detail: with no external directory the writer
+/// refuses to write at all, so a platform without a branch here has a tool that
+/// cannot perform its default action.
 pub(super) fn automatic_backup_root() -> Option<PathBuf> {
+    platform_data_base().map(|base| base.join("normfix/backups"))
+}
+
+fn platform_data_base() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("XDG_DATA_HOME").filter(|path| !path.is_empty()) {
-        return Some(PathBuf::from(path).join("normfix/backups"));
+        return Some(PathBuf::from(path));
     }
-    std::env::var_os("HOME")
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .map(|home| home.join(".local/share/normfix/backups"))
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .map(|home| home.join(".local/share"))
+    }
 }
 
 pub(super) fn run_id() -> String {

@@ -1240,6 +1240,27 @@ fn collect_undo_runs(
     Ok(runs)
 }
 
+/// The user-owned data directory this platform reports.
+///
+/// Windows resolves through `LOCALAPPDATA`, which is where the cache already
+/// looks and whose ACL is already restricted to that user. Without a branch
+/// here the undo listing would look in a directory that does not exist on the
+/// platform, and report no recoverable runs when there are some.
+#[cfg(windows)]
+fn platform_data_base() -> Option<PathBuf> {
+    env::var_os("LOCALAPPDATA")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+}
+
+#[cfg(not(windows))]
+fn platform_data_base() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .map(|home| home.join(".local/share"))
+}
+
 fn backup_roots(explicit: Option<&std::path::Path>) -> Vec<PathBuf> {
     if let Some(path) = explicit {
         return vec![path.to_path_buf()];
@@ -1247,12 +1268,7 @@ fn backup_roots(explicit: Option<&std::path::Path>) -> Vec<PathBuf> {
     let base = env::var_os("XDG_DATA_HOME")
         .filter(|path| !path.is_empty())
         .map(PathBuf::from)
-        .or_else(|| {
-            env::var_os("HOME")
-                .filter(|path| !path.is_empty())
-                .map(PathBuf::from)
-                .map(|home| home.join(".local/share"))
-        });
+        .or_else(platform_data_base);
     base.map_or_else(Vec::new, |base| {
         vec![
             base.join("normfix/backups"),
