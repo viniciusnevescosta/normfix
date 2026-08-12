@@ -72,19 +72,38 @@ Prebuilt releases cover the Unix environments used by 42 students:
 | Linux | ARM64 | `normfix-aarch64-linux-gnu.tar.gz` |
 | macOS | Intel | `normfix-x86_64-macos.tar.gz` |
 | macOS | Apple Silicon | `normfix-aarch64-macos.tar.gz` |
+| Windows | x86-64 | `normfix-x86_64-windows.zip` |
+| Windows | ARM64 | `normfix-aarch64-windows.zip` |
 
 Public archive names deliberately omit Rust vendor placeholders and
 machine-vendor labels. Toolchain target identifiers remain internal build
 inputs, not release or product names.
 
-Windows has no native release target. The full CLI is supported on Windows
-through [WSL](https://learn.microsoft.com/windows/wsl/install) using the Linux
-archive and a Norminette installation inside the same WSL environment. The
-browser playground is the no-install alternative for formatter previews.
-Native PowerShell/CMD execution is unsupported: the bounded subprocess
-termination, symlink/path behavior, and transaction proofs currently have
-Unix-specific implementation and integration evidence, so a native Windows
-binary would overstate the contract.
+Windows is supported natively as of 1.4.0, on the evidence CI produces for it
+rather than on the assumption that portable code ports. Both Windows targets
+run the complete test suite, drive the real official Norminette, and prove the
+differential property — that a run never leaves a file with more official
+diagnostics than it started with — on the platform itself.
+
+Two differences from Unix are real, and are stated here rather than smoothed
+over:
+
+- **Process containment has a narrow window.** Unix places a tool in its own
+  process group between fork and exec, so no descendant can ever escape.
+  Windows has no pre-start hook: the tool is placed in a job object immediately
+  after spawn, and anything it spawns in the microseconds before that could
+  break away. The job kills the rest of the tree when it closes.
+- **A rename is not written through.** POSIX requires flushing the parent
+  directory for a create or rename to survive a crash, which the transaction
+  does. Windows has no directory-flush counterpart; the file's own contents are
+  flushed and NTFS journals the metadata, but a machine that loses power
+  between a commit and the metadata reaching disk has a weaker guarantee than
+  the same moment on Unix. The backup and journal are unaffected — recovery
+  reads them by content, not by ordering.
+
+Windows archives are `.zip`, which the platform opens by itself. The one-line
+installer works from any POSIX shell there — Git Bash, MSYS2, Cygwin, or WSL.
+Running the Linux build inside WSL remains supported and is unchanged.
 
 ## C and build diagnostics
 

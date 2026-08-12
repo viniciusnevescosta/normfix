@@ -82,6 +82,8 @@ verify it against `SHA256SUMS`, and place `normfix` on `PATH`.
 | Linux ARM64 | `normfix-aarch64-linux-gnu.tar.gz` |
 | macOS Intel | `normfix-x86_64-macos.tar.gz` |
 | macOS Apple Silicon | `normfix-aarch64-macos.tar.gz` |
+| Windows x86-64 | `normfix-x86_64-windows.zip` |
+| Windows ARM64 | `normfix-aarch64-windows.zip` |
 
 For example, on Apple Silicon with release `1.3.2`:
 
@@ -118,12 +120,27 @@ is on `PATH`.
 
 ### Windows
 
-There is no native Windows archive. Run the Linux CLI and its Norminette
-dependency inside [WSL](https://learn.microsoft.com/windows/wsl/install), or
-use the
-[browser playground](/guide/playground) for the in-memory formatter preview.
-Native PowerShell and Windows process behavior are not part of the supported
-CLI contract yet.
+The same one-line installer works from any POSIX shell — Git Bash, MSYS2,
+Cygwin, or WSL — and installs `normfix.exe`:
+
+```sh
+curl -fsSL https://normfix.vercel.app/install.sh | sh
+```
+
+With only PowerShell, Scoop is the convenience:
+
+```powershell
+scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
+scoop install normfix
+```
+
+Or download `normfix-x86_64-windows.zip` or `normfix-aarch64-windows.zip` from
+the releases page and put `normfix.exe` on `PATH`.
+
+The official Norminette is a Python program and installs on Windows the same
+way it does anywhere else. Running the Linux build inside WSL is still
+supported and unchanged; the [compatibility policy](/COMPATIBILITY) names the
+two places where native Windows behaves differently from Unix.
 
 ## Safe first run
 

@@ -235,10 +235,17 @@ jobs:
                 echo 'curl -fsSL https://normfix.vercel.app/install.sh | sh'
                 echo '```'
                 echo
-                echo "Or with Homebrew:"
+                echo "That works on Linux, macOS, and Windows — on Windows from any POSIX shell, meaning Git Bash, MSYS2, Cygwin, or WSL."
+                echo
+                echo "Homebrew and Scoop are conveniences on top of it:"
                 echo
                 echo '```sh'
                 echo 'brew install viniciusnevescosta/normfix/normfix'
+                echo '```'
+                echo
+                echo '```powershell'
+                echo 'scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix'
+                echo 'scoop install normfix'
                 echo '```'
                 echo
                 echo "Already have normfix? Upgrade in place, with the download verified against its published checksum:"

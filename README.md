@@ -65,6 +65,13 @@ With Homebrew:
 brew install viniciusnevescosta/normfix/normfix
 ```
 
+With Scoop:
+
+```powershell
+scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
+scoop install normfix
+```
+
 Once installed, keep it current with:
 
 ```sh
@@ -90,11 +97,6 @@ The installer performs the checksum step for you and refuses to install on a
 mismatch. The attestation check is the stronger one, because it ties the binary
 to the workflow run that built it: use it if you are installing on a machine you
 care about.
-
-There is no native Windows archive: use WSL, or the
-[browser playground](https://normfix.vercel.app). Full instructions, including
-provenance verification, are in
-[Getting started](https://normfix.vercel.app/docs/guide/getting-started).
 
 ## Use it
 
