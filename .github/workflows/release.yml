@@ -104,6 +104,15 @@ jobs:
           - runner: macos-15
             target: aarch64-apple-darwin
             archive: normfix-aarch64-macos.tar.gz
+          # Windows gets `.zip`, the format the platform opens by itself. A
+          # `.tar.gz` would ask a student to install a tool before they can
+          # install the tool.
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            archive: normfix-x86_64-windows.zip
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            archive: normfix-aarch64-windows.zip
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -118,8 +127,13 @@ jobs:
       - name: Build locked release binary
         run: cargo build --release --locked -p normfix --target ${{ matrix.target }}
       - name: Exercise release binary
-        run: target/${{ matrix.target }}/release/normfix --version
+        shell: bash
+        run: |
+          binary="target/${{ matrix.target }}/release/normfix"
+          [ "${{ runner.os }}" = "Windows" ] && binary="$binary.exe"
+          "$binary" --version
       - name: Create release archive
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           stage="dist/${{ matrix.target }}"
@@ -127,15 +141,19 @@ jobs:
           cp "target/${{ matrix.target }}/release/normfix" "$stage/normfix"
           cp README.md LICENSE "$stage/"
           tar -czf "dist/${{ matrix.archive }}" -C "$stage" normfix README.md LICENSE
+      - name: Create release archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packaging/archive.ps1 -Target "${{ matrix.target }}" -Archive "${{ matrix.archive }}"
       - name: Attest release archive
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/*.tar.gz
+          subject-path: dist/${{ matrix.archive }}
       - name: Upload release archive
         uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.target }}
-          path: dist/*.tar.gz
+          path: dist/${{ matrix.archive }}
           if-no-files-found: error
           retention-days: 7
 
@@ -157,7 +175,7 @@ jobs:
           merge-multiple: true
       - name: Create checksum manifest
         working-directory: dist
-        run: shasum -a 256 -- *.tar.gz > SHA256SUMS
+        run: shasum -a 256 -- *.tar.gz *.zip > SHA256SUMS
       - name: Attest checksum manifest
         uses: actions/attest-build-provenance@v4
         with:
@@ -178,7 +196,7 @@ jobs:
             echo "release $GITHUB_REF_NAME already exists; release assets are immutable" >&2
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}" "${prerelease[@]}"
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/SHA256SUMS --verify-tag --generate-notes --title "normfix ${GITHUB_REF_NAME#v}" "${prerelease[@]}"
           # Every published release opens with the two commands that install it,
           # so a reader never has to leave the page to try the version they are
           # looking at. A pre-release pins its own tag, because the unpinned

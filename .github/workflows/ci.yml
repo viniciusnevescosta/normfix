@@ -67,6 +67,14 @@ jobs:
         run: cargo build --workspace --locked
       - name: Run all tests
         run: cargo test --workspace --all-targets --locked
+      # The release job only fires on a tag, so its archive step would first be
+      # exercised during a publication. Running the same script here means a
+      # mistake in it fails on the change that caused it.
+      - name: Build the release archive
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p normfix --target ${{ matrix.target }}
+          ./packaging/archive.ps1 -Target "${{ matrix.target }}" -Archive "normfix-${{ matrix.target }}.zip"
 
   coverage:
     name: Line coverage

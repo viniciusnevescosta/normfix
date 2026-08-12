@@ -56,6 +56,20 @@ fi
 
 os="$(uname -s)"
 arch="$(uname -m)"
+case "$os" in
+    # Git Bash, MSYS2, and Cygwin all report a Windows kernel. There are
+    # prebuilt Windows archives, but installing one is a different job from
+    # this script's: a `.zip` into a Windows path, not a `.tar.gz` into
+    # `~/.local/bin`. Naming the manager that does it is more useful than
+    # reporting an unrecognized platform.
+    MINGW* | MSYS* | CYGWIN* | Windows_NT*)
+        die "this installer is for Linux and macOS. On Windows, use Scoop:
+  scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
+  scoop install normfix
+Or download the archive for your machine from https://github.com/viniciusnevescosta/normfix/releases/latest"
+        ;;
+esac
+
 case "$os:$arch" in
     Linux:x86_64) archive="normfix-x86_64-linux-gnu.tar.gz" ;;
     Linux:aarch64 | Linux:arm64) archive="normfix-aarch64-linux-gnu.tar.gz" ;;
