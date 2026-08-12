@@ -133,7 +133,7 @@ jobs:
           release: "14.2"
           usesh: true
           prepare: |
-            pkg install -y curl git
+            pkg install -y curl git python311 py311-pip
           run: |
             set -eu
             curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
@@ -141,6 +141,12 @@ jobs:
             . "$HOME/.cargo/env"
             cargo build --workspace --locked
             cargo test --workspace --all-targets --locked
+            # The same standard Windows is held to: the platform drives the real
+            # checker and proves the differential property there, rather than
+            # inheriting either from Linux because both are Unix.
+            python3.11 -m pip install --break-system-packages norminette==3.3.59
+            cargo test --locked -p normfix-oracle installed_official_norminette_smoke_test -- --ignored
+            cargo test --locked -p normfix-engine --test differential -- --ignored
 
   coverage:
     name: Line coverage
