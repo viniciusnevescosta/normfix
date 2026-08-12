@@ -54,36 +54,51 @@ Shipped. `normfix explain` answers in English, Portuguese, Spanish, or French,
 and `crates/normfix-engine/src/pipeline.rs` is split into focused modules — the
 change that was deferred through all three release candidates.
 
-## 1.2 — the playground as a workspace
+## 1.2 — normfix's own findings in your language
 
-Make the browser playground usable for a whole project rather than one file:
+Shipped. A student running with `--lang pt`, or simply with a Portuguese system
+locale, reads the findings normfix writes itself in Portuguese. Findings relayed
+from the official Norminette or the C compiler stay in the language those tools
+produced them, and a non-English run says so as a fact rather than as an
+apology.
 
-- drag and drop supported files onto the page, and drop a complete project
-  folder, with the interface showing that a drop is being received;
-- one button to fix every open file, and one to fix only the current file;
-- download everything as `.zip`, which is the format every operating system
-  opens without a extra tool.
+## 1.3 — the playground as a workspace
 
-## 1.3 — project initialization
+Shipped, across three releases:
 
-A guided `normfix init` that creates a project from explicit choices: name,
-allowed function policy, `main.c`, header, Makefile, `README.md` carrying the
-student's name, `src/`, `tests/`, and an initialized Git repository.
+- 1.3.0 made the playground work with no network and installable as an app,
+  added drag and drop for files and whole project folders, gave it one button to
+  fix every file and one to fix only the current file, and changed the download
+  to `.zip`;
+- 1.3.1 added light, dark, and system appearance;
+- 1.3.2 took the star count, the stylesheet, and the WebAssembly discovery off
+  the critical path, raised every control to a size a finger can hit, and fixed
+  two accessibility defects on the documentation site.
 
-## 1.4 — platform hardening
+## 1.4 — Windows and BSD
 
-Bug fixes, vulnerability work, measured performance changes, and native support
-for Windows and BSD on x86-64 and ARM64. Support means filesystem, terminal,
-compiler, archive, installer, and CI behavior; producing a binary alone does not
-count.
+Native support for Windows and BSD on x86-64 and ARM64. Support means
+filesystem, terminal, compiler, archive, installer, and CI behavior — bounded
+subprocess termination, symlink and path handling, and the transaction proofs
+all currently have Unix-specific evidence. Producing a binary alone does not
+count, and until the evidence exists the compatibility policy will keep saying
+so.
 
-## 1.5 — leak checking
+## 1.5 — correctness, security, speed, and leak checking
 
-Add Valgrind support so a run can report leaks in the code, within the same rule
-as every other backend: what it cannot prove, it reports rather than asserts.
+A pass over the whole project for bugs, vulnerabilities, and measured
+performance changes, plus Valgrind support so a run can report leaks in the
+student's code — within the same rule as every other backend: what it cannot
+prove, it reports rather than asserts.
 
 ## 1.6 — Python projects
 
-Add a separate Python policy/formatting pipeline around mypy and flake8, plus a
-Python-capable playground. The C/Norminette contract remains available and
-versioned instead of being silently generalized.
+A separate Python pipeline around mypy `--strict` and flake8, on the same oracle
+model the Norminette uses, plus a Python-capable playground. The C/Norminette
+contract stays available and versioned instead of being silently generalized.
+
+## 1.7 — starting a project
+
+Create a project from explicit choices: its name and allowed function list, then
+`main.c`, the header, the Makefile, a `README.md` carrying the student's login,
+`src/`, `tests/`, and an initialized Git repository. For C and for Python.
