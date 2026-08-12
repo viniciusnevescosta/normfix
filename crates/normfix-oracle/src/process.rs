@@ -283,14 +283,14 @@ mod tests {
             "@echo off\r\n",
             // `ping` rather than `timeout`: this module gives every tool a null
             // stdin, and `timeout` refuses to run without a console.
-            "start \"\" /b cmd /c \"echo x> started & ping -n 4 127.0.0.1 >nul & echo x> escaped\"\r\n",
+            "start \"\" /b cmd /c \"echo x> started & ping -n 8 127.0.0.1 >nul & echo x> escaped\"\r\n",
             "ping -n 60 127.0.0.1 >nul\r\n",
         );
         #[cfg(not(windows))]
         let body = concat!(
             "#!/bin/sh\n",
             ": > started\n",
-            "( sleep 3; : > escaped ) &\n",
+            "( sleep 7; : > escaped ) &\n",
             "sleep 60\n",
         );
 
@@ -316,30 +316,37 @@ mod tests {
 
     #[test]
     fn a_timeout_takes_the_whole_process_tree_with_it() {
-        let directory = TempDir::new().expect("temporary directory");
-        let mut command = escaping_tool(&directory);
+        // An attempt only counts once the helper has recorded that it started.
+        // Under a loaded machine the deadline can arrive first, and a run where
+        // the helper never ran says nothing either way — so such a run is
+        // retried rather than being allowed to pass or fail on timing.
+        for attempt in 1..=3 {
+            let directory = TempDir::new().expect("temporary directory");
+            let mut command = escaping_tool(&directory);
 
-        let error = run_bounded(
-            &mut command,
-            ProcessLimits {
-                timeout: Duration::from_millis(700),
-                output_bytes: 1024,
-            },
-        )
-        .expect_err("the tool sleeps far past its deadline");
-        assert!(matches!(error, ProcessError::Timeout { .. }), "{error:?}");
+            let error = run_bounded(
+                &mut command,
+                ProcessLimits {
+                    timeout: Duration::from_secs(2),
+                    output_bytes: 1024,
+                },
+            )
+            .expect_err("the tool sleeps far past its deadline");
+            assert!(matches!(error, ProcessError::Timeout { .. }), "{error:?}");
 
-        // Long enough that a helper which was merely orphaned, rather than
-        // killed, would have finished writing by now.
-        thread::sleep(Duration::from_secs(6));
+            if !directory.path().join("started").exists() {
+                continue;
+            }
 
-        assert!(
-            directory.path().join("started").exists(),
-            "the helper never ran, so this proves nothing about containment",
-        );
-        assert!(
-            !directory.path().join("escaped").exists(),
-            "a helper outlived the deadline of the tool that spawned it",
-        );
+            // Long enough that a helper which was merely orphaned, rather than
+            // killed, would have finished writing several times over.
+            thread::sleep(Duration::from_secs(8));
+            assert!(
+                !directory.path().join("escaped").exists(),
+                "a helper outlived the deadline of the tool that spawned it",
+            );
+            return;
+        }
+        panic!("the helper never started, so containment was never exercised");
     }
 }
