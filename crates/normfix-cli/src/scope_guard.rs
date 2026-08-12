@@ -161,27 +161,107 @@ fn normalize_lexically(path: &Path) -> PathBuf {
     normalized
 }
 
+/// The form a path is compared in.
+///
+/// Windows decides two things differently, and both would silently defeat this
+/// guard: its paths are case-insensitive, so `C:\\WINDOWS` and `C:\\Windows` are
+/// the same directory, and `canonicalize` returns the verbatim `\\\\?\\` form,
+/// which does not compare equal to the path a reader typed or that the
+/// environment reported. Every comparison below goes through this, so a
+/// protected tree is recognized however it was spelled.
+fn comparable(path: &Path) -> PathBuf {
+    if cfg!(windows) {
+        let text = path.to_string_lossy();
+        let plain = text.strip_prefix(r"\\?\").unwrap_or(&text);
+        PathBuf::from(plain.to_lowercase())
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Operating-system trees on Windows, read from the environment.
+///
+/// Hardcoding `C:` would protect the wrong disk: Windows can be installed on
+/// any drive, and a machine with the system on `D:` would get a guard that
+/// silently protects nothing. These variables are set by the system itself.
+#[cfg(windows)]
+fn platform_system_trees() -> Vec<PathBuf> {
+    [
+        "SystemRoot",
+        "windir",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "ProgramW6432",
+        "ProgramData",
+    ]
+    .iter()
+    .filter_map(|name| env::var_os(name))
+    .map(PathBuf::from)
+    .collect()
+}
+
+/// Broad multi-project directories on Windows, likewise read from the system.
+///
+/// The directory that holds every user's profile is the Windows counterpart of
+/// `/home`: a run started there would walk every account on the machine.
+#[cfg(windows)]
+fn platform_broad_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(profiles) = env::var_os("PUBLIC").map(PathBuf::from) {
+        if let Some(parent) = profiles.parent() {
+            roots.push(parent.to_path_buf());
+        }
+        roots.push(profiles);
+    }
+    for name in ["TEMP", "TMP"] {
+        if let Some(value) = env::var_os(name) {
+            roots.push(PathBuf::from(value));
+        }
+    }
+    roots
+}
+
+#[cfg(not(windows))]
+fn platform_system_trees() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+fn platform_broad_roots() -> Vec<PathBuf> {
+    Vec::new()
+}
+
 fn protected_reason(path: &Path, homes: &[PathBuf]) -> Option<ScopeReason> {
     if path.parent().is_none() {
         return Some(ScopeReason::FilesystemRoot);
     }
-    if homes.iter().any(|home| path == home) {
+    let subject = comparable(path);
+    if homes.iter().any(|home| subject == comparable(home)) {
         return Some(ScopeReason::HomeDirectory);
     }
 
-    if SYSTEM_TREES
+    let system_trees = SYSTEM_TREES
         .iter()
-        .map(Path::new)
-        .any(|root| path == root || path.starts_with(root))
-        || (cfg!(target_os = "linux") && path.starts_with("/var"))
+        .map(PathBuf::from)
+        .chain(platform_system_trees())
+        .collect::<Vec<_>>();
+    let broad_roots = BROAD_ROOTS
+        .iter()
+        .map(PathBuf::from)
+        .chain(platform_broad_roots())
+        .collect::<Vec<_>>();
+
+    if system_trees.iter().any(|root| {
+        let root = comparable(root);
+        subject == root || subject.starts_with(&root)
+    }) || (cfg!(target_os = "linux") && subject.starts_with("/var"))
     {
         return Some(ScopeReason::OperatingSystemTree);
     }
 
-    BROAD_ROOTS
+    broad_roots
         .iter()
-        .map(Path::new)
-        .any(|root| path == root)
+        .any(|root| subject == comparable(root))
         .then_some(ScopeReason::BroadDirectory)
 }
 
@@ -197,66 +277,154 @@ mod tests {
 
     use super::sensitive_scope_with_homes;
 
-    #[test]
-    fn protects_filesystem_system_and_home_scopes() {
-        let cwd = Path::new("/work/project");
-        let homes = vec![PathBuf::from("/Users/student")];
+    /// A machine's shapes, so each platform is tested against paths it really
+    /// has. Asserting Unix literals on Windows proves nothing about either.
+    struct Fixture {
+        root: &'static str,
+        home: &'static str,
+        profiles: &'static str,
+        system_file: &'static str,
+        escaping: &'static str,
+        project_cwd: &'static str,
+        project_file: &'static str,
+    }
 
-        assert!(sensitive_scope_with_homes(cwd, &[PathBuf::from("/")], false, &homes).is_some());
-        assert!(
-            sensitive_scope_with_homes(cwd, &[PathBuf::from("/Users")], false, &homes).is_some()
-        );
-        assert!(
-            sensitive_scope_with_homes(cwd, &[PathBuf::from("/home")], false, &homes).is_some()
-        );
-        assert!(
-            sensitive_scope_with_homes(cwd, &[PathBuf::from("/etc/normfix.c")], false, &homes)
-                .is_some()
-        );
-        assert!(
-            sensitive_scope_with_homes(cwd, &[PathBuf::from("/Users/student")], false, &homes,)
-                .is_some()
-        );
+    #[cfg(unix)]
+    const FIXTURE: Fixture = Fixture {
+        root: "/",
+        home: "/Users/student",
+        profiles: "/Users",
+        system_file: "/etc/normfix.c",
+        escaping: "/work/../etc/normfix.c",
+        project_cwd: "/Users/student/projects/normfix",
+        project_file: "/Users/student/main.c",
+    };
+
+    #[cfg(windows)]
+    const FIXTURE: Fixture = Fixture {
+        root: r"C:\",
+        home: r"C:\Users\student",
+        profiles: r"C:\Users",
+        system_file: r"C:\Windows\System32\normfix.c",
+        escaping: r"C:\work\..\Windows\normfix.c",
+        project_cwd: r"C:\Users\student\projects\normfix",
+        project_file: r"C:\Users\student\main.c",
+    };
+
+    /// The environment the production guard reads, restated for the test.
+    ///
+    /// `protected_reason` derives the Windows trees from the system's own
+    /// variables, so a test that does not set them would be asserting against
+    /// whatever the runner happens to have.
+    #[cfg(windows)]
+    fn with_windows_environment<T>(work: impl FnOnce() -> T) -> T {
+        // SAFETY: these tests run single-threaded within this module's process
+        // and restore nothing, because the values are the real ones a Windows
+        // machine reports.
+        unsafe {
+            std::env::set_var("SystemRoot", r"C:\Windows");
+            std::env::set_var("ProgramFiles", r"C:\Program Files");
+            std::env::set_var("PUBLIC", r"C:\Users\Public");
+        }
+        work()
+    }
+
+    #[cfg(not(windows))]
+    fn with_windows_environment<T>(work: impl FnOnce() -> T) -> T {
+        work()
     }
 
     #[test]
-    fn permits_normal_projects_and_temporary_subdirectories() {
-        let cwd = Path::new("/Users/student/projects/normfix");
-        let homes = vec![PathBuf::from("/Users/student")];
+    fn protects_filesystem_system_and_home_scopes() {
+        with_windows_environment(|| {
+            let cwd = Path::new(FIXTURE.project_cwd);
+            let homes = vec![PathBuf::from(FIXTURE.home)];
 
-        assert!(sensitive_scope_with_homes(cwd, &[], false, &homes).is_none());
+            for protected in [
+                FIXTURE.root,
+                FIXTURE.profiles,
+                FIXTURE.system_file,
+                FIXTURE.home,
+            ] {
+                assert!(
+                    sensitive_scope_with_homes(cwd, &[PathBuf::from(protected)], false, &homes)
+                        .is_some(),
+                    "{protected} must be protected",
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn permits_normal_projects_and_their_files() {
+        with_windows_environment(|| {
+            let cwd = Path::new(FIXTURE.project_cwd);
+            let homes = vec![PathBuf::from(FIXTURE.home)];
+
+            assert!(sensitive_scope_with_homes(cwd, &[], false, &homes).is_none());
+            assert!(
+                sensitive_scope_with_homes(
+                    cwd,
+                    &[PathBuf::from(FIXTURE.project_file)],
+                    false,
+                    &homes,
+                )
+                .is_none()
+            );
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permits_temporary_subdirectories() {
+        let cwd = Path::new(FIXTURE.project_cwd);
+        let homes = vec![PathBuf::from(FIXTURE.home)];
+
         assert!(
             sensitive_scope_with_homes(cwd, &[PathBuf::from("/tmp/normfix-test")], false, &homes)
                 .is_none()
-        );
-        assert!(
-            sensitive_scope_with_homes(
-                cwd,
-                &[PathBuf::from("/Users/student/main.c")],
-                false,
-                &homes,
-            )
-            .is_none()
         );
     }
 
     #[test]
     fn git_scope_uses_the_repository_root_not_thousands_of_selected_files() {
-        let cwd = Path::new("/Users/student");
-        let homes = vec![PathBuf::from("/Users/student")];
+        with_windows_environment(|| {
+            let cwd = Path::new(FIXTURE.home);
+            let homes = vec![PathBuf::from(FIXTURE.home)];
 
-        let risk =
-            sensitive_scope_with_homes(cwd, &[PathBuf::from("project/main.c")], true, &homes)
-                .expect("home-scoped Git run must be protected");
-        assert_eq!(risk.resolved, PathBuf::from("/Users/student"));
+            let risk =
+                sensitive_scope_with_homes(cwd, &[PathBuf::from("project/main.c")], true, &homes)
+                    .expect("home-scoped Git run must be protected");
+            assert_eq!(risk.reason, super::ScopeReason::HomeDirectory);
+        });
     }
 
     #[test]
     fn lexical_parent_components_cannot_bypass_a_protected_tree() {
-        let cwd = Path::new("/work/project");
-        let risk =
-            sensitive_scope_with_homes(cwd, &[PathBuf::from("/work/../etc/normfix.c")], false, &[]);
-        assert!(risk.is_some());
+        with_windows_environment(|| {
+            let cwd = Path::new(FIXTURE.project_cwd);
+            let risk =
+                sensitive_scope_with_homes(cwd, &[PathBuf::from(FIXTURE.escaping)], false, &[]);
+            assert!(risk.is_some());
+        });
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_protected_tree_is_recognized_however_it_is_spelled() {
+        with_windows_environment(|| {
+            let cwd = Path::new(FIXTURE.project_cwd);
+
+            // Windows paths are case-insensitive, so a guard that compared them
+            // literally would refuse `C:\Windows` and walk `C:\WINDOWS`.
+            for spelling in [r"C:\WINDOWS\System32", r"c:\windows\system32"] {
+                assert!(
+                    sensitive_scope_with_homes(cwd, &[PathBuf::from(spelling)], false, &[])
+                        .is_some(),
+                    "{spelling} must be protected",
+                );
+            }
+        });
     }
 
     #[cfg(unix)]
