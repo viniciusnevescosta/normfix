@@ -471,18 +471,55 @@ mod tests {
         SUPPORTED_NORMINETTE_VERSION,
     };
 
+    /// The probe argument, answered by a guard ahead of every fake tool's body.
+    const READINESS_PROBE: &str = "--normfix-readiness-probe";
+
+    /// Writes a fake tool and does not return until the kernel will run it.
+    ///
+    /// Linux refuses to `execve` a file while any process holds it open for
+    /// writing, and `cargo test` runs these on parallel threads that fork for
+    /// their own subprocesses — so a sibling's child, between its `fork` and
+    /// its `exec`, briefly counts as a writer for the script this thread just
+    /// wrote. Waiting here gives every test a runnable tool instead of an
+    /// occasional `Text file busy` that says nothing about normfix.
+    ///
+    /// This narrows the window rather than closing it: a sibling can fork again
+    /// after the probe returns. The retry at the point of use below is the
+    /// actual guarantee; the probe is what protects the call sites that do not
+    /// have one, and it turns the common case into a wait instead of a failure.
+    ///
+    /// The probe exits before the body runs, so it cannot disturb a script
+    /// that records what it was asked to do.
     #[cfg(unix)]
     fn executable_script(directory: &TempDir, body: &str) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
 
         let path = directory.path().join("norminette");
-        std::fs::write(&path, format!("#!/bin/sh\nset -eu\n{body}\n")).expect("write fake tool");
+        std::fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\nset -eu\nif [ \"${{1:-}}\" = \"{READINESS_PROBE}\" ]; then exit 0; fi\n{body}\n"
+            ),
+        )
+        .expect("write fake tool");
         let mut permissions = std::fs::metadata(&path)
             .expect("script metadata")
             .permissions();
         permissions.set_mode(0o755);
         std::fs::set_permissions(&path, permissions).expect("make script executable");
-        path
+        for _ in 0..100 {
+            match std::process::Command::new(&path)
+                .arg(READINESS_PROBE)
+                .output()
+            {
+                Ok(_) => return path,
+                Err(error) if error.to_string().contains("Text file busy") => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("fake tool is not runnable: {error}"),
+            }
+        }
+        panic!("fake tool was still reported as busy after retrying");
     }
 
     /// Retries while the kernel still reports a freshly written script as busy.

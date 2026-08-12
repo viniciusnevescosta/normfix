@@ -1,6 +1,15 @@
 import { createSourceEditor, type SourceEditor } from "./editor";
 import { startOfflineSupport, type OfflineState, type OfflineSupport } from "./offline/pwa";
 import {
+  applyThemePreference,
+  isThemePreference,
+  readStoredThemePreference,
+  storeThemePreference,
+  watchSystemAppearance,
+  type Appearance,
+  type ThemePreference,
+} from "./theme";
+import {
   SUPPORTED_LOCALES,
   detectLocale,
   translate,
@@ -124,6 +133,8 @@ interface AppState {
   locale: Locale;
   offlineState: OfflineState;
   offlineSupport: OfflineSupport | null;
+  theme: ThemePreference;
+  appearance: Appearance;
 }
 
 function requiredElement<T extends Element>(selector: string): T {
@@ -146,6 +157,8 @@ const state: AppState = {
   locale: readStoredLocale(),
   offlineState: "unsupported",
   offlineSupport: null,
+  theme: readStoredThemePreference(),
+  appearance: "dark",
 };
 
 const elements = {
@@ -179,6 +192,7 @@ const elements = {
   newFileName: requiredElement<HTMLInputElement>("#new-file-name"),
   newFileError: requiredElement<HTMLElement>("#new-file-error"),
   language: requiredElement<HTMLSelectElement>("#language"),
+  theme: requiredElement<HTMLSelectElement>("#theme"),
   identityEmail: requiredElement<HTMLInputElement>("#identity-email"),
   rememberIdentity: requiredElement<HTMLInputElement>("#remember-identity"),
   saveIdentity: requiredElement<HTMLButtonElement>("#save-identity"),
@@ -290,6 +304,7 @@ function forgetIdentity(): void {
 function applyTranslations(): void {
   document.documentElement.lang = state.locale;
   elements.language.value = state.locale;
+  elements.theme.value = state.theme;
   for (const element of document.querySelectorAll<HTMLElement>("[data-i18n]")) {
     const key = element.dataset.i18n as MessageKey | undefined;
     if (key) element.textContent = t(key);
@@ -1160,6 +1175,31 @@ for (const tab of document.querySelectorAll<HTMLButtonElement>("[role=tab][data-
     if (tab.dataset.view) activateTab(tab.dataset.view);
   });
 }
+/**
+ * Repaints for the chosen appearance.
+ *
+ * Like the language selector, this changes how the page looks and nothing
+ * else: no run, no request, no reload.
+ */
+function changeTheme(preference: ThemePreference): void {
+  state.theme = preference;
+  state.appearance = applyThemePreference(preference);
+  state.editor?.setAppearance(state.appearance);
+  storeThemePreference(preference);
+  elements.theme.value = preference;
+}
+
+elements.theme.addEventListener("change", () => {
+  const preference = elements.theme.value;
+  if (isThemePreference(preference)) changeTheme(preference);
+});
+
+// Only meaningful while following the system, but harmless otherwise: the
+// preference is what decides, and re-applying it is idempotent.
+watchSystemAppearance(() => {
+  if (state.theme === "system") changeTheme("system");
+});
+
 elements.language.addEventListener("change", () => {
   const locale = elements.language.value as Locale;
   if (SUPPORTED_LOCALES.includes(locale)) changeLocale(locale);
@@ -1177,6 +1217,7 @@ elements.identityEmail.addEventListener("keydown", (event) => {
 });
 
 async function initialize(): Promise<void> {
+  state.appearance = applyThemePreference(state.theme);
   applyTranslations();
   loadIdentity();
   state.offlineSupport = startOfflineSupport({
@@ -1195,6 +1236,7 @@ async function initialize(): Promise<void> {
     elements.fallbackEditor,
     "main.c",
     SAMPLE,
+    state.appearance,
     {
       onChange: () => {
         syncEditor();

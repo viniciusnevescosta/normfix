@@ -67,6 +67,9 @@ official link.
 10. Translate the app name in `localizedPages` in `web/vite.config.ts`. It is
    the label under the icon of anyone who installs the playground, so it has
    to be short and to read as a name rather than as a page title.
+11. Translate the appearance labels — system, light, dark. They sit in a narrow
+    control next to the language selector, so a long word wraps or truncates
+    before anything else on the page does.
 
 Native Rust diagnostics returned by WebAssembly currently stay in English.
 The UI must say this plainly instead of presenting a partially translated

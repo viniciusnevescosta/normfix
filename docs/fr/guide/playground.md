@@ -24,6 +24,14 @@ l’import n’écarte jamais rien en silence, et ne refuse pas tout le dépôt 
 qu’un fichier n’est pas quelque chose que normfix formate. **Choisir des
 fichiers** fait la même chose avec un sélecteur.
 
+## Apparence
+
+**Système**, **Clair** ou **Sombre**, à côté du sélecteur de langue. Elle suit
+votre système d’exploitation sauf indication contraire, et le choix est retenu
+sur cet appareil jusqu’à ce que vous en changiez — comme la langue, elle change
+l’aspect de la page et rien d’autre : aucune exécution, aucune requête, aucun
+rechargement.
+
 ## En-tête officiel 42
 
 Saisissez une adresse étudiante valide dans le panneau **Identité 42**. L’option

@@ -1,4 +1,6 @@
 import type * as Monaco from "monaco-editor/editor.js";
+
+import type { Appearance } from "./theme";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 
 export interface SourceEditor {
@@ -6,6 +8,8 @@ export interface SourceEditor {
   setFile(path: string, source: string): void;
   removeFile(path: string): void;
   focus(): void;
+  /** Repaints the editor for the current appearance. A no-op without Monaco. */
+  setAppearance(appearance: Appearance): void;
   usingMonaco: boolean;
 }
 
@@ -53,6 +57,8 @@ function createFallbackEditor(
     },
     removeFile: () => undefined,
     focus: () => fallback.focus(),
+    // The text area inherits the page palette through CSS.
+    setAppearance: () => undefined,
   };
 }
 
@@ -61,13 +67,21 @@ export async function createSourceEditor(
   fallback: HTMLTextAreaElement,
   initialPath: string,
   initialSource: string,
+  appearance: Appearance,
   callbacks: EditorCallbacks,
 ): Promise<SourceEditor> {
   if (!monacoSupported()) {
     return createFallbackEditor(monacoContainer, fallback, initialSource, callbacks);
   }
   try {
-    return await createMonacoEditor(monacoContainer, fallback, initialPath, initialSource, callbacks);
+    return await createMonacoEditor(
+      monacoContainer,
+      fallback,
+      initialPath,
+      initialSource,
+      appearance,
+      callbacks,
+    );
   } catch (error) {
     // Monaco is a convenience, not the product. It is a large dynamic import,
     // so it is the first thing to fail on a lost connection or a cold offline
@@ -83,6 +97,7 @@ async function createMonacoEditor(
   fallback: HTMLTextAreaElement,
   initialPath: string,
   initialSource: string,
+  appearance: Appearance,
   callbacks: EditorCallbacks,
 ): Promise<SourceEditor> {
   fallback.hidden = true;
@@ -94,7 +109,9 @@ async function createMonacoEditor(
   const monaco = await loadMonaco();
   assertRequiredLanguages(monaco);
   registerMakefile(monaco);
-  monaco.editor.defineTheme("normfix", {
+  // Monaco cannot read the stylesheet's custom properties, so each appearance
+  // is declared here against the same palette styles.css defines.
+  monaco.editor.defineTheme("normfix-dark", {
     base: "vs-dark",
     inherit: true,
     rules: [
@@ -118,6 +135,30 @@ async function createMonacoEditor(
       "editorWidget.border": "#596159",
     },
   });
+  monaco.editor.defineTheme("normfix-light", {
+    base: "vs",
+    inherit: true,
+    rules: [
+      { token: "comment", foreground: "5a625a" },
+      { token: "keyword", foreground: "2c6a48" },
+      { token: "string", foreground: "7a5c0c" },
+      { token: "number", foreground: "23546f" },
+    ],
+    colors: {
+      "editor.background": "#fbfcfb",
+      "editor.foreground": "#1a1d1a",
+      "editorLineNumber.foreground": "#a4ada4",
+      "editorLineNumber.activeForeground": "#4a524a",
+      "editor.selectionBackground": "#cfe4d7",
+      "editor.inactiveSelectionBackground": "#e2e8e3",
+      "editorCursor.foreground": "#2c6a48",
+      "editorIndentGuide.background1": "#e2e6e2",
+      "editorIndentGuide.activeBackground1": "#a4ada4",
+      "editor.lineHighlightBackground": "#eef1ee",
+      "editorWidget.background": "#fff",
+      "editorWidget.border": "#a4ada4",
+    },
+  });
 
   const models = new Map<string, Monaco.editor.ITextModel>();
   const createModel = (path: string, source: string): Monaco.editor.ITextModel => {
@@ -128,7 +169,7 @@ async function createMonacoEditor(
   };
   const instance = monaco.editor.create(monacoContainer, {
     model: createModel(initialPath, initialSource),
-    theme: "normfix",
+    theme: monacoThemeFor(appearance),
     automaticLayout: true,
     lineNumbers: "on",
     lineNumbersMinChars: 3,
@@ -172,7 +213,12 @@ async function createMonacoEditor(
       model?.dispose();
     },
     focus: () => instance.focus(),
+    setAppearance: (next) => monaco.editor.setTheme(monacoThemeFor(next)),
   };
+}
+
+function monacoThemeFor(appearance: Appearance): string {
+  return appearance === "light" ? "normfix-light" : "normfix-dark";
 }
 
 async function loadMonaco(): Promise<typeof Monaco> {

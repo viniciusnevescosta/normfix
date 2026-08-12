@@ -22,6 +22,13 @@ erro, e a quantidade de ignorados é sempre exibida — a importação nunca des
 nada em silêncio, nem recusa o drop inteiro porque um arquivo não é algo que o
 normfix formata. **Escolher arquivos** faz o mesmo por um seletor.
 
+## Aparência
+
+**Sistema**, **Claro** ou **Escuro**, ao lado do seletor de idioma. Segue o seu
+sistema operacional a menos que você diga o contrário, e a escolha fica salva
+neste dispositivo até você trocá-la — como o idioma, ela muda a aparência da
+página e nada mais: nenhuma execução, nenhuma requisição, nenhum recarregamento.
+
 ## Cabeçalho oficial da 42
 
 Informe um e-mail de estudante válido no painel **Identidade 42**. A opção

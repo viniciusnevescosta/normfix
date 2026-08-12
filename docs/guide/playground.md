@@ -22,6 +22,13 @@ and the count of what was skipped is always shown — the import never discards
 anything quietly, and never refuses the whole drop because one file is not
 something normfix formats. **Choose files** does the same thing for a picker.
 
+## Appearance
+
+**System**, **Light**, or **Dark**, next to the language selector. It follows
+your operating system unless you say otherwise, and the choice is remembered on
+this device until you change it — like the language, it changes how the page
+looks and nothing else: no run, no request, no reload.
+
 ## Official 42 headers
 
 Enter a valid student email in **42 identity**. **Remember on this device** is

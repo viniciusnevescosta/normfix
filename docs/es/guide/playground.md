@@ -25,6 +25,13 @@ importación nunca descarta nada en silencio, ni rechaza todo el drop porque un
 archivo no sea algo que normfix formatea. **Elegir archivos** hace lo mismo con
 un selector.
 
+## Apariencia
+
+**Sistema**, **Claro** u **Oscuro**, junto al selector de idioma. Sigue a tu
+sistema operativo salvo que indiques otra cosa, y la elección se recuerda en
+este dispositivo hasta que la cambies: como el idioma, cambia el aspecto de la
+página y nada más, sin ejecuciones, peticiones ni recargas.
+
 ## Cabecera oficial de 42
 
 Escribe un correo de estudiante válido en el panel **Identidad 42**. La opción

@@ -10,9 +10,28 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
-## Unreleased
+## [1.3.1] / 2026-08-11
+
+Site and documentation only. No CLI flag, exit code, JSON field, or on-disk
+layout changed, so nothing this release touches is part of the versioned
+surface described in `docs/COMPATIBILITY.md`.
+
+### Added
+
+- **Light, dark, or system appearance in the playground**, beside the language
+  selector. It follows the operating system unless the reader says otherwise,
+  and the choice is remembered on the device. Following the system costs no
+  flash of the wrong colors, because the stylesheet — not a script — decides
+  the first frame for a reader who never chose anything.
 
 ### Fixed
+
+- **Fake tools in the test suite wait until they can actually be run.** The
+  same `Text file busy` race resurfaced in the oracle suite, where only two of
+  sixteen fixtures were protected. The fixture helper itself now probes the
+  script it just wrote, which covers every call site at the source; the retry
+  at the point of use stays, because a probe narrows the window rather than
+  closing it.
 
 - **The release gate no longer fails at random.** Two test suites spawned a
   shell script they had just written, and Linux refuses to execute a file while
@@ -93,6 +112,13 @@ for a real project instead of a text box that formats one file.
   diagnostics would be translated "until CLI 1.1". They now state the shipped
   rule: normfix translates the findings it writes, and relays Norminette and
   compiler output in the language those tools produced it.
+
+- **Five documentation pages were summaries rather than translations.** The
+  landing page, getting started, the browser playground, the safety reference,
+  and the compatibility policy were between a sixth and a half the length of
+  their English originals in Portuguese, Spanish, and French — not shorter
+  wording, but missing sections. They are complete, and each landing page now
+  opens on "why normfix" rather than on installation.
 
 ## [1.2.0] / 2026-08-11
 
@@ -921,6 +947,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.3.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.1
 [1.3.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.0
 [1.2.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.2.0
 [1.1.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.0
