@@ -1018,8 +1018,24 @@ dialog input {
     width: min(100% - 16px, 1320px);
   }
 
+  /*
+   * The header is one non-wrapping flex row: brand on the left, then the two
+   * selectors, two links, and two badges on the right. On an iPhone XR that row
+   * measured 504 CSS pixels against a 414-pixel screen, and because it cannot
+   * shrink below its contents, the whole page was laid out at 625 and the phone
+   * zoomed out to fit — every glyph on the site smaller than designed, for one
+   * row. Letting it wrap costs a second line and fixes the page.
+   */
   .topbar {
+    flex-wrap: wrap;
     padding-inline: 8px;
+    row-gap: 6px;
+  }
+
+  .topbar-end {
+    flex-wrap: wrap;
+    column-gap: 10px;
+    row-gap: 6px;
   }
 
   .intro {
