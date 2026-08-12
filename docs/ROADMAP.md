@@ -93,12 +93,11 @@ standard library on the pinned toolchain, and there is no runner to execute a
 suite on. Publishing it would be the binary-without-evidence this roadmap warns
 against.
 
-## 1.5 — correctness, security, speed, and leak checking
+## 1.5 — leak checking
 
-A pass over the whole project for bugs, vulnerabilities, and measured
-performance changes, plus Valgrind support so a run can report leaks in the
-student's code — within the same rule as every other backend: what it cannot
-prove, it reports rather than asserts.
+Add Valgrind support so a run can report leaks in the student's code, within the
+same rule as every other backend: what it cannot prove, it reports rather than
+asserts.
 
 ## 1.6 — Python projects
 
@@ -111,3 +110,17 @@ contract stays available and versioned instead of being silently generalized.
 Create a project from explicit choices: its name and allowed function list, then
 `main.c`, the header, the Makefile, a `README.md` carrying the student's login,
 `src/`, `tests/`, and an initialized Git repository. For C and for Python.
+
+## 1.8 — correctness, security, and speed
+
+A pass over the whole project for bugs, vulnerabilities, and measured
+performance changes.
+
+### 1.8.1 — say it in language people actually understand
+
+A translation and documentation pass across the whole project, English
+included. Some strings do not read as the language they claim to be, some use
+terms nobody outside the project knows, and some contradict each other. The
+documentation is rewritten alongside them to be clearer and easier to follow —
+the point of translating was accessibility, and a sentence a reader has to
+decode is not accessible in any language.

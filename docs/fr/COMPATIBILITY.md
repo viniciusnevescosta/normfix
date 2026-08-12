@@ -79,21 +79,57 @@ Les releases précompilées couvrent les environnements Unix utilisés par les
 | Linux | ARM64 | `normfix-aarch64-linux-gnu.tar.gz` |
 | macOS | Intel | `normfix-x86_64-macos.tar.gz` |
 | macOS | Apple Silicon | `normfix-aarch64-macos.tar.gz` |
+| Windows | x86-64 | `normfix-x86_64-windows.zip` |
+| Windows | ARM64 | `normfix-aarch64-windows.zip` |
+| FreeBSD | x86-64 | `normfix-x86_64-freebsd.tar.gz` |
 
 Les noms publics des archives omettent délibérément les marqueurs de fournisseur
 Rust et les étiquettes de constructeur de machine. Les identifiants de cible de
 la toolchain restent des entrées internes de compilation, pas des noms de
 release ni de produit.
 
-Windows n’a pas de cible de release native. La CLI complète est prise en charge
-sous Windows via [WSL](https://learn.microsoft.com/windows/wsl/install), avec
-l’archive Linux et une installation de la Norminette dans ce même environnement
-WSL. Le playground du navigateur est l’alternative sans installation pour les
-aperçus du formateur. L’exécution native sous PowerShell/CMD n’est pas prise en
-charge : la terminaison bornée des sous-processus, le comportement des liens
-symboliques et des chemins, ainsi que les preuves de transaction ont aujourd’hui
-une implémentation et des preuves d’intégration propres à Unix ; un binaire
-Windows natif surestimerait donc le contrat.
+Windows est pris en charge nativement depuis la 1.4.0, sur les preuves que la CI
+produit pour lui plutôt que sur l’hypothèse qu’un code portable se porte. Les
+deux cibles Windows exécutent la suite complète, pilotent la vraie Norminette
+officielle et démontrent la propriété différentielle — une exécution ne laisse
+jamais un fichier avec plus de diagnostics officiels qu’au départ — sur la
+plateforme elle-même.
+
+Deux différences avec Unix sont réelles, et sont dites ici plutôt que lissées :
+
+- **Le confinement des processus a une fenêtre étroite.** Unix place l’outil dans
+  son propre groupe de processus entre le fork et l’exec : aucun descendant ne
+  peut s’échapper. Windows n’a pas de point d’accroche avant le démarrage :
+  l’outil rejoint un job object juste après le spawn, et ce qu’il crée dans les
+  microsecondes précédentes pourrait s’en détacher. Le job tue le reste de
+  l’arborescence à sa fermeture.
+- **Un rename n’est pas write-through.** POSIX exige de synchroniser le
+  répertoire parent pour qu’une création ou un renommage survive à une panne, ce
+  que la transaction fait. Windows n’a pas d’équivalent ; le contenu du fichier
+  est synchronisé et NTFS journalise les métadonnées, mais une machine qui perd
+  le courant entre le commit et l’écriture des métadonnées a une garantie plus
+  faible que le même instant sous Unix. La sauvegarde et le journal ne sont pas
+  concernés : la récupération les lit par contenu, pas par ordre.
+
+Les archives Windows sont des `.zip`, que la plateforme ouvre d’elle-même.
+L’installateur en une ligne y fonctionne depuis n’importe quel shell POSIX — Git
+Bash, MSYS2, Cygwin ou WSL. Exécuter la compilation Linux dans WSL reste pris en
+charge et inchangé.
+
+FreeBSD x86-64 est pris en charge aux mêmes conditions. C’est un Unix : il
+partage le confinement par groupe de processus et la synchronisation de
+répertoire au lieu d’avoir besoin des substituts de Windows, et la CI exécute la
+suite complète, le vérificateur officiel et la preuve différentielle dans une
+machine virtuelle FreeBSD — GitHub n’a pas de runner FreeBSD, et une compilation
+croisée publierait un binaire qui n’a jamais tourné sur le système visé. Son
+archive de release est construite dans cette même machine virtuelle, pour la même
+raison.
+
+FreeBSD en ARM64 n’est pas publié. `aarch64-unknown-freebsd` n’a pas de
+bibliothèque standard précompilée sur la toolchain figée : le construire
+exigerait un compilateur nightly non figé, et il n’existe aucun moyen d’y
+exécuter la suite. L’un ou l’autre suffirait à rendre l’affirmation
+intenable.
 
 ## Diagnostics C et de compilation
 

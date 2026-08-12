@@ -86,6 +86,7 @@ verifique-o contra o `SHA256SUMS` e coloque o `normfix` no `PATH`.
 | macOS Apple Silicon | `normfix-aarch64-macos.tar.gz` |
 | Windows x86-64 | `normfix-x86_64-windows.zip` |
 | Windows ARM64 | `normfix-aarch64-windows.zip` |
+| FreeBSD x86-64 | `normfix-x86_64-freebsd.tar.gz` |
 
 Por exemplo, no Apple Silicon com a release `1.4.0`:
 
@@ -102,6 +103,45 @@ normfix --version
 
 Crie o `$HOME/.local/bin` antes, se for necessário, e garanta que ele esteja no
 `PATH`.
+
+### Quando o sistema diz que o desenvolvedor não pode ser verificado
+
+O macOS e o Windows avisam sobre programas que não são assinados com um
+certificado pago de desenvolvedor. O normfix não é, então você pode ver um
+aviso — e o caminho que você escolheu decide se vai ver.
+
+O instalador de uma linha baixa com `curl`, que não anexa a marca que dispara o
+aviso. Instalando assim, você não verá nada. Um navegador anexa, então um
+arquivo baixado pela página de releases é o caso que avisa.
+
+No macOS a mensagem diz que o desenvolvedor não pode ser verificado. Abra o
+arquivo uma vez pelo Finder com **clique direito → Abrir**, que oferece um botão
+que o clique duplo normal não oferece, ou remova a marca diretamente:
+
+```sh
+xattr -d com.apple.quarantine ./normfix
+```
+
+No Windows, o SmartScreen diz que protegeu seu PC. Escolha **Mais informações**
+e depois **Executar assim mesmo**. Pelo PowerShell:
+
+```powershell
+Unblock-File .\normfix.exe
+```
+
+Não ser assinado é uma posição deliberada, não um descuido. Um certificado de
+assinatura prova que alguém pagou a uma autoridade certificadora; ele não diz
+nada sobre o que o binário contém. Todo arquivo aqui é publicado com um
+manifesto de checksums e com procedência de build que o liga à execução do
+workflow que o produziu — uma afirmação mais forte, que o sistema operacional
+simplesmente não consulta:
+
+```sh
+gh attestation verify normfix-aarch64-macos.tar.gz --repo viniciusnevescosta/normfix
+```
+
+Se esse comando passa, o arquivo que você tem saiu do workflow de release deste
+projeto, diga o sistema operacional o que disser sobre a assinatura.
 
 ### Compilando do código-fonte
 

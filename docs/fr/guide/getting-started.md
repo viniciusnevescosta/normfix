@@ -89,6 +89,7 @@ vérifiez-la contre `SHA256SUMS`, et placez `normfix` dans le `PATH`.
 | macOS Apple Silicon | `normfix-aarch64-macos.tar.gz` |
 | Windows x86-64 | `normfix-x86_64-windows.zip` |
 | Windows ARM64 | `normfix-aarch64-windows.zip` |
+| FreeBSD x86-64 | `normfix-x86_64-freebsd.tar.gz` |
 
 Par exemple, sur Apple Silicon avec la release `1.4.0` :
 
@@ -105,6 +106,48 @@ normfix --version
 
 Créez d’abord `$HOME/.local/bin` si nécessaire et assurez-vous qu’il est dans le
 `PATH`.
+
+### Quand le système dit que le développeur ne peut pas être vérifié
+
+macOS et Windows avertissent au sujet des programmes qui ne sont pas signés avec
+un certificat de développeur payant. normfix ne l’est pas : vous verrez peut-être
+un avertissement — et la route choisie décide si vous le voyez.
+
+L’installateur en une ligne télécharge avec `curl`, qui n’attache pas la marque
+déclenchant l’avertissement. En installant ainsi, vous ne verrez rien. Un
+navigateur l’attache : une archive téléchargée depuis la page des releases est le
+cas qui avertit.
+
+Sur macOS, le message indique que le développeur ne peut pas être vérifié. Ouvrez
+le fichier une fois depuis le Finder avec **clic droit → Ouvrir**, qui propose un
+bouton que le double-clic ordinaire n’offre pas, ou retirez la marque
+directement :
+
+```sh
+xattr -d com.apple.quarantine ./normfix
+```
+
+Sous Windows, SmartScreen annonce avoir protégé votre PC. Choisissez
+**Informations complémentaires**, puis **Exécuter quand même**. Depuis
+PowerShell :
+
+```powershell
+Unblock-File .\normfix.exe
+```
+
+Ne pas être signé est une position délibérée, pas un oubli. Un certificat de
+signature prouve que quelqu’un a payé une autorité de certification ; il ne dit
+rien du contenu du binaire. Chaque archive ici est publiée avec un manifeste de
+sommes de contrôle et une provenance de build qui la relie à l’exécution du
+workflow qui l’a produite — une affirmation plus forte, que le système
+d’exploitation ne consulte tout simplement pas :
+
+```sh
+gh attestation verify normfix-aarch64-macos.tar.gz --repo viniciusnevescosta/normfix
+```
+
+Si cette commande réussit, le fichier que vous avez est sorti du workflow de
+release de ce projet, quoi que le système dise de sa signature.
 
 ### Compiler depuis les sources
 

@@ -84,6 +84,7 @@ verify it against `SHA256SUMS`, and place `normfix` on `PATH`.
 | macOS Apple Silicon | `normfix-aarch64-macos.tar.gz` |
 | Windows x86-64 | `normfix-x86_64-windows.zip` |
 | Windows ARM64 | `normfix-aarch64-windows.zip` |
+| FreeBSD x86-64 | `normfix-x86_64-freebsd.tar.gz` |
 
 For example, on Apple Silicon with release `1.4.0`:
 
@@ -99,6 +100,46 @@ normfix --version
 ```
 
 Create `$HOME/.local/bin` first if necessary and ensure it is on `PATH`.
+
+### When the system says the developer cannot be verified
+
+macOS and Windows warn about programs that are not signed with a paid developer
+certificate. normfix is not, so you may see one — and which route you took
+decides whether you do.
+
+The one-line installer downloads with `curl`, which does not attach the flag
+that triggers the warning. Installing that way, you will not see it at all. A
+browser does attach it, so an archive downloaded from the releases page is the
+case that warns.
+
+On macOS the message is that the developer cannot be verified. Open it once
+from the Finder with **right-click → Open**, which offers a button the normal
+double-click does not, or clear the flag directly:
+
+```sh
+xattr -d com.apple.quarantine ./normfix
+```
+
+On Windows, SmartScreen says it protected your PC. Choose **More info**, then
+**Run anyway**. From PowerShell:
+
+```powershell
+Unblock-File .\normfix.exe
+```
+
+Being unsigned is a deliberate position rather than an oversight. A signing
+certificate proves that someone paid a certificate authority; it says nothing
+about what the binary contains. Every archive here is published with a checksum
+manifest and with build provenance that ties it to the workflow run that
+produced it, which is a stronger claim — the operating system simply does not
+consult it:
+
+```sh
+gh attestation verify normfix-aarch64-macos.tar.gz --repo viniciusnevescosta/normfix
+```
+
+If that command succeeds, the file you have came out of this project's release
+workflow, whatever the operating system says about its signature.
 
 ### Build from source
 

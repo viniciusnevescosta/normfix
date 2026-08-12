@@ -100,6 +100,14 @@ mismatch. The attestation check is the stronger one, because it ties the binary
 to the workflow run that built it: use it if you are installing on a machine you
 care about.
 
+macOS and Windows warn about programs signed by nobody, and normfix is one. The
+one-line installer downloads with `curl`, which does not attach the flag that
+triggers the warning, so installing that way you will not see it; an archive
+downloaded through a browser will. [Getting
+started](https://normfix.vercel.app/docs/guide/getting-started) shows how to
+clear it on each system, and why a checksum and a provenance attestation are a
+stronger claim about a binary than a certificate saying someone paid for one.
+
 ## Use it
 
 Preview before writing anything:

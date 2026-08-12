@@ -87,6 +87,7 @@ verifícalo contra `SHA256SUMS` y coloca `normfix` en el `PATH`.
 | macOS Apple Silicon | `normfix-aarch64-macos.tar.gz` |
 | Windows x86-64 | `normfix-x86_64-windows.zip` |
 | Windows ARM64 | `normfix-aarch64-windows.zip` |
+| FreeBSD x86-64 | `normfix-x86_64-freebsd.tar.gz` |
 
 Por ejemplo, en Apple Silicon con la release `1.4.0`:
 
@@ -103,6 +104,45 @@ normfix --version
 
 Crea antes `$HOME/.local/bin` si hace falta y asegúrate de que esté en el
 `PATH`.
+
+### Cuando el sistema dice que no puede verificar al desarrollador
+
+macOS y Windows avisan sobre programas que no están firmados con un certificado
+de desarrollador de pago. normfix no lo está, así que puede que veas un aviso — y
+la ruta que elegiste decide si lo ves.
+
+El instalador de una línea descarga con `curl`, que no adjunta la marca que
+dispara el aviso. Instalando así no verás nada. Un navegador sí la adjunta, así
+que un archivo descargado desde la página de releases es el caso que avisa.
+
+En macOS el mensaje dice que no se puede verificar al desarrollador. Ábrelo una
+vez desde el Finder con **clic derecho → Abrir**, que ofrece un botón que el
+doble clic normal no da, o quita la marca directamente:
+
+```sh
+xattr -d com.apple.quarantine ./normfix
+```
+
+En Windows, SmartScreen dice que protegió tu PC. Elige **Más información** y
+luego **Ejecutar de todas formas**. Desde PowerShell:
+
+```powershell
+Unblock-File .\normfix.exe
+```
+
+No estar firmado es una postura deliberada, no un descuido. Un certificado de
+firma demuestra que alguien pagó a una autoridad certificadora; no dice nada
+sobre lo que contiene el binario. Cada archivo aquí se publica con un manifiesto
+de checksums y con procedencia de compilación que lo vincula a la ejecución del
+workflow que lo produjo, una afirmación más fuerte que el sistema operativo
+sencillamente no consulta:
+
+```sh
+gh attestation verify normfix-aarch64-macos.tar.gz --repo viniciusnevescosta/normfix
+```
+
+Si ese comando pasa, el archivo que tienes salió del workflow de release de este
+proyecto, diga lo que diga el sistema operativo sobre su firma.
 
 ### Compilar desde el código fuente
 
