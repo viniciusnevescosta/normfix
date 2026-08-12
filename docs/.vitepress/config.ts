@@ -589,13 +589,25 @@ export default defineConfig({
   // diagram still told the browser to fetch several megabytes of renderer.
   // Only a page that actually renders one keeps the hint.
   transformHtml(code) {
-    if (code.includes('class="mermaid')) {
-      return code;
-    }
-    return code.replace(
-      /\s*<link rel="modulepreload" href="[^"]*(?:mermaid|cynefin)[^"]*">/g,
-      "",
+    // The landing pages use the home layout, which wraps its content in a plain
+    // div. Every other page gets a `main` element from the theme, so a screen
+    // reader arriving at the landing page is the one reader with no landmark to
+    // skip to. The default theme's component cannot be changed from here, but
+    // the role it should carry can.
+    let html = code.replace(
+      /<div class="VPContent is-home"/,
+      '<div class="VPContent is-home" role="main"',
     );
+    // VitePress preloads every async chunk it knows about, so a page with no
+    // diagram still told the browser to fetch several megabytes of renderer.
+    // Only a page that actually renders one keeps the hint.
+    if (!html.includes('class="mermaid')) {
+      html = html.replace(
+        /\s*<link rel="modulepreload" href="[^"]*(?:mermaid|cynefin)[^"]*">/g,
+        "",
+      );
+    }
+    return html;
   },
   vite: {
     resolve: {
