@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 use normfix_c_syntax::CFunctionKind;
+use normfix_core::TextRange;
 use regex::Regex;
 
 use crate::analysis::{
@@ -723,7 +724,55 @@ fn format_control_layout(context: &ParsedContext) -> Result<Vec<Edit>, CActionEr
         let brace = body.start().get() as usize;
         push_control_brace_newline(context, brace, &mut edits)?;
     }
+    push_control_keyword_spacing(context, &mut edits)?;
+    for body in &context.facts().compound_bodies {
+        push_block_line_breaks(context, *body, &mut edits)?;
+    }
     Ok(edits)
+}
+
+/// Puts exactly one space between a control keyword and its parenthesis.
+///
+/// The keyword set is closed and reserved, so no call, macro, or identifier can
+/// land here by accident. Being provable from the tokens alone is what makes it
+/// worth having: it is the same answer with or without the official checker, so
+/// the browser playground reaches it too.
+fn push_control_keyword_spacing(
+    context: &ParsedContext,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    const KEYWORDS: [&str; 5] = ["if", "while", "for", "switch", "return"];
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(source, &lines);
+    for token in context
+        .tokens()
+        .iter()
+        .filter(|token| KEYWORDS.contains(&token.text.as_str()))
+    {
+        let line_number = lines.line_number_at(token.start);
+        if blocked.contains(&line_number) {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let relative = token.end.saturating_sub(line.start);
+        let (start, end) = whitespace_after(text, relative);
+        if text.as_bytes().get(end) != Some(&b'(') || &text[start..end] == " " {
+            continue;
+        }
+        edits.push(Edit::new(
+            line.start + start,
+            line.start + end,
+            " ",
+            "CONTROL_KEYWORD_SPACING",
+            "left exactly one space between a control keyword and its parenthesis",
+            Some(line_number),
+        )?);
+    }
+    Ok(())
 }
 
 fn push_control_brace_newline(
@@ -753,6 +802,68 @@ fn push_control_brace_newline(
         "CONTROL_BRACE_NEWLINE",
         "placed a control block opening brace on its own line",
         Some(line_number),
+    )?);
+    Ok(())
+}
+
+/// Gives a block's contents and its closing brace their own lines.
+///
+/// This runs in the same pass as the edit that moves the opening brace, so it
+/// reads the indentation of the line the brace will end up on rather than the
+/// brace's current position. The phase gets exactly one turn, and a rule that
+/// waited for the next one would simply never fire.
+fn push_block_line_breaks(
+    context: &ParsedContext,
+    body: TextRange,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(source, &lines);
+    let open = body.start().get() as usize;
+    let close = (body.end().get() as usize).saturating_sub(1);
+    let open_line_number = lines.line_number_at(open);
+    let close_line_number = lines.line_number_at(close);
+    if blocked.contains(&open_line_number) || blocked.contains(&close_line_number) {
+        return Ok(());
+    }
+    let Some(open_line) = lines.get(open_line_number) else {
+        return Ok(());
+    };
+    let open_text = lines.text(open_line);
+    let open_relative = open.saturating_sub(open_line.start);
+    let indent = open_text[..leading_whitespace(open_text)].to_owned();
+
+    // Whatever follows the opening brace on its line.
+    let (after_start, after_end) = whitespace_after(open_text, open_relative + 1);
+    if after_end < open_text.len() && close > open_line.start + after_end {
+        edits.push(Edit::new(
+            open_line.start + after_start,
+            open_line.start + after_end,
+            format!("\n{indent}\t"),
+            "BLOCK_STATEMENT_NEWLINE",
+            "placed a block statement on its own line",
+            Some(open_line_number),
+        )?);
+    }
+
+    // The closing brace, when something shares its line.
+    let Some(close_line) = lines.get(close_line_number) else {
+        return Ok(());
+    };
+    let close_text = lines.text(close_line);
+    let close_relative = close.saturating_sub(close_line.start);
+    if close_relative == 0 || close_text[..close_relative].trim().is_empty() {
+        return Ok(());
+    }
+    let (start, _) = whitespace_before(close_text, close_relative);
+    edits.push(Edit::new(
+        close_line.start + start,
+        close,
+        format!("\n{indent}"),
+        "BLOCK_BRACE_NEWLINE",
+        "placed a closing brace on its own line",
+        Some(close_line_number),
     )?);
     Ok(())
 }
@@ -1129,7 +1240,15 @@ fn fix_function_layout(
 
     for signature in signatures
         .iter()
-        .filter(|signature| signature.definition && target_definitions.contains(&signature.line))
+        // One tab between the return type and the declarator is proven from
+        // the signature itself: the gap is whitespace and nothing else. It was
+        // gated on an official report while the identical prototype rule was
+        // not, which is why a run without a checker left definitions alone.
+        .filter(|signature| {
+            signature.definition
+                && (options.format_proven_declarations
+                    || target_definitions.contains(&signature.line))
+        })
     {
         let gap = context
             .source()
@@ -1337,13 +1456,27 @@ fn fix_indentation(
             .or_default()
             .insert(diagnostic.code.as_str());
     }
-    for (line_number, _, text) in lines.iter() {
-        let leading = &text[..leading_whitespace(text)];
+    let lexical = context.lexical();
+    for (line_number, line, text) in lines.iter() {
+        let leading_end = leading_whitespace(text);
+        let leading = &text[..leading_end];
         if leading.contains(' ') && leading.contains('\t') {
             by_line
                 .entry(line_number)
                 .or_default()
                 .insert("MIXED_SPACE_TAB");
+        // Indentation is derived from the syntax, not read off an official
+        // report, so a run without a checker reaches the same answer. The
+        // guard is that the line must actually start code: leading spaces
+        // inside a string or a block comment are content.
+        } else if leading.contains(' ')
+            && leading_end < text.len()
+            && !lexical.is_protected(line.start + leading_end)
+        {
+            by_line
+                .entry(line_number)
+                .or_default()
+                .insert("SPACE_REPLACE_TAB");
         }
     }
     let mut edits = Vec::new();

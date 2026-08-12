@@ -1161,3 +1161,68 @@ fn a_semicolon_after_a_preprocessor_branch_is_left_alone() {
     );
     assert_eq!(apply(source, &[]), source);
 }
+
+#[test]
+fn a_run_without_an_official_report_still_reaches_norm_layout() {
+    // The browser playground has no Norminette, so every rule that was gated
+    // on an official diagnostic was silently inert there: it handed back a
+    // file it called formatted while `if(`, a one-line block, and space
+    // indentation were all still in it.
+    let source = concat!(
+        "#include <unistd.h>\n",
+        "\n",
+        "int main(void)\n",
+        "{\n",
+        "    if(write(1, \"x\", 1) > 0) { return (0); }\n",
+        "    else { return (1); }\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert_eq!(
+        fixed,
+        concat!(
+            "#include <unistd.h>\n",
+            "\n",
+            "int\tmain(void)\n",
+            "{\n",
+            "\tif (write(1, \"x\", 1) > 0)\n",
+            "\t\treturn (0);\n",
+            "\treturn (1);\n",
+            "}\n",
+        ),
+        "{fixed}"
+    );
+    assert_eq!(apply(&fixed, &[]), fixed, "the layout must be idempotent");
+}
+
+#[test]
+fn a_call_never_gains_a_space_before_its_parenthesis() {
+    // The keyword set is reserved, so nothing else may be widened. A call that
+    // gained a space here would be a new Norm error, not a fixed one.
+    let source = concat!(
+        "int\tanswer(void)\n",
+        "{\n",
+        "\tif (answer() > 0)\n",
+        "\t\treturn (sizeof(int));\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+    assert_eq!(apply(source, &[]), source);
+}
+
+#[test]
+fn indentation_inside_a_string_or_comment_is_content() {
+    let source = concat!(
+        "char\t*answer(void)\n",
+        "{\n",
+        "\t/*\n",
+        "    indented on purpose\n",
+        "\t*/\n",
+        "\treturn (\"line\\n\\\n",
+        "    kept as written\");\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("    indented on purpose"), "{fixed}");
+    assert!(fixed.contains("    kept as written"), "{fixed}");
+}

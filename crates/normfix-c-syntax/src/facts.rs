@@ -21,6 +21,8 @@ pub struct SyntaxFacts {
     pub single_statement_bodies: Vec<SingleStatementBodyFact>,
     /// Every compound body directly owned by a control statement.
     pub control_compounds: Vec<TextRange>,
+    /// Every compound statement, including function bodies and bare blocks.
+    pub compound_bodies: Vec<TextRange>,
     /// `if`/`else` shapes whose alternative can follow a terminal return.
     pub redundant_else_branches: Vec<RedundantElseFact>,
     /// Statements that are a lone `;`, which do nothing at all.
@@ -308,6 +310,11 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
             // may sit immediately before it, because then the `;` may
             // terminate a statement that exists in only one build
             // configuration, which this parse cannot see.
+            "compound_statement" => {
+                facts
+                    .compound_bodies
+                    .push(node_range(node.start_byte(), node.end_byte())?);
+            }
             "expression_statement"
                 if direct_named_children(node).next().is_none()
                     && node.parent().is_some_and(|parent| {
