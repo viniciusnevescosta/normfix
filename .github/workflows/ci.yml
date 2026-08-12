@@ -38,6 +38,34 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps --locked
 
+  platform-survey:
+    name: Survey ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86-64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          - name: Windows ARM64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    # Temporary: this job exists to find out what actually fails on a platform
+    # the project does not claim yet, so the 1.4 work starts from real errors
+    # rather than from guesses. It is allowed to fail.
+    continue-on-error: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Show pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Build the workspace
+        run: cargo build --workspace --locked
+      - name: Run all tests
+        run: cargo test --workspace --all-targets --locked
+
   coverage:
     name: Line coverage
     runs-on: ubuntu-24.04
