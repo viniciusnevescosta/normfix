@@ -122,6 +122,23 @@ and it is not updated by the release workflow. Once the archives are published:
 3. verify with `brew fetch viniciusnevescosta/normfix/normfix`, which fails
    loudly on a wrong checksum.
 
+The Scoop bucket,
+[`viniciusnevescosta/scoop-normfix`](https://github.com/viniciusnevescosta/scoop-normfix),
+is separate for the same reason and updated the same way:
+
+1. set `version` and both `hash` values in `bucket/normfix.json` from the same
+   published `SHA256SUMS`;
+2. push it to the bucket;
+3. verify with `scoop install normfix` on a Windows machine, which fails on a
+   wrong checksum.
+
+Neither is automated because both live outside this repository, and a workflow
+step that writes to them would need a token with push access to another repo.
+The tradeoff is deliberate: a stale manifest is visible and fixable, a
+long-lived cross-repository token is neither. Both are conveniences — the
+one-line installer is the path that works on every supported system, and it is
+already correct the moment the release is published.
+
 The one-line installer needs no release step. It resolves `/releases/latest`
 for the stable channel and reads checksums from the manifest. Until a stable
 release exists, it scans the public release feed and falls back to the newest
