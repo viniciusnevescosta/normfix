@@ -1,31 +1,165 @@
 # Política de compatibilidade
 
+Este documento define o que o `normfix` considera suportado. Ele é
+intencionalmente estreito: afirmações de compatibilidade fazem parte do modelo de
+segurança e precisam ser sustentadas por evidência automatizada.
+
 ## Norminette oficial
 
-O `normfix` é testado com a
-[Norminette oficial](https://github.com/42school/norminette) `3.3.59`. Uma
-versão diferente continua com o aviso `NORMINETTE_VERSION_UNTESTED`; use
-`--strict-norminette-version` para recusá-la em CI. O release inclui o binário
-do `normfix`, não Python nem a Norminette.
+O verificador testado é a
+[Norminette oficial](https://github.com/42School/norminette) `3.3.59`.
 
-## Plataformas
+O `normfix` registra a impressão digital da versão do executável antes da
+análise. Uma versão diferente continua, por padrão, com um aviso destacado
+`NORMINETTE_VERSION_UNTESTED`; o `--strict-norminette-version` a recusa numa CI
+com versão fixada. Isso não é uma afirmação de compatibilidade com versão
+mínima, porque os nomes dos diagnósticos oficiais, as localizações, o
+comportamento do parser e os layouts aceitos são entradas da camada nativa de
+compatibilidade. O aviso torna essa garantia reduzida explícita.
 
-Os binários publicados cobrem Linux x86-64/ARM64 e macOS Intel/Apple Silicon.
-O Windows não tem binário nativo: use
-[WSL](https://learn.microsoft.com/windows/wsl/install) para a CLI completa. O
-playground funciona diretamente em navegadores modernos com WebAssembly e
-módulos ES.
+A Norminette continua sendo uma dependência externa. Os arquivos de release
+contêm o binário nativo do `normfix`, não o Python nem o verificador oficial.
 
-O [Rust](https://www.rust-lang.org/tools/install) só é necessário para compilar
-as fontes. O MSRV é `1.85`; o repositório fixa `1.97.1`.
+### Adotando outra versão do verificador
 
-## Limites da promessa
+Uma atualização da Norminette exige uma mudança revisada que:
 
-A Norminette é a autoridade de estilo. O compilador executa apenas diagnósticos
-de sintaxe e warnings; `normfix preflight` não executa receitas Make, não linka,
-não roda testes e não prova ausência de leaks. O playground também não executa
-Norminette, compilador, Git ou transações de arquivos.
+1. registre as notas de versão upstream e as mudanças de nomes de regras;
+2. rode a suíte nativa completa contra a versão candidata;
+3. atualize as fixtures de saída oficial somente depois de explicar cada
+   diferença;
+4. verifique a idempotência das correções seguras e a ausência de regressão em
+   projetos representativos da 42;
+5. atualize a constante exata da versão, a instalação na CI, o README e este
+   arquivo;
+6. seja publicada como uma nova versão do `normfix`.
 
-Para automação, use `--format json` e valide `schema_version`. Comandos, flags,
-IDs de regras, códigos de saída e chaves JSON permanecem em inglês e fazem
-parte da interface estável.
+Suportar uma faixa de versões só é adequado depois que a CI provar cada versão
+dentro dela e o oráculo tiver um adaptador explícito para qualquer diferença de
+protocolo.
+
+### Quando a 42 se move primeiro
+
+Uma ferramenta que recusa todas as versões menos uma para de funcionar para todo
+mundo no dia em que a escola atualiza. Por isso o padrão é continuar e reportar
+`NORMINETTE_VERSION_UNTESTED`; uma CI fixada pode optar pela recusa:
+
+```sh
+normfix --strict-norminette-version
+```
+
+O comportamento padrão é defensável, e não um buraco no argumento, porque a
+propriedade que a ferramenta realmente promete não depende de saber a versão: a
+prova de regressão antes/depois compara duas respostas do **mesmo executável**,
+então uma execução continua não podendo deixar um arquivo com mais diagnósticos
+oficiais do que ele tinha no começo. O que uma versão não verificada custa é a
+garantia de que as regras nativas concordam com ela — que é exatamente o que o
+aviso diz.
+
+## Toolchain do Rust
+
+- Versão mínima suportada do [Rust](https://www.rust-lang.org/tools/install)
+  (MSRV): `1.85`.
+- Toolchain do repositório e das releases: `1.97.1`, fixada em
+  `rust-toolchain.toml`.
+
+A CI verifica a MSRV de forma independente da toolchain de desenvolvimento
+fixada. Elevar a MSRV exige uma mudança de release documentada, e não uma
+atualização incidental de dependência.
+
+## Sistemas operacionais e alvos de release
+
+As releases pré-compiladas cobrem os ambientes Unix usados por estudantes da 42:
+
+| Sistema operacional | Arquitetura | Arquivo público da release |
+|---|---|---|
+| Linux | x86-64 | `normfix-x86_64-linux-gnu.tar.gz` |
+| Linux | ARM64 | `normfix-aarch64-linux-gnu.tar.gz` |
+| macOS | Intel | `normfix-x86_64-macos.tar.gz` |
+| macOS | Apple Silicon | `normfix-aarch64-macos.tar.gz` |
+
+Os nomes públicos dos arquivos omitem deliberadamente os marcadores de fornecedor
+do Rust e os rótulos de fabricante da máquina. Os identificadores de alvo da
+toolchain continuam sendo entradas internas de build, não nomes de release nem de
+produto.
+
+O Windows não tem alvo nativo de release. A CLI completa é suportada no Windows
+através do [WSL](https://learn.microsoft.com/windows/wsl/install), usando o
+arquivo de Linux e uma instalação da Norminette dentro do mesmo ambiente WSL. O
+playground no navegador é a alternativa sem instalação para prévias do
+formatador. A execução nativa em PowerShell/CMD não é suportada: o encerramento
+limitado de subprocessos, o comportamento de links simbólicos e caminhos e as
+provas de transação hoje têm implementação e evidência de integração específicas
+de Unix, então um binário nativo de Windows exageraria o contrato.
+
+## Diagnósticos de C e de build
+
+A Norminette oficial é a autoridade de compatibilidade de estilo. Um compilador C
+do sistema roda por padrão como um oráculo separado, apenas de diagnósticos, para
+`-fsyntax-only -Wall -Wextra -Werror`. Os caminhos de include inferidos a partir
+dos diretórios de headers não substituem as flags do Makefile do projeto, seus
+defines, entradas geradas, modo de linguagem, entradas do linker ou testes de
+execução.
+
+O `-fanalyzer` do GCC é automático no `preflight` e opcional nos fluxos comuns.
+Seus achados sobre tempo de vida de alocações e fluxo de controle podem sugerir um
+possível vazamento ou acesso inválido, mas não são prova de que um comportamento
+arbitrário em C está correto nem de que um projeto está livre de vazamentos.
+
+O `normfix preflight` não executa receitas do Make, não linka um binário, não roda
+o programa ou os testes, e não invoca um verificador de vazamentos em tempo de
+execução. Ele reporta explicitamente esses passos manuais restantes.
+
+## Compatibilidade com navegadores
+
+O playground tem como alvo navegadores modernos com suporte padrão a WebAssembly
+e a módulos ES. Sua interface HTML/CSS/TypeScript deliberadamente pequena e à
+moda antiga é construída como site estático com o
+[Vite 8.2.1](https://vite.dev/releases) fixado, e pode ser servida localmente ou
+pela Vercel. Seu contrato de compatibilidade é o subconjunto nativo de
+formatação e diagnóstico em memória descrito em
+[`web/README.md`](https://github.com/viniciusnevescosta/normfix/blob/main/web/README.md).
+Ele consegue montar um cabeçalho oficial a partir de uma identidade informada
+àquela aba do navegador, e consegue pré-visualizar C, headers, Makefiles e
+Markdown. Ele não embute nem emula a Norminette, um compilador, o Git, provas de
+guarda de header para o projeto inteiro ou transações no sistema de arquivos.
+
+## Compatibilidade do relatório
+
+A interface humana agrupa diagnósticos para facilitar a leitura e pode melhorar
+entre versões. Automação deve usar `--format json` e verificar o
+`schema_version`; o JSON preserva os achados individuais. Uma estrutura JSON
+incompatível exige um incremento da versão do schema e notas de compatibilidade.
+
+Vale dizer uma consequência de forma direta: a linha e a coluna impressas ao lado
+de um trecho seguem a convenção do compilador C e contam caracteres, enquanto a
+Norminette oficial conta colunas de exibição. Os dois discordam numa linha
+indentada com tabulação. Nenhum dos dois números faz parte da superfície
+versionada, e o que localiza o achado é o acento circunflexo sob o código. Veja
+[Relatórios](/pt/reference/reporting#lendo-um-diagnóstico).
+
+## O que o versionamento cobre
+
+O `normfix` segue o Versionamento Semântico. O número da versão descreve as
+superfícies abaixo, e somente elas:
+
+| Superfície | Coberta | O que significa uma quebra |
+|---|---|---|
+| Flags e subcomandos da linha de comando | sim | Remover ou renomear um, ou mudar o que um existente faz |
+| Códigos de saída | sim | Mudar o significado de `0`, `1`, `2` ou `130` |
+| Estrutura do relatório JSON | sim, via `schema_version` | Remover um campo ou mudar seu tipo |
+| Arquivos de configuração (`normfix.toml`, `.normfixignore`) | sim | Mudar como uma chave ou padrão existente é interpretado |
+| Layout de backup, journal e quarentena | sim | Tornar um ponto de recuperação antigo ilegível para o `undo` |
+| Quais códigos são editados automaticamente | não | Novas edições provadas chegam em versões minor |
+| Texto, agrupamento e ajuda dos diagnósticos | não | Melhorados continuamente |
+| APIs das crates Rust | não | Toda crate define `publish = false` e é interna |
+| A versão suportada da Norminette | à parte | Mudá-la é uma alteração de release documentada, nunca incidental |
+
+Uma nova edição automática é uma versão minor, porque um formatador cuja saída
+nunca mudasse não valeria a pena executar. Uma execução que produz um resultado
+oficial *pior* é um bug em qualquer versão, e o teste diferencial existe para
+pegar exatamente isso.
+
+A versão mínima suportada do Rust é uma decisão de release, não um detalhe de
+build. Elevá-la exige uma mudança documentada; uma dependência que precise de um
+compilador mais novo fica para trás.
