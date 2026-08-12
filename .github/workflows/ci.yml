@@ -133,7 +133,7 @@ jobs:
           release: "14.2"
           usesh: true
           prepare: |
-            pkg install -y curl git python311 py311-pip
+            pkg install -y curl git python311
           run: |
             set -eu
             curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
@@ -144,7 +144,11 @@ jobs:
             # The same standard Windows is held to: the platform drives the real
             # checker and proves the differential property there, rather than
             # inheriting either from Linux because both are Unix.
-            python3.11 -m pip install --break-system-packages norminette==3.3.59
+            python3.11 -m ensurepip --upgrade
+            python3.11 -m pip install --user norminette==3.3.59
+            PATH="$HOME/.local/bin:$PATH"
+            export PATH
+            norminette --version
             cargo test --locked -p normfix-oracle installed_official_norminette_smoke_test -- --ignored
             cargo test --locked -p normfix-engine --test differential -- --ignored
 

@@ -61,6 +61,7 @@ case "$os:$arch" in
     Linux:aarch64 | Linux:arm64) archive="normfix-aarch64-linux-gnu.tar.gz" ;;
     Darwin:x86_64) archive="normfix-x86_64-macos.tar.gz" ;;
     Darwin:arm64) archive="normfix-aarch64-macos.tar.gz" ;;
+    FreeBSD:amd64 | FreeBSD:x86_64) archive="normfix-x86_64-freebsd.tar.gz" ;;
     # Git Bash, MSYS2, and Cygwin all report a Windows kernel and all run this
     # script. Windows ships `.zip` because that is what the platform opens on
     # its own; unpacking one from here is a question of which tool is present,

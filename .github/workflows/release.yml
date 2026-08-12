@@ -157,9 +157,55 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # FreeBSD has no GitHub runner, so its archive is built inside the same kind of
+  # virtual machine the test job uses. Cross-compiling it from Linux would need a
+  # sysroot for the C dependencies and would publish a binary that never ran on
+  # the system it targets.
+  build-freebsd:
+    name: Build x86_64-unknown-freebsd
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+      - name: Build and archive inside FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.2"
+          usesh: true
+          prepare: |
+            pkg install -y curl git
+          run: |
+            set -eu
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain 1.97.1
+            . "$HOME/.cargo/env"
+            cargo build --release --locked -p normfix
+            target/release/normfix --version
+            mkdir -p dist/stage
+            cp target/release/normfix dist/stage/normfix
+            cp README.md LICENSE dist/stage/
+            tar -czf dist/normfix-x86_64-freebsd.tar.gz -C dist/stage normfix README.md LICENSE
+      - name: Attest release archive
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/normfix-x86_64-freebsd.tar.gz
+      - name: Upload release archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-x86_64-unknown-freebsd
+          path: dist/normfix-x86_64-freebsd.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish GitHub release
-    needs: build
+    needs: [build, build-freebsd]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
