@@ -1249,7 +1249,25 @@ async function initialize(): Promise<void> {
   );
   updateEditorMeta();
   await formatterPromise;
-  void loadGitHubStars();
+  whenIdle(() => void loadGitHubStars());
+}
+
+/**
+ * Runs work that nothing on the page is waiting for.
+ *
+ * The star count is decoration: it is worth a request, but not worth competing
+ * with the formatter for a phone's one slow connection. Waiting for load and
+ * then for an idle moment takes it off the critical path entirely, and the
+ * bundled count is already on screen until it answers.
+ */
+function whenIdle(work: () => void): void {
+  const idle = window.requestIdleCallback as typeof window.requestIdleCallback | undefined;
+  const schedule = () => {
+    if (idle) idle(() => work(), { timeout: 3000 });
+    else window.setTimeout(work, 1000);
+  };
+  if (document.readyState === "complete") schedule();
+  else window.addEventListener("load", schedule, { once: true });
 }
 
 void initialize().catch((error: unknown) => {

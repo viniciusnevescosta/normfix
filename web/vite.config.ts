@@ -41,6 +41,72 @@ function replaceMeta(html: string, id: string, attribute: string, value: string)
   return html.replace(pattern, `$1${value}$2`);
 }
 
+/**
+ * Shortens what a first visit has to discover before it can work.
+ *
+ * Two costs were measured rather than guessed. The stylesheet blocked the
+ * first render for its own round trip, and the WebAssembly module — the thing
+ * the page exists to run — was three hops down the chain: the browser could
+ * not know it existed until the entry script had loaded and had in turn loaded
+ * the wasm-bindgen glue. Both are fixed here rather than in the source, because
+ * both need the content-hashed names this build has just produced.
+ */
+/**
+ * The entry stylesheet, once `criticalPathHints` has inlined it into the HTML.
+ *
+ * Shared because the service worker must not install a file that nothing will
+ * ever request: after inlining, the emitted `.css` is dead weight in the cache.
+ */
+const inlinedStylesheet = { fileName: "" };
+
+function criticalPathHints(): Plugin {
+  let wasm = "";
+  let glue = "";
+  return {
+    name: "normfix-critical-path-hints",
+    generateBundle(_options, bundle) {
+      for (const [fileName, output] of Object.entries(bundle)) {
+        if (output.type === "asset" && fileName.endsWith(".wasm")) wasm = fileName;
+        if (output.type !== "chunk") continue;
+        // The entry's own stylesheet, not Monaco's: those arrive with the
+        // dynamic import that loads them and never block the first render.
+        if (output.isEntry) {
+          inlinedStylesheet.fileName = [
+            ...((output as { viteMetadata?: { importedCss?: Set<string> } })
+              .viteMetadata?.importedCss ?? []),
+          ][0] ?? "";
+        }
+        if (Object.keys(output.modules).some((id) => id.endsWith("pkg/normfix_wasm.js"))) {
+          glue = fileName;
+        }
+      }
+    },
+    async closeBundle() {
+      const indexPath = resolve(outputDirectory, "index.html");
+      let html = await readFile(indexPath, "utf8");
+
+      const stylesheet = inlinedStylesheet.fileName;
+      if (stylesheet) {
+        const css = await readFile(resolve(outputDirectory, stylesheet), "utf8");
+        const link = new RegExp(`<link[^>]+href="/${stylesheet}"[^>]*>`);
+        if (!link.test(html)) throw new Error(`stylesheet link for ${stylesheet} not found`);
+        html = html.replace(link, `<style>${css}</style>`);
+      }
+
+      // No `crossorigin`: wasm-bindgen fetches the module same-origin with
+      // default credentials, and a preload whose mode does not match is not
+      // reused — it downloads the file a second time instead.
+      const hints = [
+        glue && `<link rel="modulepreload" href="/${glue}">`,
+        wasm && `<link rel="preload" href="/${wasm}" as="fetch" type="application/wasm">`,
+      ].filter(Boolean).join("");
+      html = html.replace("</head>", `${hints}</head>`);
+
+      await writeFile(indexPath, html, "utf8");
+    },
+  };
+}
+
 function localizedPlaygroundPages(): Plugin {
   return {
     name: "normfix-localized-playground-pages",
@@ -121,7 +187,7 @@ function offlineServiceWorker(): Plugin {
           }
           : { type: "asset" };
       }
-      shell = offlineShell(summary);
+      shell = offlineShell(summary).filter((url) => url !== `/${inlinedStylesheet.fileName}`);
     },
     async closeBundle() {
       // Naming the cache after the shell makes eviction automatic: a build that
@@ -158,7 +224,7 @@ function offlineServiceWorker(): Plugin {
 
 export default defineConfig({
   base: "/",
-  plugins: [localizedPlaygroundPages(), offlineServiceWorker()],
+  plugins: [criticalPathHints(), localizedPlaygroundPages(), offlineServiceWorker()],
   build: {
     assetsInlineLimit: 0,
     // Monaco is a desktop-only dynamic import; its two core chunks are large

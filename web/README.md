@@ -48,6 +48,12 @@ scripts/              the POSIX build scripts, run through npm
 tests/                node:test suites over the pure modules above
 ```
 
+The build shortens what a first visit has to discover: `vite.config.ts` inlines
+the entry stylesheet into every page and emits `modulepreload`/`preload` hints
+for the WebAssembly module, which the browser could otherwise not know about
+until two scripts had loaded. Both need the content-hashed names the build has
+just produced, which is why they live there rather than in `index.html`.
+
 `src/offline/precache.ts` holds both offline decisions as pure functions —
 which built files must exist before the shell can start, and which requests the
 service worker may answer — so they are tested without a browser, and
