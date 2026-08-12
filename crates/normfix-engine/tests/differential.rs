@@ -59,6 +59,31 @@ const CORPUS: &[(&str, &str)] = &[
     ),
 ];
 
+/// Shapes that arrived as bug reports rather than from imagination.
+///
+/// Each one was a file a reader typed into the playground, and each one found
+/// something: a rule pair that claimed the same byte and cost the file every
+/// fix it had, and a stray empty statement left beside a statement the
+/// formatter had just moved.
+const REPORTED: &[(&str, &str)] = &[
+    (
+        "condition_brace.c",
+        "#include <unistd.h>\n\nint main(void)\n{\n    if(write(1, \"x\", 1) > 0) { return (0); }\n    else { return (1); }\n}\n",
+    ),
+    (
+        "stray_semicolon.c",
+        "#include <unistd.h>\n\nint main(void)\n{\n    if (write(1, \"x\", 1) > 0) { return (0); }\n    else { return (1); };\n}\n",
+    ),
+    (
+        "while_condition_brace.c",
+        "int\tmain(void)\n{\n\tint\ti;\n\n\ti = 0;\n\twhile(i < 3) { i++; }\n\treturn (0);\n}\n",
+    ),
+    (
+        "for_condition_brace.c",
+        "int\tmain(void)\n{\n\tint\ti;\n\n\tfor(i = 0; i < 3; i++) { continue; }\n\treturn (0);\n}\n",
+    ),
+];
+
 fn identity() -> Identity42 {
     Identity42 {
         login: "student".to_owned(),
@@ -157,6 +182,43 @@ fn a_run_never_breaks_a_file_that_compiled() {
             compiles(&path),
             "{name}: the file no longer compiles after formatting\n{}",
             fs::read_to_string(&path).unwrap_or_default()
+        );
+    }
+}
+
+/// A run that rejects its own edit batch fixes nothing at all.
+///
+/// This is not covered by the differential property: a rejected batch leaves
+/// the file untouched, so the official diagnostics do not rise and that test
+/// passes. The failure is silent by construction, which is exactly why it went
+/// unnoticed until a reader pasted six lines into the playground and got a file
+/// back with 23 findings and no fixes.
+#[test]
+#[ignore = "requires the official Norminette 3.3.59 command"]
+fn no_file_loses_its_fixes_to_a_rejected_batch() {
+    for (name, source) in CORPUS.iter().chain(REPORTED) {
+        let project = TempDir::new().expect("temporary project");
+        let path = project.path().join(name);
+        fs::write(&path, source).expect("corpus source");
+
+        let mut options = FixOptions::new(project.path());
+        options.mode = ReportMode::Fix;
+        options.identity = Some(identity());
+        options.backup = BackupPolicy::Disabled;
+        options.cache = false;
+        options.threads = Some(2);
+        options.compiler_preflight = false;
+        let report = run_fixes(&[], &options).expect("the pipeline must complete");
+
+        let rejected = report
+            .files
+            .iter()
+            .flat_map(|file| file.after.iter())
+            .find(|diagnostic| diagnostic.rule_id == "FIX_PROOF_REJECTED");
+        assert!(
+            rejected.is_none(),
+            "{name}: the edit batch was rejected, so every fix in the file was lost\n  {}",
+            rejected.map_or_else(String::new, |diagnostic| diagnostic.message.clone()),
         );
     }
 }
