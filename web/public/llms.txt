@@ -1,16 +1,57 @@
 # normfix
 
-normfix safely formats 42 School C projects and explains edits it cannot prove.
+> normfix safely formats 42 School C projects and explains the edits it cannot
+> prove. It changes only what it can prove is safe, keeps the official
+> Norminette as the compatibility authority, and reports everything else
+> instead of guessing.
 
-- AI-agent guide: https://normfix.vercel.app/docs/guide/ai-agents
-- Commands: https://normfix.vercel.app/docs/commands/
-- JSON report schema: https://normfix.vercel.app/docs/reference/reporting
-- Safety and recovery: https://normfix.vercel.app/docs/reference/safety
-- Official repository: https://github.com/viniciusnevescosta/normfix
-- Official Norminette: https://github.com/42school/norminette
+Every write goes through one auditable transaction with external backups and an
+undo that fails closed. A run can never leave a file with more official
+diagnostics than it started with.
 
-Read-only project check for an agent:
+## For agents
 
-    normfix check --format json
+- [AI agent guide](https://normfix.vercel.app/docs/guide/ai-agents): how to run
+  normfix without a person watching, and what it will refuse to do.
+- [JSON report schema](https://normfix.vercel.app/docs/reference/reporting):
+  branch on `schema_version`; the human output is free to change, the JSON is
+  not.
+- [Safety and recovery](https://normfix.vercel.app/docs/reference/safety):
+  protected scopes, capability grants, backups, and rollback.
+- [Exit codes and flags](https://normfix.vercel.app/docs/reference/flags): what
+  each flag does, with an example.
 
-Do not run formatting or unsafe flags without explicit permission to write.
+## Documentation
+
+- [Why normfix](https://normfix.vercel.app/docs/why): what problem it solves
+  and what it deliberately does not do.
+- [Getting started](https://normfix.vercel.app/docs/guide/getting-started):
+  install, verify, and make a first run that writes nothing.
+- [Commands](https://normfix.vercel.app/docs/commands/): one page per
+  subcommand, with real output.
+- [Compatibility policy](https://normfix.vercel.app/docs/COMPATIBILITY): what
+  the version number covers, and what it does not.
+- [Browser playground](https://normfix.vercel.app/): the same formatter running
+  in a tab, with no upload and no account.
+
+## Source
+
+- [Official repository](https://github.com/viniciusnevescosta/normfix)
+- [Official Norminette](https://github.com/42school/norminette): the checker
+  normfix defers to, maintained by 42.
+
+## Optional
+
+- [Architecture record](https://normfix.vercel.app/docs/ARCHITECTURE): what each
+  crate owns and why the boundaries exist.
+
+A read-only check for an agent:
+
+```sh
+normfix check --format json
+```
+
+Do not run formatting or destructive flags without explicit permission to
+write. `--unsafe`, `--remove-unused`, and `--remove-unexpected` each require a
+capability grant, and outside an interactive terminal they additionally require
+`--force`.
