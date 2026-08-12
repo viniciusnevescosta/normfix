@@ -117,27 +117,48 @@ pub(super) fn run_id() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::transaction_root;
+
+    /// Absolute paths as each platform writes them.
+    ///
+    /// A Unix literal such as `/project` is not absolute in the Windows sense:
+    /// it names the root of whatever drive is current, so the function resolves
+    /// it against one and the assertion is comparing two different ideas.
+    #[cfg(unix)]
+    const PREFIX: &str = "";
+    #[cfg(windows)]
+    const PREFIX: &str = r"C:";
+
+    fn path(suffix: &str) -> String {
+        let separated = if cfg!(windows) {
+            suffix.replace('/', "\\")
+        } else {
+            suffix.to_owned()
+        };
+        format!("{PREFIX}{separated}")
+    }
 
     #[test]
     fn transaction_root_is_the_common_ancestor_and_falls_back_to_the_cwd() {
-        let cwd = std::path::Path::new("/project");
-        let inside = [
-            std::path::Path::new("/project/src/main.c"),
-            std::path::Path::new("/project/src/util.c"),
-        ];
+        let cwd = path("/project");
+        let cwd = Path::new(&cwd);
+
+        let first = path("/project/src/main.c");
+        let second = path("/project/src/util.c");
+        let inside = [Path::new(&first), Path::new(&second)];
         assert_eq!(
             transaction_root(inside.iter().copied(), cwd),
-            std::path::Path::new("/project/src")
+            Path::new(&path("/project/src")),
         );
 
-        let disjoint = [
-            std::path::Path::new("/project/main.c"),
-            std::path::Path::new("/elsewhere/main.c"),
-        ];
+        let here = path("/project/main.c");
+        let there = path("/elsewhere/main.c");
+        let disjoint = [Path::new(&here), Path::new(&there)];
         assert_eq!(
             transaction_root(disjoint.iter().copied(), cwd),
-            std::path::Path::new("/")
+            Path::new(&path("/")),
         );
     }
 }
