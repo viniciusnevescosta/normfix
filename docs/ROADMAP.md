@@ -101,9 +101,17 @@ asserts.
 
 ## 1.6 — Python projects
 
-A separate Python pipeline around mypy `--strict` and flake8, on the same oracle
-model the Norminette uses, plus a Python-capable playground. The C/Norminette
-contract stays available and versioned instead of being silently generalized.
+A separate Python pipeline on the same oracle model the Norminette uses, plus a
+Python-capable playground. The C/Norminette contract stays available and
+versioned instead of being silently generalized.
+
+What matters is the result a student needs: strict type checking and lint
+findings they can act on. mypy `--strict` and flake8 are the reference for that
+result, and the decision of which tools produce it is open — Astral's `ruff` and
+`ty` may reach the same answers faster, and being faster matters for a tool a
+student runs before every push. The choice will be made by comparing what each
+reports on real 42 Python projects, not by reputation, and whichever is chosen
+becomes the versioned oracle the way Norminette 3.3.59 is.
 
 ## 1.7 — starting a project
 

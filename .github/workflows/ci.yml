@@ -279,3 +279,9 @@ jobs:
         env:
           NORMFIX_TEST_CC: clang
         run: cargo test --locked -p normfix-engine --test analyzer -- --ignored
+      # Valgrind exists on Linux and FreeBSD and not on macOS or Windows, so
+      # this is the job that decides whether the feature can be claimed at all.
+      - name: Install Valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Drive the real leak checker
+        run: cargo test --locked -p normfix-oracle installed_valgrind_smoke_test -- --ignored
