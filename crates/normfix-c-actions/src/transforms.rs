@@ -665,7 +665,14 @@ fn fix_braces_and_controls(
             "EXP_NEWLINE" => {
                 if let Some(close) = control_condition_close(text, line.start, lexical) {
                     let (start, end) = whitespace_after(text, close + 1);
-                    if end < text.len() {
+                    // A body that opens with a brace belongs to the native
+                    // brace rule, which puts it at the control's own indent.
+                    // This arm would put it one tab deeper — wrong for a brace —
+                    // and both edits land on the same byte, so the batch was
+                    // rejected as conflicting and every other fix in the file
+                    // was lost with it.
+                    let opens_with_brace = text.as_bytes().get(end) == Some(&b'{');
+                    if end < text.len() && !opens_with_brace {
                         edits.push(Edit::new(
                             line.start + start,
                             line.start + end,

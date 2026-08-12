@@ -1040,3 +1040,69 @@ fn visual_column(line: &str, needle: &str) -> u32 {
     let index = line.find(needle).unwrap();
     visual_width(&line[..index]) + 1
 }
+
+#[test]
+fn else_is_removed_only_when_both_branches_are_a_single_return() {
+    // Reported as a bug from the playground, and it is not one: the proof
+    // requires each branch to be exactly one `return`, which makes dropping the
+    // `else` behaviour-preserving. This pins that the proof is what decides.
+    let provable = concat!(
+        "int main(void)\n",
+        "{\n",
+        "\tif (x)\n\t\treturn (0);\n",
+        "\telse\n\t\treturn (1);\n",
+        "}\n",
+    );
+    assert!(
+        !apply(provable, &[]).contains("else"),
+        "both branches return, so the else carries no behaviour",
+    );
+
+    // The case the proof exists to refuse. The consequence does not always
+    // return, so removing the `else` would run the alternative unconditionally.
+    let unprovable = concat!(
+        "int main(void)\n",
+        "{\n",
+        "\tif (x)\n",
+        "\t{\n\t\ty = 1;\n\t\treturn (0);\n\t}\n",
+        "\telse\n\t\treturn (1);\n",
+        "}\n",
+    );
+    let fixed = apply(unprovable, &[]);
+    assert!(
+        fixed.contains("else"),
+        "the consequence is more than one return, so the else must stay:\n{fixed}",
+    );
+}
+
+#[test]
+fn a_brace_on_the_condition_line_does_not_cost_every_other_fix() {
+    // Observed on a real file: the official checker reports EXP_NEWLINE for the
+    // body sharing the condition's line, and the native layout rule already
+    // moves that brace. Both edited the same byte with different text, so the
+    // batch was rejected as conflicting — and every other fix in the file died
+    // with it. The file came back with 23 findings and 0 fixes.
+    let source = concat!(
+        "int main(void)\n",
+        "{\n",
+        "    if(x > 0) { return (0); }\n",
+        "}\n",
+    );
+    let diagnostics = [
+        diagnostic("EXP_NEWLINE", 3, 15),
+        diagnostic("SPACE_AFTER_KW", 3, 5),
+    ];
+
+    let fixed = apply(source, &diagnostics);
+
+    // The brace edit is the one that used to collide. What proves the batch
+    // survived is that the *other* fix in it landed.
+    assert!(
+        fixed.contains("if (x"),
+        "the whole batch was lost with the conflicting edit:\n{fixed}",
+    );
+    assert!(
+        !fixed.contains("> 0) {"),
+        "the brace was left on the condition line:\n{fixed}",
+    );
+}
