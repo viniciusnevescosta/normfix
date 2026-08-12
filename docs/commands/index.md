@@ -18,6 +18,7 @@ review.
 | [`check`](/commands/check) | no | You want to see what a fixing run *would* do |
 | [`budget`](/commands/budget) | no | You want line/variable/parameter headroom per function |
 | [`preflight`](/commands/preflight) | no | You are about to defend and want the read-only checks |
+| [`leaks`](/commands/leaks) | no | You want a program you built checked for leaks |
 | [`explain`](/commands/explain) | no | You want a rule explained without scanning anything |
 | [`undo`](/commands/undo) | yes | You want a previous run restored |
 | [`upgrade`](/commands/upgrade) | yes | You want the newest release, verified |

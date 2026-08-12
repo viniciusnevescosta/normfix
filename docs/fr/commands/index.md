@@ -18,6 +18,7 @@ scripts, en CI et pendant une relecture.
 | [`check`](/fr/commands/check) | non | Vous voulez voir ce qu'une exécution de correction *ferait* |
 | [`budget`](/fr/commands/budget) | non | Vous voulez la marge de lignes/variables/paramètres par fonction |
 | [`preflight`](/fr/commands/preflight) | non | Vous allez soutenir et voulez les vérifications en lecture seule |
+| [`leaks`](/fr/commands/leaks) | non | Vous voulez vérifier les fuites d’un programme que vous avez compilé |
 | [`explain`](/fr/commands/explain) | non | Vous voulez une règle expliquée sans rien analyser |
 | [`undo`](/fr/commands/undo) | oui | Vous voulez restaurer une exécution précédente |
 | [`upgrade`](/fr/commands/upgrade) | oui | Vous voulez la version la plus récente, vérifiée |

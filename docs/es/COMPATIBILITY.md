@@ -145,9 +145,18 @@ de control pueden sugerir una posible fuga o un acceso inválido, pero no son
 prueba de que un comportamiento C arbitrario sea correcto ni de que un proyecto
 esté libre de fugas.
 
-`normfix preflight` no ejecuta recetas de Make, no enlaza un binario, no ejecuta
-el programa ni las pruebas, y no invoca un verificador de fugas en tiempo de
-ejecución. Informa explícitamente de esos pasos manuales pendientes.
+`normfix preflight` no ejecuta recetas de Make, no enlaza un binario y no
+ejecuta el programa ni las pruebas. Informa explícitamente de esos pasos
+manuales pendientes.
+
+`normfix leaks` sí ejecuta un programa, y es el único comando que lo hace. Nunca
+compila uno: ejecuta un binario al que se le apunta, bajo un verificador de
+fugas localizado en el `PATH` y verificado con su propio `--version`. Lo que
+informa es lo que observó una ejecución en un camino, nunca una prueba de que el
+programa no tenga fugas, y una salida que no puede leer como resumen de fugas es
+un error, no un resultado limpio. Valgrind cubre Linux y FreeBSD directamente,
+macOS mediante un port de la comunidad con soporte limitado para Apple Silicon,
+y Windows a través de WSL.
 
 ## Compatibilidad con navegadores
 

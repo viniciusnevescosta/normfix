@@ -139,9 +139,18 @@ Seus achados sobre tempo de vida de alocações e fluxo de controle podem sugeri
 possível vazamento ou acesso inválido, mas não são prova de que um comportamento
 arbitrário em C está correto nem de que um projeto está livre de vazamentos.
 
-O `normfix preflight` não executa receitas do Make, não linka um binário, não roda
-o programa ou os testes, e não invoca um verificador de vazamentos em tempo de
-execução. Ele reporta explicitamente esses passos manuais restantes.
+O `normfix preflight` não executa receitas do Make, não linka um binário e não
+roda o programa nem os testes. Ele reporta explicitamente esses passos manuais
+restantes.
+
+O `normfix leaks` executa um programa, e é o único comando que faz isso. Ele
+nunca constrói um — roda um binário para o qual é apontado, sob um verificador
+de vazamentos localizado no `PATH` e verificado pelo próprio `--version`. O que
+ele relata é o que uma execução observou em um caminho, nunca prova de que o
+programa não vaza, e uma saída que ele não consegue ler como sumário de
+vazamentos é erro, não resultado limpo. O Valgrind cobre Linux e FreeBSD
+diretamente, o macOS por um port da comunidade com suporte limitado a Apple
+Silicon, e o Windows pelo WSL.
 
 ## Compatibilidade com navegadores
 

@@ -18,6 +18,7 @@ durante uma revisão.
 | [`check`](/pt/commands/check) | não | Você quer ver o que uma execução de correção *faria* |
 | [`budget`](/pt/commands/budget) | não | Você quer a folga de linhas/variáveis/parâmetros por função |
 | [`preflight`](/pt/commands/preflight) | não | Você vai defender e quer as verificações somente leitura |
+| [`leaks`](/pt/commands/leaks) | não | Você quer um programa que construiu verificado contra vazamentos |
 | [`explain`](/pt/commands/explain) | não | Você quer uma regra explicada sem varrer nada |
 | [`undo`](/pt/commands/undo) | sim | Você quer restaurar uma execução anterior |
 | [`upgrade`](/pt/commands/upgrade) | sim | Você quer a versão mais nova, verificada |

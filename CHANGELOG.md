@@ -10,6 +10,40 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## Unreleased
+
+### Added
+
+- **`normfix leaks` runs a program you already built, under a leak checker.**
+  It is the only command that executes your code rather than reading it, so it
+  names the program and waits for a `y`; `--force` is how a script says it meant
+  it, and outside a terminal that is the only way through.
+
+  normfix never builds the program. Building means running your Makefile's
+  recipes, which is a second and much larger category of running code you wrote,
+  and "you built it, I ran it" is a far smaller promise than "I built and ran
+  it".
+
+  Every result carries the line that says what it is: what one run observed on
+  one path with the arguments it was given, never a proof that a program does
+  not leak. Memory still reachable at exit is not counted as lost, because 42
+  evaluates memory nobody can reach any more. And output the checker produces
+  that cannot be read as a leak summary is an error rather than a clean result —
+  a checker that was killed and a checker that found nothing produce the same
+  silence.
+
+  Which checker answers is not normfix's business: it locates `valgrind` on
+  `PATH` and verifies it by its own `--version`. That is why macOS works through
+  the community port with no code here, and why Windows is answered with WSL
+  rather than a second tool with a different output format, a second version to
+  pin, and findings that could not be compared with these.
+
+### Fixed
+
+- **The compatibility policy no longer says normfix never invokes a leak
+  checker.** That was true until this release made it false, in all four
+  languages.
+
 ## [1.4.0] / 2026-08-12
 
 Windows and FreeBSD, on the evidence CI produces for them rather than on the

@@ -141,6 +141,10 @@ does not read subjects.
 It does not run `make`, link a binary, execute your program or tests, or prove
 the absence of leaks. Those remain yours, and the report says so.
 
+For leaks specifically, [`normfix leaks`](/commands/leaks) runs a program you
+already built under a leak checker. It is a separate command because it executes
+your code, and it asks before it does.
+
 Preflight reports whether `clang-tidy` is available on `PATH` and shows a
 practical AddressSanitizer/UndefinedBehaviorSanitizer debug-build recipe. It
 does not run `clang-tidy`, sanitizers, `make` (not even `make -n`, which can

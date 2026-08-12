@@ -132,9 +132,16 @@ Its allocation-lifetime and control-flow findings
 can suggest a possible leak or invalid access, but they are not proof that
 arbitrary C behavior is correct or that a project is leak-free.
 
-`normfix preflight` does not execute Make recipes, link a binary, run the
-program/tests, or invoke a runtime leak checker. It reports these remaining
-manual steps explicitly.
+`normfix preflight` does not execute Make recipes, link a binary, or run the
+program and its tests. It reports these remaining manual steps explicitly.
+
+`normfix leaks` does run a program, and is the only command that does. It never
+builds one — it runs a binary it is pointed at, under a leak checker located on
+`PATH` and verified by its own `--version`. What it reports is what one run
+observed on one path, never a proof that a program does not leak, and output it
+cannot read as a leak summary is an error rather than a clean result. Valgrind
+covers Linux and FreeBSD directly, macOS through a community port with limited
+Apple Silicon support, and Windows through WSL.
 
 ## Browser compatibility
 

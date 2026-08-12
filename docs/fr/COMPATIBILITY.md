@@ -147,8 +147,17 @@ prouvent ni qu’un comportement C arbitraire est correct, ni qu’un projet est
 fuite.
 
 `normfix preflight` n’exécute pas les recettes Make, n’édite pas les liens d’un
-binaire, ne lance ni le programme ni les tests, et n’invoque pas de détecteur de
-fuites à l’exécution. Il signale explicitement ces étapes manuelles restantes.
+binaire et ne lance ni le programme ni les tests. Il signale explicitement ces
+étapes manuelles restantes.
+
+`normfix leaks` exécute bien un programme, et c’est la seule commande qui le
+fait. Elle n’en compile jamais : elle exécute un binaire qu’on lui désigne, sous
+un détecteur de fuites localisé dans le `PATH` et vérifié par son propre
+`--version`. Ce qu’elle rapporte est ce qu’une exécution a observé sur un
+chemin, jamais une preuve qu’un programme ne fuit pas, et une sortie qu’elle ne
+peut pas lire comme un résumé de fuites est une erreur, pas un résultat propre.
+Valgrind couvre Linux et FreeBSD directement, macOS via un port communautaire à
+la prise en charge limitée d’Apple Silicon, et Windows via WSL.
 
 ## Compatibilité navigateur
 
