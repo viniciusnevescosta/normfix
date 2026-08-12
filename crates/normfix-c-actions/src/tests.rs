@@ -1106,3 +1106,58 @@ fn a_brace_on_the_condition_line_does_not_cost_every_other_fix() {
         "the brace was left on the condition line:\n{fixed}",
     );
 }
+
+#[test]
+fn a_statement_that_is_only_a_semicolon_is_removed() {
+    let source = concat!(
+        "int\tanswer(void)\n",
+        "{\n",
+        "\tif (1)\n",
+        "\t{\n",
+        "\t\treturn (42);\n",
+        "\t};\n",
+        "\treturn (0);;\n",
+        "}\n",
+        ";\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(!fixed.contains(";;"), "{fixed}");
+    assert!(!fixed.contains("};"), "{fixed}");
+    assert!(!fixed.ends_with(";\n;\n"), "{fixed}");
+    assert!(fixed.contains("return (42);"), "{fixed}");
+    assert_eq!(apply(&fixed, &[]), fixed, "the removal must be idempotent");
+}
+
+#[test]
+fn an_empty_loop_body_is_never_mistaken_for_a_stray_semicolon() {
+    // `while (x)\n\t;` is a real body. Deleting it would promote the next
+    // statement into the loop, which is a different program.
+    let source = concat!(
+        "int\tanswer(int c)\n",
+        "{\n",
+        "\twhile (c--)\n",
+        "\t\t;\n",
+        "\tfor (c = 0; c < 2; c++)\n",
+        "\t\t;\n",
+        "\treturn (c);\n",
+        "}\n",
+    );
+    assert_eq!(apply(source, &[]), source);
+}
+
+#[test]
+fn a_semicolon_after_a_preprocessor_branch_is_left_alone() {
+    // The `;` may terminate a statement that only exists when the macro is
+    // defined, and this parse cannot see that configuration.
+    let source = concat!(
+        "int\tanswer(void)\n",
+        "{\n",
+        "#ifdef TRACE\n",
+        "\tanswer();\n",
+        "#endif\n",
+        "\t;\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+    assert_eq!(apply(source, &[]), source);
+}

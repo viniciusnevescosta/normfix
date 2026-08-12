@@ -23,6 +23,8 @@ pub struct SyntaxFacts {
     pub control_compounds: Vec<TextRange>,
     /// `if`/`else` shapes whose alternative can follow a terminal return.
     pub redundant_else_branches: Vec<RedundantElseFact>,
+    /// Statements that are a lone `;`, which do nothing at all.
+    pub empty_statements: Vec<TextRange>,
     /// Direct local declarations in function bodies.
     pub local_declarations: Vec<LocalDeclarationFact>,
     /// Initial declaration blocks and the first following instruction.
@@ -294,6 +296,30 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
                 if let Some(fact) = redundant_else_fact(source, node)? {
                     facts.redundant_else_branches.push(fact);
                 }
+            }
+            // A bare `;` parses as an expression statement with no expression:
+            // valid C that executes nothing.
+            //
+            // Two conditions carry the proof that deleting it changes nothing.
+            // First, the parent must be a block or the file itself: the same
+            // node shape is also how `while (x);` and `for (;;);` spell an
+            // empty body, and deleting one of those would silently promote the
+            // next statement into the loop. Second, no preprocessor directive
+            // may sit immediately before it, because then the `;` may
+            // terminate a statement that exists in only one build
+            // configuration, which this parse cannot see.
+            "expression_statement"
+                if direct_named_children(node).next().is_none()
+                    && node.parent().is_some_and(|parent| {
+                        matches!(parent.kind(), "compound_statement" | "translation_unit")
+                    })
+                    && !node
+                        .prev_sibling()
+                        .is_some_and(|sibling| sibling.kind().starts_with("preproc")) =>
+            {
+                facts
+                    .empty_statements
+                    .push(node_range(node.start_byte(), node.end_byte())?);
             }
             "while_statement" | "for_statement" | "do_statement" => {
                 collect_control_body_fact(node.child_by_field_name("body"), &mut facts)?;

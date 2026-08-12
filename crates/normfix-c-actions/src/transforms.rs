@@ -55,6 +55,7 @@ pub(crate) enum Phase {
     Preprocessor,
     IncludeOrder,
     InvalidComments,
+    EmptyStatements,
     CompactContinuations,
     BlankLines,
     BracesAndControls,
@@ -81,6 +82,7 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
         result.push(Phase::InvalidComments);
     }
     result.extend([
+        Phase::EmptyStatements,
         Phase::CompactContinuations,
         Phase::BlankLines,
         Phase::BracesAndControls,
@@ -123,6 +125,10 @@ impl Phase {
             Self::InvalidComments => Ok(ActionBatch::destructive(
                 "REMOVE_INVALID_COMMENT",
                 remove_invalid_comments(context, diagnostics)?,
+            )),
+            Self::EmptyStatements => Ok(ActionBatch::semantic(
+                "REMOVE_EMPTY_STATEMENT",
+                remove_empty_statements(context)?,
             )),
             Self::CompactContinuations => Ok(ActionBatch::layout(
                 "COMPACT_CONTINUATION",
@@ -782,6 +788,33 @@ fn remove_single_statement_braces(context: &ParsedContext) -> Result<Vec<Edit>, 
             "REMOVE_SINGLE_STATEMENT_BRACES",
             "removed a scope-free single-statement control block",
             Some(brace_line),
+        )?);
+    }
+    Ok(edits)
+}
+
+/// Deletes a statement that is nothing but `;`.
+///
+/// The edit reaches back to the last character that is not whitespace, so a
+/// `;` alone on its own line takes its line with it instead of leaving a blank
+/// one behind, while a second `;` glued to the end of a statement removes only
+/// itself.
+fn remove_empty_statements(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for range in &context.facts().empty_statements {
+        let end = range.end().get() as usize;
+        let start = source[..range.start().get() as usize]
+            .trim_end_matches(|character: char| character.is_whitespace())
+            .len();
+        edits.push(Edit::new(
+            start,
+            end,
+            "",
+            "REMOVE_EMPTY_STATEMENT",
+            "removed a statement that was only a semicolon",
+            Some(lines.line_number_at(end.saturating_sub(1))),
         )?);
     }
     Ok(edits)
