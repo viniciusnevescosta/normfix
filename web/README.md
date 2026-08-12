@@ -132,6 +132,14 @@ deterministic, but it also means the browser cannot run the official
 or the CLI transaction/backup/undo system. The playground is a native formatter
 preview, not an official evaluation.
 
+What it does reach is every edit the parser can prove on its own: keyword
+spacing, brace placement, block layout, indentation, signature tabs, redundant
+`else` removal, and the deletion of a statement that is only a semicolon. Those
+rules read the syntax tree, so they give the same answer here as in the
+terminal. What stays out of reach is every rule whose location only the official
+checker knows — a rejected comment, for one — along with the whole-project
+checks that need a filesystem.
+
 ## Deployment and security policy
 
 The root `vercel.json` installs the workspaces, regenerates WASM, builds the
