@@ -1092,3 +1092,50 @@ dialog input {
     overflow-x: auto;
   }
 }
+
+/*
+ * Minimum target size, for the pointer that needs it.
+ *
+ * Measured on a phone, these were under the 24 CSS pixels WCAG asks for: the
+ * remember checkbox at 13×13, Forget at 40×19, the dependency links at 14 tall,
+ * and both header selects at 23. The rules are scoped to coarse pointers so a
+ * mouse keeps the dense layout this workbench was designed around, and so the
+ * fix lands exactly where a finger has to hit it.
+ */
+@media (pointer: coarse) {
+  .language-picker select,
+  .identity-panel input[type="email"],
+  .button,
+  .text-button,
+  .icon-button,
+  .file-item {
+    min-height: 32px;
+  }
+
+  .remember-option input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+  }
+
+  .remember-option {
+    gap: 8px;
+    align-items: center;
+  }
+
+  .identity-actions {
+    gap: 10px;
+  }
+
+  .dependency-links {
+    row-gap: 4px;
+  }
+
+  .dependency-links a {
+    display: inline-block;
+    padding: 6px 0;
+  }
+
+  .offline-update {
+    padding: 6px 0;
+  }
+}
