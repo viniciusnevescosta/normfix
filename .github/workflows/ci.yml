@@ -100,6 +100,21 @@ jobs:
           fi
           test -f "$work/normfix.exe"
           "$work/normfix.exe" --version
+      # Passing this project's own tests says the code works on the platform.
+      # It says nothing about the tool it defers to. The official Norminette is
+      # a Python program and runs on Windows, and whether the adapter drives it
+      # correctly there — argument passing, exit codes, output decoding — is the
+      # evidence the compatibility policy needs before it can claim Windows.
+      - name: Install Python for the official checker
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install exact official Norminette
+        run: python -m pip install --disable-pip-version-check norminette==3.3.59
+      - name: Exercise the official Norminette adapter
+        run: cargo test --locked -p normfix-oracle installed_official_norminette_smoke_test -- --ignored
+      - name: Prove a run never worsens the official result
+        run: cargo test --locked -p normfix-engine --test differential -- --ignored
 
   coverage:
     name: Line coverage
