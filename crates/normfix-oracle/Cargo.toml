@@ -21,6 +21,12 @@ thiserror.workspace = true
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["process", "signal"] }
 
+[target.'cfg(windows)'.dependencies]
+# A safe wrapper over Windows job objects. This crate forbids `unsafe`, and the
+# raw API is entirely unsafe, so the containment needs a wrapper rather than a
+# local block.
+win32job = "2.0.3"
+
 [dev-dependencies]
 serde_json.workspace = true
 
