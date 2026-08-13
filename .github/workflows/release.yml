@@ -283,7 +283,7 @@ jobs:
                 echo
                 echo "That works on Linux, macOS, and Windows — on Windows from any POSIX shell, meaning Git Bash, MSYS2, Cygwin, or WSL."
                 echo
-                echo "Homebrew and Scoop are conveniences on top of it:"
+                echo "If you already use a package manager, Homebrew and Scoop install the same release:"
                 echo
                 echo '```sh'
                 echo 'brew install viniciusnevescosta/normfix/normfix'
