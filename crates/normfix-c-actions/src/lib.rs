@@ -30,7 +30,7 @@ pub use edit::{Edit, EditError, apply_edits};
 pub use source::{HygieneResult, normalize_hygiene, visual_width};
 
 use crate::context::{FingerprintMode, ParsedContext};
-use crate::transforms::{ActionBatch, phases};
+use crate::transforms::{ActionBatch, Phase, phases};
 
 /// A diagnostic reported by an external Norminette-compatible checker.
 ///
@@ -128,6 +128,15 @@ pub struct CActionResult {
     pub diagnostics: Vec<Diagnostic>,
     /// Whether the fixed-point scheduler reached a stable result.
     pub stable: bool,
+    /// How many times the source was parsed to produce this result.
+    ///
+    /// A parse dominates the cost of a run, and how many a run needs is decided
+    /// by the scheduler, not by the machine. Reporting it alongside the batch
+    /// count lets a test hold the scheduler to its budget without timing
+    /// anything, which a shared CI runner is far too noisy to do.
+    pub parses: usize,
+    /// How many edit batches were accepted, one per pass that changed the file.
+    pub accepted_batches: usize,
 }
 
 impl CActionResult {
@@ -199,14 +208,15 @@ pub fn apply_c_actions(
     options: &CActionOptions,
 ) -> Result<CActionResult, CActionError> {
     let mut parser = CParser::new()?;
-    let (mut current, mut fixes) = prepare_source(&mut parser, source)?;
+    let (mut current, mut fixes, prepared) = prepare_source(&mut parser, source)?;
     let mut active_diagnostics = reported.to_vec();
 
     let mut seen = HashSet::new();
     seen.insert(source_digest(&current));
     // The parse of the bytes the next pass will start from, when the pass that
     // produced them already proved it safe.
-    let mut carried: Option<ParsedContext> = None;
+    let mut carried = Some(prepared);
+    let mut accepted_batches = 0_usize;
     let mut completed_one_shot = BTreeSet::new();
     let ordered_phases = phases(options);
     let mut stable = false;
@@ -270,6 +280,7 @@ pub fn apply_c_actions(
             if phase.one_shot() {
                 completed_one_shot.insert(*phase);
             }
+            accepted_batches += 1;
             accepted = true;
             break;
         }
@@ -282,18 +293,13 @@ pub fn apply_c_actions(
     }
 
     if !stable {
-        let context = ParsedContext::parse(&mut parser, &current)?;
-        if ordered_phases.iter().any(|phase| {
-            phase
-                .plan(&context, &active_diagnostics, options)
-                .ok()
-                .flatten()
-                .is_some()
-        }) {
-            return Err(CActionError::PassLimit {
-                passes: options.max_passes,
-            });
-        }
+        settle_or_fail(
+            &mut parser,
+            &current,
+            &ordered_phases,
+            &active_diagnostics,
+            options,
+        )?;
         stable = true;
     }
 
@@ -315,14 +321,50 @@ pub fn apply_c_actions(
         fixes,
         diagnostics,
         stable,
+        parses: parser.parses(),
+        accepted_batches,
     })
+}
+
+/// Confirms a run that used its whole pass budget has nothing left to do.
+///
+/// Hitting the limit is only a defect when work remains: a file that needed
+/// every pass and then settled is fine, while one that would still change is a
+/// scheduler that does not converge.
+fn settle_or_fail(
+    parser: &mut CParser,
+    current: &str,
+    ordered_phases: &[Phase],
+    active_diagnostics: &[ReportedDiagnostic],
+    options: &CActionOptions,
+) -> Result<(), CActionError> {
+    let context = ParsedContext::parse(parser, current)?;
+    if ordered_phases.iter().any(|phase| {
+        phase
+            .plan(&context, active_diagnostics, options)
+            .ok()
+            .flatten()
+            .is_some()
+    }) {
+        return Err(CActionError::PassLimit {
+            passes: options.max_passes,
+        });
+    }
+    Ok(())
 }
 
 fn source_digest(source: &str) -> [u8; 32] {
     *blake3::hash(source.as_bytes()).as_bytes()
 }
 
-fn prepare_source(parser: &mut CParser, source: &str) -> Result<(String, Vec<Fix>), CActionError> {
+/// Normalizes hygiene and returns the parse of what it produced.
+///
+/// The normalized context is the parse of the exact bytes the first pass starts
+/// from, so handing it back saves that pass from reading them a second time.
+fn prepare_source(
+    parser: &mut CParser,
+    source: &str,
+) -> Result<(String, Vec<Fix>, ParsedContext), CActionError> {
     let original = ParsedContext::parse(parser, source)?;
     original.require_safe()?;
     let hygiene = normalize_hygiene(source)?;
@@ -335,7 +377,7 @@ fn prepare_source(parser: &mut CParser, source: &str) -> Result<(String, Vec<Fix
             rule_id: "SOURCE_HYGIENE".to_owned(),
         });
     }
-    Ok((hygiene.source, hygiene.fixes))
+    Ok((hygiene.source, hygiene.fixes, normalized))
 }
 
 fn final_diagnostics(

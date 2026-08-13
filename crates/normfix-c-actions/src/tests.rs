@@ -1402,3 +1402,47 @@ fn a_subscript_carries_no_padding() {
     assert!(fixed.contains("n[2] = 3;"), "{fixed}");
     assert!(fixed.contains("return (n[0]);"), "{fixed}");
 }
+
+#[test]
+fn a_run_parses_the_source_once_per_pass_and_no_more() {
+    // A parse dominates a run, and the scheduler decides how many it needs.
+    // This release doubled that number without anyone noticing: a pass parsed
+    // to plan against, validating the accepted batch parsed the result, and
+    // that parse was discarded so the next pass re-read the same bytes. The
+    // benchmark in CI is informational and would not have failed.
+    //
+    // The budget is one parse to start, one per accepted batch, and nothing
+    // else. It is a property of the code, so it holds on any machine.
+    let messy = concat!(
+        "int ft_probe(int argc,char **argv){\n",
+        "  int index;\n",
+        "  char *value;\n",
+        "  index = 0;\n",
+        "  value = argv[argc-1];\n",
+        "  while(index<argc){\n",
+        "    if(value[index]=='-'){\n",
+        "      return index;\n",
+        "    }\n",
+        "    index++;\n",
+        "  }\n",
+        "  return 0;\n",
+        "}\n",
+    );
+    let result = apply_c_actions(
+        Utf8Path::new("budget.c"),
+        messy,
+        &[],
+        &CActionOptions::default(),
+    )
+    .expect("the fixture must stay safe");
+
+    assert!(
+        result.accepted_batches > 1,
+        "the fixture must need several batches to be worth measuring"
+    );
+    assert_eq!(
+        result.parses,
+        result.accepted_batches + 2,
+        "one parse of the input, one of the hygiene result, one per accepted          batch, and no others"
+    );
+}

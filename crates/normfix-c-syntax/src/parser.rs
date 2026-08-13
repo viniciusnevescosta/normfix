@@ -16,6 +16,7 @@ use crate::{SyntaxFacts, facts::collect_facts};
 /// worker thread and reuse it for the files handled by that worker.
 pub struct CParser {
     parser: Parser,
+    parses: usize,
 }
 
 impl CParser {
@@ -32,7 +33,7 @@ impl CParser {
         parser
             .set_language(&language)
             .map_err(|error| ParseFailure::Language(error.to_string()))?;
-        Ok(Self { parser })
+        Ok(Self { parser, parses: 0 })
     }
 
     /// Parses UTF-8 C source and builds a lossless token tape.
@@ -48,6 +49,17 @@ impl CParser {
         self.parse_arc(Arc::<str>::from(source))
     }
 
+    /// How many times this parser has read a source buffer.
+    ///
+    /// A parse is the dominant cost of a formatting run, and how many a run
+    /// does is a property of the scheduler rather than of the machine. Exposing
+    /// the count lets a test hold that property without timing anything, which
+    /// a shared CI runner is far too noisy to do.
+    #[must_use]
+    pub const fn parses(&self) -> usize {
+        self.parses
+    }
+
     /// Parses an already shared source buffer without copying it.
     ///
     /// # Errors
@@ -56,6 +68,7 @@ impl CParser {
     /// representation or if Tree-sitter declines to produce a tree.
     pub fn parse_arc(&mut self, source: Arc<str>) -> Result<ParsedFile, ParseFailure> {
         ensure_supported_length(source.len())?;
+        self.parses = self.parses.saturating_add(1);
         let tree = self
             .parser
             .parse(source.as_ref(), None)
