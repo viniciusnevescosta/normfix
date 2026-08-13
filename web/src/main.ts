@@ -871,6 +871,14 @@ function renderDiagnostics(result: ResultRecord): void {
   if (result.budget.length > 0) {
     elements.diagnosticsView.append(renderBudget(result.budget));
   }
+  // Said after the findings as well as instead of them. A page listing three
+  // problems reads as the complete list, and the two checks this page cannot
+  // run are the ones a 42 evaluation actually uses.
+  const scope = document.createElement("p");
+  scope.className = "diagnostic-scope";
+  scope.dataset.i18n = "notChecked";
+  scope.textContent = t("notChecked");
+  elements.diagnosticsView.append(scope);
 }
 
 function requiredChild<T extends Element>(parent: ParentNode, selector: string): T {
