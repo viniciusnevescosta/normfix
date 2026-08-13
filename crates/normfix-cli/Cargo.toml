@@ -27,6 +27,8 @@ normfix-header = { path = "../normfix-header" }
 normfix-i18n = { path = "../normfix-i18n" }
 normfix-oracle = { path = "../normfix-oracle" }
 normfix-project = { path = "../normfix-project" }
+camino.workspace = true
+normfix-core = { path = "../normfix-core" }
 normfix-report = { path = "../normfix-report" }
 serde.workspace = true
 sha2.workspace = true

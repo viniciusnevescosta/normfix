@@ -74,6 +74,22 @@ pub struct LeakSite {
     pub location: Option<LeakLocation>,
 }
 
+/// One memory error the checker caught while the program ran.
+///
+/// This is not a leak. A leak is memory the program forgot; this is the program
+/// reading, writing, or freeing something it had no right to, and the line the
+/// checker names is the line that did it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MemoryError {
+    /// The checker's own description, such as `Invalid read of size 4`.
+    pub kind: String,
+    /// The function the access happened in.
+    pub function: String,
+    /// Source file and one-based line, when the binary carries debug
+    /// information.
+    pub location: Option<LeakLocation>,
+}
+
 /// A source position inside the checked program.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LeakLocation {
@@ -98,6 +114,8 @@ pub struct ValgrindReport {
     pub error_count: u64,
     /// Where the lost memory was allocated, in the order the checker listed it.
     pub sites: Vec<LeakSite>,
+    /// Invalid accesses the checker caught, with the line that made them.
+    pub errors: Vec<MemoryError>,
     /// Bounded checker output, kept so a reader can see what it saw.
     pub output: String,
 }
@@ -260,6 +278,7 @@ fn parse_report(
         still_reachable_bytes: still_reachable_bytes.unwrap_or(0),
         error_count: error_count.unwrap_or(0),
         sites: leak_sites(output),
+        errors: memory_errors(output),
         output: output.to_owned(),
     })
 }
@@ -303,6 +322,56 @@ fn leak_sites(output: &str) -> Vec<LeakSite> {
         pending = None;
     }
     sites
+}
+
+/// Reads every invalid access the checker reported, with the line that made it.
+///
+/// The headers are a closed set rather than "any line that is not a frame",
+/// because the checker prints plenty of prose that is not a finding, and
+/// guessing would turn its banner into a diagnostic.
+fn memory_errors(output: &str) -> Vec<MemoryError> {
+    const HEADERS: [&str; 8] = [
+        "Invalid read of size",
+        "Invalid write of size",
+        "Invalid free()",
+        "Mismatched free()",
+        "Conditional jump or move depends on uninitialised value",
+        "Use of uninitialised value",
+        "Source and destination overlap",
+        "Syscall param",
+    ];
+    let mut errors = Vec::new();
+    let mut pending: Option<String> = None;
+    for line in output.lines() {
+        let line = strip_process_prefix(line).trim();
+        if let Some(header) = HEADERS.iter().find(|header| line.starts_with(**header)) {
+            // Only the first frame of a record is the access; everything after
+            // describes the block it touched.
+            let _ = header;
+            pending = Some(line.to_owned());
+            continue;
+        }
+        let Some(kind) = pending.clone() else {
+            continue;
+        };
+        if line.is_empty() {
+            pending = None;
+            continue;
+        }
+        let Some((function, location)) = stack_frame(line) else {
+            continue;
+        };
+        if is_checker_internal(&function) {
+            continue;
+        }
+        errors.push(MemoryError {
+            kind,
+            function,
+            location,
+        });
+        pending = None;
+    }
+    errors
 }
 
 /// Removes the `==1234==` the checker puts in front of every line.
@@ -356,12 +425,15 @@ fn stack_frame(line: &str) -> Option<(String, Option<LeakLocation>)> {
 
 /// Whether a frame belongs to the checker rather than to the program.
 fn is_checker_internal(function: &str) -> bool {
-    const REPLACED: [&str; 6] = [
+    const REPLACED: [&str; 9] = [
         "malloc",
         "calloc",
         "realloc",
+        "free",
         "operator new",
         "operator new[]",
+        "operator delete",
+        "operator delete[]",
         "memalign",
     ];
     REPLACED.contains(&function)
@@ -466,6 +538,44 @@ mod tests {
 ==12345==
 ==12345== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 ";
+
+    #[test]
+    fn an_invalid_access_names_the_line_that_made_it() {
+        // A leak is memory the program forgot; this is the program touching
+        // something it had no right to, and the line is the one that did it.
+        let output = concat!(
+            "==1== Invalid read of size 4\n",
+            "==1==    at 0x1091B2: sort_stack (sort.c:9)\n",
+            "==1==  Address 0x4a8a044 is 4 bytes after a block of size 40 alloc'd\n",
+            "==1==    at 0x4848464: malloc (vg_replace_malloc.c:446)\n",
+            "==1==    by 0x109195: main (main.c:6)\n",
+            "==1==\n",
+            "==1== Invalid free() / delete / delete[] / realloc()\n",
+            "==1==    at 0x484B27F: free (vg_replace_malloc.c:872)\n",
+            "==1==    by 0x1091C4: clear_stack (sort.c:21)\n",
+            "==1==\n",
+            "==1== ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)\n",
+        );
+        let report = super::parse_report(output, Some(0)).expect("a readable report");
+
+        assert_eq!(report.errors.len(), 2, "{:?}", report.errors);
+        assert_eq!(report.errors[0].kind, "Invalid read of size 4");
+        assert_eq!(report.errors[0].function, "sort_stack");
+        let first = report.errors[0].location.as_ref().expect("a location");
+        assert_eq!((first.file.as_str(), first.line), ("sort.c", 9));
+
+        // The second record's own frame is the checker's replacement `free`,
+        // so the line reported must be the caller's.
+        assert_eq!(report.errors[1].function, "clear_stack");
+        let second = report.errors[1].location.as_ref().expect("a location");
+        assert_eq!((second.file.as_str(), second.line), ("sort.c", 21));
+    }
+
+    #[test]
+    fn the_checkers_prose_is_never_read_as_a_finding() {
+        let report = super::parse_report(LEAKING, Some(0)).expect("a readable report");
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+    }
 
     #[test]
     fn every_lost_block_names_where_it_was_allocated() {

@@ -31,4 +31,7 @@ pub use token::{
     SignificantTokenFingerprint, TokenPreservation, TokenProofError,
     prove_significant_tokens_preserved, significant_token_fingerprint,
 };
-pub use valgrind::{ValgrindChecker, ValgrindConfig, ValgrindError, ValgrindReport};
+pub use valgrind::{
+    LeakLocation, LeakSite, MemoryError, ValgrindChecker, ValgrindConfig, ValgrindError,
+    ValgrindReport,
+};

@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, IsTerminal, Write as _};
 use std::path::PathBuf;
+
+use camino::Utf8PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -584,14 +586,17 @@ fn run_leaks(cli: &Cli, arguments: &LeaksArguments) -> ExitCode {
         } else {
             println!("{}", messages.leaks_none);
         }
-        print_leak_sites(&report, messages);
-        if report.error_count > 0 {
+        print_leak_findings(&report, cli, messages);
+        // The checker's own total can exceed what could be placed in a file,
+        // and repeating a number the list above already showed reads as a
+        // second finding.
+        let unlisted = report
+            .error_count
+            .saturating_sub(report.errors.len().try_into().unwrap_or(u64::MAX));
+        if unlisted > 0 {
             println!(
                 "{}",
-                normfix_i18n::fill(
-                    messages.leaks_errors,
-                    &[("count", &report.error_count.to_string())],
-                )
+                normfix_i18n::fill(messages.leaks_errors, &[("count", &unlisted.to_string())],)
             );
         }
         println!("{}", messages.leaks_not_a_proof);
@@ -606,45 +611,166 @@ fn run_leaks(cli: &Cli, arguments: &LeaksArguments) -> ExitCode {
     }
 }
 
-/// Names where each lost block was allocated.
+/// Shows every finding under the line of source that produced it.
 ///
-/// A byte total says something leaked; this says where to look. The checker's
-/// own replacement allocator is already filtered out upstream, so every line
-/// here is inside the reader's program. When nothing could be placed in a file
-/// the reason is said once, because a list of bare function names looks like a
-/// limitation of the tool rather than of the binary it was given.
-fn print_leak_sites(report: &normfix_oracle::ValgrindReport, messages: &normfix_i18n::Messages) {
-    if report.sites.is_empty() {
-        return;
-    }
-    println!("{}", messages.leaks_sites);
+/// The checker names a file and a line; this reads that file and hands the
+/// finding to the same renderer every other diagnostic goes through, so a leak
+/// gets the caret a Norm error gets. A file the checker named but this process
+/// cannot read falls back to the plain list rather than losing the finding.
+fn print_leak_findings(
+    report: &normfix_oracle::ValgrindReport,
+    cli: &Cli,
+    messages: &normfix_i18n::Messages,
+) {
+    let mut sources: std::collections::BTreeMap<Utf8PathBuf, String> =
+        std::collections::BTreeMap::new();
+    let mut diagnostics: Vec<(Utf8PathBuf, normfix_core::Diagnostic)> = Vec::new();
+    let mut unplaced = Vec::new();
+
     for site in &report.sites {
-        let bytes = site.bytes.to_string();
-        match &site.location {
-            Some(location) => println!(
-                "{}",
-                normfix_i18n::fill(
-                    messages.leaks_site_located,
-                    &[
-                        ("bytes", &bytes),
-                        ("function", &site.function),
-                        ("file", &location.file),
-                        ("line", &location.line.to_string()),
-                    ],
-                )
-            ),
-            None => println!(
-                "{}",
-                normfix_i18n::fill(
-                    messages.leaks_site_unlocated,
-                    &[("bytes", &bytes), ("function", &site.function)],
-                )
-            ),
+        let text = normfix_i18n::fill(
+            if site.indirect {
+                messages.leaks_site_indirect
+            } else {
+                messages.leaks_site_direct
+            },
+            &[
+                ("bytes", &site.bytes.to_string()),
+                ("function", &site.function),
+            ],
+        );
+        match leak_diagnostic(
+            site.location.as_ref(),
+            if site.indirect {
+                "LEAK_INDIRECTLY_LOST"
+            } else {
+                "LEAK_DEFINITELY_LOST"
+            },
+            &text,
+            messages.leaks_site_help,
+            &mut sources,
+        ) {
+            Some(placed) => diagnostics.push(placed),
+            None => unplaced.push(text),
         }
     }
-    if report.sites.iter().all(|site| site.location.is_none()) {
+    for error in &report.errors {
+        let text = normfix_i18n::fill(
+            messages.leaks_error_at,
+            &[("kind", &error.kind), ("function", &error.function)],
+        );
+        match leak_diagnostic(
+            error.location.as_ref(),
+            "MEMORY_ERROR",
+            &text,
+            messages.leaks_error_help,
+            &mut sources,
+        ) {
+            Some(placed) => diagnostics.push(placed),
+            None => unplaced.push(text),
+        }
+    }
+
+    if diagnostics.is_empty() && unplaced.is_empty() {
+        return;
+    }
+    if !unplaced.is_empty() {
+        println!("{}", messages.leaks_sites);
+    }
+    if !diagnostics.is_empty() {
+        let files = sources
+            .into_iter()
+            .map(|(path, source)| normfix_report::FileReport {
+                after: diagnostics
+                    .iter()
+                    .filter(|(owner, _)| *owner == path)
+                    .map(|(_, diagnostic)| diagnostic.clone())
+                    .collect(),
+                original: Some(std::sync::Arc::from(source.as_str())),
+                path,
+                changed: false,
+                written: false,
+                backup: None,
+                failure: None,
+                fixes: Vec::new(),
+                before: Vec::new(),
+                fixed: None,
+            })
+            .collect::<Vec<_>>();
+        print!(
+            "{}",
+            normfix_report::render_findings(
+                &files,
+                normfix_report::RenderOptions {
+                    color: !cli.no_color
+                        && env::var_os("NO_COLOR").is_none()
+                        && io::stdout().is_terminal(),
+                    verbose: false,
+                    show_diff: false,
+                    locale: resolve_locale(cli).locale,
+                },
+            )
+        );
+    }
+    for line in &unplaced {
+        println!("  {line}");
+    }
+    if report.sites.iter().all(|site| site.location.is_none())
+        && report.errors.iter().all(|error| error.location.is_none())
+    {
         println!("{}", messages.leaks_no_debug_info);
     }
+}
+
+/// Builds a diagnostic pointing at the line the checker named.
+fn leak_diagnostic(
+    location: Option<&normfix_oracle::LeakLocation>,
+    rule_id: &str,
+    message: &str,
+    help: &str,
+    sources: &mut std::collections::BTreeMap<Utf8PathBuf, String>,
+) -> Option<(Utf8PathBuf, normfix_core::Diagnostic)> {
+    let location = location?;
+    let path = Utf8PathBuf::from(&location.file);
+    if !sources.contains_key(&path) {
+        let text = std::fs::read_to_string(&path).ok()?;
+        sources.insert(path.clone(), text);
+    }
+    let source = sources.get(&path)?;
+    let range = line_range(source, location.line)?;
+    Some((
+        path.clone(),
+        normfix_core::Diagnostic {
+            rule_id: rule_id.to_owned(),
+            path,
+            range,
+            severity: normfix_core::Severity::Error,
+            message: message.to_owned(),
+            source: normfix_core::DiagnosticSource::LeakChecker,
+            notes: Vec::new(),
+            help: Some(help.to_owned()),
+            localized: None,
+        },
+    ))
+}
+
+/// The range covering one one-based line, without its leading whitespace.
+fn line_range(source: &str, line: u32) -> Option<normfix_core::TextRange> {
+    let mut offset = 0_usize;
+    for (index, text) in source.split_inclusive('\n').enumerate() {
+        if u32::try_from(index).ok()? + 1 == line {
+            let lead = text.len() - text.trim_start().len();
+            let content = text.trim_end();
+            let start = u32::try_from(offset + lead).ok()?;
+            let end = u32::try_from(offset + content.len().max(lead)).ok()?;
+            return normfix_core::TextRange::new(
+                normfix_core::TextSize::new(start),
+                normfix_core::TextSize::new(end.max(start)),
+            );
+        }
+        offset += text.len();
+    }
+    None
 }
 
 /// What to tell a reader whose platform has no checker.

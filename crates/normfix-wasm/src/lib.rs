@@ -815,6 +815,7 @@ fn source_name(source: &DiagnosticSource) -> String {
         DiagnosticSource::Project => "project safety check".to_owned(),
         DiagnosticSource::Makefile => "Makefile check".to_owned(),
         DiagnosticSource::Markdown => "Markdown check".to_owned(),
+        DiagnosticSource::LeakChecker => "leak checker".to_owned(),
     }
 }
 

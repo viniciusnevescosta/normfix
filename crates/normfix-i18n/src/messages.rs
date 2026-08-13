@@ -218,10 +218,16 @@ pub struct Messages {
     pub leaks_lost: &'static str,
     /// Heading above the list of allocation sites.
     pub leaks_sites: &'static str,
-    /// One allocation site with a file and line.
-    pub leaks_site_located: &'static str,
-    /// One allocation site the checker could not place in a file.
-    pub leaks_site_unlocated: &'static str,
+    /// A block lost outright, shown against its source line.
+    pub leaks_site_direct: &'static str,
+    /// A block reachable only through a lost one, shown against its line.
+    pub leaks_site_indirect: &'static str,
+    /// What to do about a reported allocation.
+    pub leaks_site_help: &'static str,
+    /// One invalid access, shown against the line that made it.
+    pub leaks_error_at: &'static str,
+    /// What to do about an invalid access.
+    pub leaks_error_help: &'static str,
     /// Said once when no site could be placed in a file.
     pub leaks_no_debug_info: &'static str,
     /// Memory errors beyond leaks. Placeholder: `{count}`.
@@ -354,8 +360,11 @@ const ENGLISH: Messages = Messages {
     leaks_none: "Nothing was lost on the path this run took.",
     leaks_lost: "Lost {definite} bytes outright, and {indirect} more reachable only through them.",
     leaks_sites: "Allocated at:",
-    leaks_site_located: "  {bytes} bytes in {function} ({file}:{line})",
-    leaks_site_unlocated: "  {bytes} bytes in {function}",
+    leaks_site_direct: "{bytes} bytes allocated here were never freed",
+    leaks_site_indirect: "{bytes} bytes allocated here were reachable only through a lost block",
+    leaks_site_help: "This is where the memory was allocated, not where it should have been freed. Follow it to the path that loses the pointer.",
+    leaks_error_at: "{kind}, in {function}",
+    leaks_error_help: "The program touched memory it does not own. This is a bug regardless of what the Norm says about the file.",
     leaks_no_debug_info: "No line could be named. Rebuild with -g so the checker can place each allocation in your source.",
     leaks_errors: "The checker also reported {count} memory errors that are not leaks.",
     leaks_not_a_proof: "This is what one run observed with the arguments it was given. It is not a proof that the program never leaks.",
@@ -470,8 +479,11 @@ const PORTUGUESE: Messages = Messages {
     leaks_none: "Nada foi perdido no caminho que esta execução percorreu.",
     leaks_lost: "Perdidos {definite} bytes de vez, e mais {indirect} alcançáveis só por eles.",
     leaks_sites: "Alocados em:",
-    leaks_site_located: "  {bytes} bytes em {function} ({file}:{line})",
-    leaks_site_unlocated: "  {bytes} bytes em {function}",
+    leaks_site_direct: "{bytes} bytes alocados aqui nunca foram liberados",
+    leaks_site_indirect: "{bytes} bytes alocados aqui só eram alcançáveis por um bloco perdido",
+    leaks_site_help: "Aqui é onde a memória foi alocada, não onde deveria ter sido liberada. Siga daqui até o caminho que perde o ponteiro.",
+    leaks_error_at: "{kind}, em {function}",
+    leaks_error_help: "O programa mexeu em memória que não é dele. Isso é um bug, independentemente do que a Norm diga sobre o arquivo.",
     leaks_no_debug_info: "Nenhuma linha pôde ser apontada. Recompile com -g para o verificador localizar cada alocação no seu código.",
     leaks_errors: "O verificador também relatou {count} erros de memória que não são vazamentos.",
     leaks_not_a_proof: "Isto é o que uma execução observou com os argumentos que recebeu. Não é prova de que o programa nunca vaza.",
@@ -586,8 +598,11 @@ const SPANISH: Messages = Messages {
     leaks_none: "No se perdió nada en el camino que tomó esta ejecución.",
     leaks_lost: "Se perdieron {definite} bytes del todo, y {indirect} más alcanzables solo a través de ellos.",
     leaks_sites: "Reservados en:",
-    leaks_site_located: "  {bytes} bytes en {function} ({file}:{line})",
-    leaks_site_unlocated: "  {bytes} bytes en {function}",
+    leaks_site_direct: "{bytes} bytes reservados aquí nunca se liberaron",
+    leaks_site_indirect: "{bytes} bytes reservados aquí solo eran alcanzables por un bloque perdido",
+    leaks_site_help: "Aquí es donde se reservó la memoria, no donde debería haberse liberado. Sigue desde aquí hasta el camino que pierde el puntero.",
+    leaks_error_at: "{kind}, en {function}",
+    leaks_error_help: "El programa tocó memoria que no es suya. Eso es un error, diga lo que diga la Norm sobre el archivo.",
     leaks_no_debug_info: "No se pudo señalar ninguna línea. Recompila con -g para que el verificador ubique cada reserva en tu código.",
     leaks_errors: "El verificador también informó de {count} errores de memoria que no son fugas.",
     leaks_not_a_proof: "Esto es lo que observó una ejecución con los argumentos que recibió. No es una prueba de que el programa nunca tenga fugas.",
@@ -702,8 +717,11 @@ const FRENCH: Messages = Messages {
     leaks_none: "Rien n’a été perdu sur le chemin emprunté par cette exécution.",
     leaks_lost: "Perdus {definite} octets définitivement, et {indirect} de plus accessibles uniquement par eux.",
     leaks_sites: "Alloués à :",
-    leaks_site_located: "  {bytes} octets dans {function} ({file}:{line})",
-    leaks_site_unlocated: "  {bytes} octets dans {function}",
+    leaks_site_direct: "{bytes} octets alloués ici n’ont jamais été libérés",
+    leaks_site_indirect: "{bytes} octets alloués ici n’étaient accessibles que par un bloc perdu",
+    leaks_site_help: "C’est là que la mémoire a été allouée, pas là où elle aurait dû être libérée. Suivez ce point jusqu’au chemin qui perd le pointeur.",
+    leaks_error_at: "{kind}, dans {function}",
+    leaks_error_help: "Le programme a touché de la mémoire qui ne lui appartient pas. C’est un bug, quoi que la Norm dise du fichier.",
     leaks_no_debug_info: "Aucune ligne n’a pu être nommée. Recompilez avec -g pour que le vérificateur situe chaque allocation dans votre code.",
     leaks_errors: "Le détecteur a aussi signalé {count} erreurs mémoire qui ne sont pas des fuites.",
     leaks_not_a_proof: "Voici ce qu’une exécution a observé avec les arguments reçus. Ce n’est pas une preuve que le programme ne fuit jamais.",

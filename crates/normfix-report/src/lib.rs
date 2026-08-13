@@ -392,6 +392,22 @@ impl Default for RenderOptions {
     }
 }
 
+/// Renders only the diagnostics of a set of files, with their source snippets.
+///
+/// `render_human` reports a formatting run and says a great deal a leak check
+/// has no answer for: what was written, what was backed up, how many fixes were
+/// accepted. A leak check has findings and sources and nothing else, and it
+/// deserves the same caret under the same line as every other finding rather
+/// than a second presentation invented for it.
+#[must_use]
+pub fn render_findings(files: &[FileReport], options: RenderOptions) -> String {
+    let paint = Paint::new(options.color);
+    let messages = normfix_i18n::messages(options.locale);
+    let mut output = String::new();
+    render_diagnostics(&mut output, &paint, files, options.verbose, messages);
+    output
+}
+
 /// Renders one complete human report.
 #[must_use]
 pub fn render_human(report: &RunReport, options: RenderOptions) -> String {
@@ -1319,6 +1335,7 @@ fn source_label(source: &DiagnosticSource) -> String {
         DiagnosticSource::Project => "project safety check".to_owned(),
         DiagnosticSource::Makefile => "Makefile check".to_owned(),
         DiagnosticSource::Markdown => "Markdown check".to_owned(),
+        DiagnosticSource::LeakChecker => "leak checker".to_owned(),
     }
 }
 

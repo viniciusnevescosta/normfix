@@ -708,8 +708,10 @@ dependencies = [
 name = "normfix"
 version = "1.6.0"
 dependencies = [
+ "camino",
  "clap",
  "normfix-actions",
+ "normfix-core",
  "normfix-destructive",
  "normfix-engine",
  "normfix-header",

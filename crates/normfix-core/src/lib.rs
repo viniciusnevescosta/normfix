@@ -388,6 +388,8 @@ pub enum DiagnosticSource {
     Makefile,
     /// Markdown-specific analysis.
     Markdown,
+    /// A leak checker that observed the program while it ran.
+    LeakChecker,
 }
 
 /// Diagnostic severity, ordered from most to least severe.
