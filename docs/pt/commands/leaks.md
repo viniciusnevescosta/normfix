@@ -15,6 +15,9 @@ ele pergunta antes:
 $ normfix leaks ./push_swap
 O normfix vai executar ./push_swap sob o verificador de vazamentos. Isso roda o seu programa. Continuar? [y/N] y
 Perdidos 1024 bytes de vez, e mais 96 alcançáveis só por eles.
+Alocados em:
+  1024 bytes em create_stack (stack.c:23)
+  96 bytes em push_node (node.c:41)
 Isto é o que uma execução observou com os argumentos que recebeu. Não é prova de que o programa nunca vaza.
 ```
 
@@ -24,6 +27,11 @@ então você consegue exercitar o caminho que importa:
 ```sh
 normfix leaks ./push_swap -- 5 2 9 1
 ```
+
+A linha é onde a memória foi alocada, não onde deveria ter sido liberada —
+essa é a parte que o verificador consegue ver. Um binário compilado sem `-g`
+não carrega números de linha, então o relatório nomeia só a função e explica
+o porquê.
 
 ## O que ele não faz
 

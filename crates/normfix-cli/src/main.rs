@@ -584,6 +584,7 @@ fn run_leaks(cli: &Cli, arguments: &LeaksArguments) -> ExitCode {
         } else {
             println!("{}", messages.leaks_none);
         }
+        print_leak_sites(&report, messages);
         if report.error_count > 0 {
             println!(
                 "{}",
@@ -602,6 +603,47 @@ fn run_leaks(cli: &Cli, arguments: &LeaksArguments) -> ExitCode {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+/// Names where each lost block was allocated.
+///
+/// A byte total says something leaked; this says where to look. The checker's
+/// own replacement allocator is already filtered out upstream, so every line
+/// here is inside the reader's program. When nothing could be placed in a file
+/// the reason is said once, because a list of bare function names looks like a
+/// limitation of the tool rather than of the binary it was given.
+fn print_leak_sites(report: &normfix_oracle::ValgrindReport, messages: &normfix_i18n::Messages) {
+    if report.sites.is_empty() {
+        return;
+    }
+    println!("{}", messages.leaks_sites);
+    for site in &report.sites {
+        let bytes = site.bytes.to_string();
+        match &site.location {
+            Some(location) => println!(
+                "{}",
+                normfix_i18n::fill(
+                    messages.leaks_site_located,
+                    &[
+                        ("bytes", &bytes),
+                        ("function", &site.function),
+                        ("file", &location.file),
+                        ("line", &location.line.to_string()),
+                    ],
+                )
+            ),
+            None => println!(
+                "{}",
+                normfix_i18n::fill(
+                    messages.leaks_site_unlocated,
+                    &[("bytes", &bytes), ("function", &site.function)],
+                )
+            ),
+        }
+    }
+    if report.sites.iter().all(|site| site.location.is_none()) {
+        println!("{}", messages.leaks_no_debug_info);
     }
 }
 

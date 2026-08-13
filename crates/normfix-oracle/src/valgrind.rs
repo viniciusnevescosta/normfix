@@ -59,6 +59,30 @@ impl Default for ValgrindConfig {
     }
 }
 
+/// One allocation the checker reported as lost.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LeakSite {
+    /// Bytes lost through this allocation.
+    pub bytes: u64,
+    /// Whether these bytes were reachable only through another lost block.
+    pub indirect: bool,
+    /// The function the allocation was made in.
+    pub function: String,
+    /// Source file and one-based line, when the binary carries debug
+    /// information. A program built without it has no line to name, and that is
+    /// worth saying rather than leaving blank.
+    pub location: Option<LeakLocation>,
+}
+
+/// A source position inside the checked program.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LeakLocation {
+    /// File as the checker spelled it.
+    pub file: String,
+    /// One-based line.
+    pub line: u32,
+}
+
 /// What one leak-checked run observed.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ValgrindReport {
@@ -72,6 +96,8 @@ pub struct ValgrindReport {
     pub still_reachable_bytes: u64,
     /// Memory errors memcheck reported, which are not only leaks.
     pub error_count: u64,
+    /// Where the lost memory was allocated, in the order the checker listed it.
+    pub sites: Vec<LeakSite>,
     /// Bounded checker output, kept so a reader can see what it saw.
     pub output: String,
 }
@@ -233,8 +259,112 @@ fn parse_report(
         indirectly_lost_bytes: indirectly_lost_bytes.unwrap_or(0),
         still_reachable_bytes: still_reachable_bytes.unwrap_or(0),
         error_count: error_count.unwrap_or(0),
+        sites: leak_sites(output),
         output: output.to_owned(),
     })
+}
+
+/// Reads the allocation site of every block the checker called lost.
+///
+/// A loss record is a header naming the bytes and the kind, followed by the
+/// stack that allocated them. The frame that matters is the first one inside
+/// the program: the top of the stack is always the checker's own replacement
+/// allocator, which tells a reader nothing about their code. A binary built
+/// without debug information still names its functions, so the site is reported
+/// with whatever the checker could resolve rather than dropped.
+fn leak_sites(output: &str) -> Vec<LeakSite> {
+    let mut sites = Vec::new();
+    let mut pending: Option<(u64, bool)> = None;
+    for line in output.lines() {
+        let line = strip_process_prefix(line);
+        if let Some((bytes, indirect)) = loss_record_header(line) {
+            pending = Some((bytes, indirect));
+            continue;
+        }
+        let Some((bytes, indirect)) = pending else {
+            continue;
+        };
+        let Some(frame) = stack_frame(line) else {
+            // The record ended without a frame this code could read.
+            if line.trim().is_empty() {
+                pending = None;
+            }
+            continue;
+        };
+        if is_checker_internal(&frame.0) {
+            continue;
+        }
+        sites.push(LeakSite {
+            bytes,
+            indirect,
+            function: frame.0,
+            location: frame.1,
+        });
+        pending = None;
+    }
+    sites
+}
+
+/// Removes the `==1234==` the checker puts in front of every line.
+fn strip_process_prefix(line: &str) -> &str {
+    let trimmed = line.trim_start();
+    let Some(rest) = trimmed.strip_prefix("==") else {
+        return line;
+    };
+    rest.split_once("==").map_or(line, |(_, tail)| tail)
+}
+
+/// Reads `4,384 bytes in 2 blocks are definitely lost in loss record 5 of 7`.
+fn loss_record_header(line: &str) -> Option<(u64, bool)> {
+    let trimmed = line.trim();
+    let (count, rest) = trimmed.split_once(" bytes in ")?;
+    let indirect = if rest.contains("are definitely lost") {
+        false
+    } else if rest.contains("are indirectly lost") {
+        true
+    } else {
+        return None;
+    };
+    let digits = count
+        .trim()
+        .chars()
+        .filter(|character| *character != ',')
+        .collect::<String>();
+    digits.parse().ok().map(|bytes| (bytes, indirect))
+}
+
+/// Reads `at 0x4848464: malloc (vg_replace_malloc.c:446)`.
+fn stack_frame(line: &str) -> Option<(String, Option<LeakLocation>)> {
+    let trimmed = line.trim();
+    let rest = trimmed
+        .strip_prefix("at ")
+        .or_else(|| trimmed.strip_prefix("by "))?;
+    let (_, named) = rest.split_once(": ")?;
+    let Some((function, tail)) = named.split_once(" (") else {
+        return Some((named.trim().to_owned(), None));
+    };
+    let inside = tail.strip_suffix(')').unwrap_or(tail);
+    let location = inside
+        .rsplit_once(':')
+        .and_then(|(file, line)| Some((file, line.parse::<u32>().ok()?)))
+        .map(|(file, line)| LeakLocation {
+            file: file.to_owned(),
+            line,
+        });
+    Some((function.trim().to_owned(), location))
+}
+
+/// Whether a frame belongs to the checker rather than to the program.
+fn is_checker_internal(function: &str) -> bool {
+    const REPLACED: [&str; 6] = [
+        "malloc",
+        "calloc",
+        "realloc",
+        "operator new",
+        "operator new[]",
+        "memalign",
+    ];
+    REPLACED.contains(&function)
 }
 
 /// Reads one `LEAK SUMMARY` line, such as `definitely lost: 1,024 bytes in 2 blocks`.
@@ -293,6 +423,25 @@ fn bounded_detail(output: &str) -> String {
 mod tests {
     use super::{ValgrindError, parse_report};
 
+    /// Loss records as memcheck prints them, including the replacement
+    /// allocator frame that must never be reported as the reader's own code.
+    const WITH_SITES: &str = "\
+==12345== 4,384 bytes in 2 blocks are definitely lost in loss record 5 of 7
+==12345==    at 0x4848464: malloc (vg_replace_malloc.c:446)
+==12345==    by 0x1091AB: create_stack (stack.c:23)
+==12345==    by 0x109245: main (main.c:12)
+==12345==
+==12345== 48 bytes in 1 blocks are indirectly lost in loss record 2 of 7
+==12345==    at 0x4848464: malloc (vg_replace_malloc.c:446)
+==12345==    by 0x1092F0: push_node (node.c:41)
+==12345==
+==12345== LEAK SUMMARY:
+==12345==    definitely lost: 4,384 bytes in 2 blocks
+==12345==    indirectly lost: 48 bytes in 1 blocks
+==12345==
+==12345== ERROR SUMMARY: 8 errors from 8 contexts (suppressed: 0 from 0)
+";
+
     /// A real memcheck summary from a program that lost a block.
     const LEAKING: &str = "\
 ==12345== HEAP SUMMARY:
@@ -317,6 +466,54 @@ mod tests {
 ==12345==
 ==12345== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 ";
+
+    #[test]
+    fn every_lost_block_names_where_it_was_allocated() {
+        let report = super::parse_report(WITH_SITES, Some(1)).expect("a readable report");
+
+        assert_eq!(report.sites.len(), 2, "{:?}", report.sites);
+        let first = &report.sites[0];
+        assert_eq!(first.bytes, 4384);
+        assert!(!first.indirect);
+        assert_eq!(first.function, "create_stack");
+        let location = first.location.as_ref().expect("a source location");
+        assert_eq!(location.file, "stack.c");
+        assert_eq!(location.line, 23);
+
+        let second = &report.sites[1];
+        assert_eq!(second.bytes, 48);
+        assert!(second.indirect);
+        assert_eq!(second.function, "push_node");
+    }
+
+    #[test]
+    fn the_checkers_own_allocator_is_never_reported_as_the_readers_code() {
+        // `malloc` at the top of every trace is memcheck's replacement, and
+        // naming it would point every leak at the same useless line.
+        let report = super::parse_report(WITH_SITES, Some(1)).expect("a readable report");
+        assert!(
+            report.sites.iter().all(|site| site.function != "malloc"),
+            "{:?}",
+            report.sites
+        );
+    }
+
+    #[test]
+    fn a_binary_without_debug_information_still_names_its_function() {
+        let output = concat!(
+            "==1== 32 bytes in 1 blocks are definitely lost in loss record 1 of 1\n",
+            "==1==    at 0x4848464: malloc (vg_replace_malloc.c:446)\n",
+            "==1==    by 0x109245: build_table\n",
+            "==1==\n",
+            "==1== LEAK SUMMARY:\n",
+            "==1==    definitely lost: 32 bytes in 1 blocks\n",
+            "==1== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)\n",
+        );
+        let report = super::parse_report(output, Some(0)).expect("a readable report");
+        let site = report.sites.first().expect("one site");
+        assert_eq!(site.function, "build_table");
+        assert!(site.location.is_none());
+    }
 
     #[test]
     fn a_leak_summary_is_read_with_its_thousands_separators() {

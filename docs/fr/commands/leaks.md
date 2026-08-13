@@ -15,6 +15,9 @@ donc d’abord.
 $ normfix leaks ./push_swap
 normfix va exécuter ./push_swap sous le détecteur de fuites. Cela exécute votre programme. Continuer ? [y/N] y
 Perdus 1024 octets définitivement, et 96 de plus accessibles uniquement par eux.
+Alloués à :
+  1024 octets dans create_stack (stack.c:23)
+  96 octets dans push_node (node.c:41)
 Voici ce qu’une exécution a observé avec les arguments reçus. Ce n’est pas une preuve que le programme ne fuit jamais.
 ```
 
@@ -25,6 +28,10 @@ donc exercer le chemin qui compte.
 normfix leaks ./push_swap -- 5 2 9 1
 ```
 
+La ligne est celle où la mémoire a été allouée, pas celle où elle aurait dû
+être libérée — c'est ce que le vérificateur peut voir. Un binaire compilé sans
+`-g` ne porte pas de numéros de ligne : le rapport nomme alors la fonction seule
+et dit pourquoi.
 ## Ce qu’elle ne fait pas
 
 `normfix` ne compile jamais votre programme. Compiler signifie exécuter les

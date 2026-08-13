@@ -15,6 +15,9 @@ asks first:
 $ normfix leaks ./push_swap
 normfix is about to run ./push_swap under the leak checker. This executes your program. Continue? [y/N] y
 Lost 1024 bytes outright, and 96 more reachable only through them.
+Allocated at:
+  1024 bytes in create_stack (stack.c:23)
+  96 bytes in push_node (node.c:41)
 This is what one run observed with the arguments it was given. It is not a proof that the program never leaks.
 ```
 
@@ -24,6 +27,10 @@ the path that matters:
 ```sh
 normfix leaks ./push_swap -- 5 2 9 1
 ```
+
+The line is where the memory was allocated, not where it should have been
+freed — that is the part the checker can see. A binary built without `-g`
+carries no line numbers, so the report names the function alone and says why.
 
 ## What it does not do
 

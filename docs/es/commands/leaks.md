@@ -15,6 +15,9 @@ pregunta antes:
 $ normfix leaks ./push_swap
 normfix va a ejecutar ./push_swap bajo el verificador de fugas. Esto ejecuta tu programa. ¿Continuar? [y/N] y
 Se perdieron 1024 bytes del todo, y 96 más alcanzables solo a través de ellos.
+Reservados en:
+  1024 bytes en create_stack (stack.c:23)
+  96 bytes en push_node (node.c:41)
 Esto es lo que observó una ejecución con los argumentos que recibió. No es una prueba de que el programa nunca tenga fugas.
 ```
 
@@ -25,6 +28,10 @@ puedes ejercitar el camino que importa:
 normfix leaks ./push_swap -- 5 2 9 1
 ```
 
+La línea es donde se reservó la memoria, no donde debería haberse liberado —
+esa es la parte que el verificador puede ver. Un binario compilado sin `-g` no
+lleva números de línea, así que el informe nombra solo la función y explica por
+qué.
 ## Lo que no hace
 
 `normfix` nunca compila tu programa. Compilar significa ejecutar las recetas de
