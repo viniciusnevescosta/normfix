@@ -1062,4 +1062,27 @@ mod tests {
                 .is_some_and(|file| file.formatted.ends_with('\n'))
         );
     }
+
+    #[test]
+    fn a_removed_byte_order_mark_is_reported_for_every_file_kind() {
+        // The browser dropped the mark and said nothing, so the two runs
+        // disagreed about what had happened to the same file.
+        for (path, source) in [
+            ("main.c", "\u{feff}int\tmain(void)\n{\n\treturn (0);\n}\n"),
+            ("Makefile", "\u{feff}NAME = app\n"),
+            ("README.md", "\u{feff}# Title\n"),
+        ] {
+            let response = format_project(request(path, source)).expect("a formatted project");
+            let file = response.files.first().expect("one file back");
+            assert!(
+                !file.formatted.contains('\u{feff}'),
+                "{path}: the mark survived"
+            );
+            assert!(
+                file.fixes.iter().any(|fix| fix.rule_id == "REMOVE_BOM"),
+                "{path}: the removal was not reported: {:?}",
+                file.fixes
+            );
+        }
+    }
 }
