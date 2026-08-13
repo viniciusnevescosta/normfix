@@ -1446,3 +1446,80 @@ fn a_run_parses_the_source_once_per_pass_and_no_more() {
         "one parse of the input, one of the hygiene result, one per accepted          batch, and no others"
     );
 }
+
+#[test]
+fn a_declaration_is_separated_from_the_value_it_was_given() {
+    // The official checker calls this DECL_ASSIGN_LINE and normfix only ever
+    // reported it. The assignments keep declaration order, so an initializer
+    // that reads a variable declared above it still reads what was assigned.
+    let source = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\tbase = n * 2;\n",
+        "\tint\ttotal = base + 1;\n",
+        "\n",
+        "\treturn (total);\n",
+        "}\n",
+    );
+    assert_eq!(
+        apply(source, &[]),
+        concat!(
+            "int\tf(int n)\n",
+            "{\n",
+            "\tint\tbase;\n",
+            "\tint\ttotal;\n",
+            "\n",
+            "\tbase = n * 2;\n",
+            "\ttotal = base + 1;\n",
+            "\treturn (total);\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+fn a_pointer_declaration_assigns_the_name_not_the_star() {
+    let source = concat!(
+        "char\t*f(char *s)\n",
+        "{\n",
+        "\tchar\t*p = s;\n",
+        "\n",
+        "\treturn (p);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\tchar\t*p;\n"), "{fixed}");
+    assert!(fixed.contains("\tp = s;\n"), "{fixed}");
+    assert!(!fixed.contains("*p = s;"), "{fixed}");
+}
+
+#[test]
+fn a_declaration_that_cannot_be_assigned_later_is_left_alone() {
+    // Each of these would be a different program after the split: a `const`
+    // cannot be assigned at all, an aggregate initializer is initialization
+    // syntax rather than an expression, a `static` is initialized once where an
+    // assignment would run on every call, and one range cannot tell two
+    // initializers apart.
+    let source = concat!(
+        "int\tf(void)\n",
+        "{\n",
+        "\tconst int\ta = 1;\n",
+        "\tstatic int\tb = 2;\n",
+        "\tint\t\tc[] = {1, 2};\n",
+        "\tint\t\td = 1, e = 2;\n",
+        "\n",
+        "\treturn (a + b + c[0] + d + e);\n",
+        "}\n",
+    );
+    // Each check names the value still attached to its declaration, because a
+    // split leaves the declaration itself looking unchanged.
+    let fixed = apply(source, &[]);
+    for kept in [
+        "const int\ta = 1;",
+        "static int\tb = 2;",
+        "c[] = {1, 2};",
+        "d = 1, e = 2;",
+    ] {
+        assert!(fixed.contains(kept), "{kept:?} was rewritten:\n{fixed}");
+    }
+}

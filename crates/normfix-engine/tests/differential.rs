@@ -79,6 +79,10 @@ const REPORTED: &[(&str, &str)] = &[
         "int\tmain(void)\n{\n\tint\ti;\n\n\ti = 0;\n\twhile(i < 3) { i++; }\n\treturn (0);\n}\n",
     ),
     (
+        "declaration_assignment.c",
+        "int\tf(int n)\n{\n\tint\tbase = n * 2;\n\tint\ttotal = base + 1;\n\n\treturn (total);\n}\n",
+    ),
+    (
         "byte_order_mark.c",
         "\u{feff}int\tmark(void)\n{\n\treturn (0);\n}\n",
     ),

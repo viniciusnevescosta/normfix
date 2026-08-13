@@ -62,6 +62,7 @@ pub(crate) enum Phase {
     BracesAndControls,
     SingleStatementBlocks,
     RedundantElse,
+    SplitDeclarations,
     FunctionLayout,
     Indentation,
     InitialDeclarations,
@@ -89,6 +90,7 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
         Phase::BracesAndControls,
         Phase::SingleStatementBlocks,
         Phase::RedundantElse,
+        Phase::SplitDeclarations,
         Phase::FunctionLayout,
         Phase::Indentation,
         Phase::InitialDeclarations,
@@ -146,6 +148,10 @@ impl Phase {
             Self::SingleStatementBlocks => Ok(ActionBatch::semantic(
                 "REMOVE_SINGLE_STATEMENT_BRACES",
                 remove_single_statement_braces(context)?,
+            )),
+            Self::SplitDeclarations => Ok(ActionBatch::semantic(
+                "SPLIT_DECLARATION_ASSIGNMENT",
+                split_declarations(context)?,
             )),
             Self::RedundantElse => Ok(ActionBatch::semantic(
                 "REMOVE_REDUNDANT_ELSE",
@@ -1208,6 +1214,77 @@ fn remove_empty_statements(context: &ParsedContext) -> Result<Vec<Edit>, CAction
             "removed a statement that was only a semicolon",
             Some(lines.line_number_at(end.saturating_sub(1))),
         )?);
+    }
+    Ok(edits)
+}
+
+/// Separates a declaration from the value it was given on the same line.
+///
+/// `int teste = 10;` becomes `int teste;` plus `teste = 10;` at the top of the
+/// instructions, which is what the official checker asks for when it reports
+/// `DECL_ASSIGN_LINE`. The assignments keep their declaration order, so one
+/// initializer that reads a variable declared above it still reads the value
+/// that was just assigned.
+///
+/// All of a block's assignments are inserted as one edit. Emitting them
+/// separately would put several edits at the same byte, and the batch would be
+/// rejected as conflicting — taking every other fix in the file down with it.
+fn split_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    use std::fmt::Write as _;
+
+    let source = context.source();
+    let lines = context.lines();
+    let facts = context.facts();
+    let mut edits = Vec::new();
+    for block in &facts.initial_declaration_blocks {
+        let Some(following) = block.following_item else {
+            continue;
+        };
+        let line_number = lines.line_number_at(following.start().get() as usize);
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        // The assignments go above the first instruction's whole line, not at
+        // the byte where its text begins, or they land after its indentation
+        // and push it to column zero.
+        let insertion = line.start;
+        let indent = lines.text(line)[..leading_whitespace(lines.text(line))].to_owned();
+        let mut assignments = String::new();
+        for declaration in &block.declarations {
+            let Some(split) = facts
+                .declaration_splits
+                .iter()
+                .find(|split| split.declaration_range == *declaration)
+            else {
+                continue;
+            };
+            let start = split.strip_range.start().get() as usize;
+            let end = split.strip_range.end().get() as usize;
+            let value_start = split.value_range.start().get() as usize;
+            let value_end = split.value_range.end().get() as usize;
+            let (Some(value), true) = (source.get(value_start..value_end), start < end) else {
+                continue;
+            };
+            edits.push(Edit::new(
+                start,
+                end,
+                "",
+                "SPLIT_DECLARATION_ASSIGNMENT",
+                "separated a declaration from its value",
+                Some(lines.line_number_at(start)),
+            )?);
+            let _ = writeln!(assignments, "{indent}{} = {value};", split.name);
+        }
+        if !assignments.is_empty() {
+            edits.push(Edit::new(
+                insertion,
+                insertion,
+                assignments,
+                "SPLIT_DECLARATION_ASSIGNMENT",
+                "moved the value below the declarations",
+                Some(line_number),
+            )?);
+        }
     }
     Ok(edits)
 }

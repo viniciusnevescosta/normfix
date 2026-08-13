@@ -33,6 +33,8 @@ pub struct SyntaxFacts {
     pub pointer_stars: Vec<TextRange>,
     /// Control-statement bodies that are a single statement, not a block.
     pub control_inline_bodies: Vec<TextRange>,
+    /// Declarations whose initializer can become a separate assignment.
+    pub declaration_splits: Vec<DeclarationSplitFact>,
     /// Direct local declarations in function bodies.
     pub local_declarations: Vec<LocalDeclarationFact>,
     /// Initial declaration blocks and the first following instruction.
@@ -151,6 +153,27 @@ pub struct LocalDeclarationFact {
     pub scope_range: TextRange,
     /// Whether the declaration belongs to the initial declaration block.
     pub initial: bool,
+}
+
+/// A declaration that can be split into a declaration and an assignment.
+///
+/// The official checker calls the single-line form `DECL_ASSIGN_LINE`. Four
+/// shapes are never recorded here, because for them the split would be a
+/// different program: `const`, which cannot be assigned after its declaration;
+/// an aggregate initializer such as `{1, 2}`, which is initialization syntax
+/// and not an expression; `static`, which is initialized once where an
+/// assignment would run on every call; and a declaration naming more than one
+/// variable, whose initializers cannot be told apart from one range.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclarationSplitFact {
+    /// The whole declaration, so a caller can match it to its block.
+    pub declaration_range: TextRange,
+    /// The ` = value` to remove, leaving the declaration behind.
+    pub strip_range: TextRange,
+    /// The identifier the assignment names, without any pointer stars.
+    pub name: String,
+    /// The initializer expression the assignment takes.
+    pub value_range: TextRange,
 }
 
 /// A function's non-empty initial declaration block.
@@ -286,6 +309,11 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
             {
                 if let Some(fact) = prototype_fact(source, node)? {
                     facts.functions.push(fact);
+                }
+            }
+            "declaration" => {
+                if let Some(fact) = declaration_split_fact(source, node)? {
+                    facts.declaration_splits.push(fact);
                 }
             }
             "enumerator" => {
@@ -607,6 +635,68 @@ fn is_stray_semicolon(node: Node<'_>) -> bool {
         && !node
             .prev_sibling()
             .is_some_and(|sibling| sibling.kind().starts_with("preproc"))
+}
+
+/// Reads a declaration that can be split from its initializer.
+///
+/// Everything this refuses is refused because the split would be a different
+/// program, and the grammar is what tells them apart: a qualifier or storage
+/// class is its own node, an aggregate initializer is its own node kind, and a
+/// second declarator is a second child rather than something to guess at from
+/// the text.
+fn declaration_split_fact(
+    source: &str,
+    node: Node<'_>,
+) -> Result<Option<DeclarationSplitFact>, ParseFailure> {
+    let mut cursor = node.walk();
+    let children = node.children(&mut cursor).collect::<Vec<_>>();
+    if children.iter().any(|child| {
+        matches!(child.kind(), "storage_class_specifier" | "type_qualifier")
+            || child.kind() == "ERROR"
+    }) {
+        return Ok(None);
+    }
+    let declarators = children
+        .iter()
+        .filter(|child| child.kind() == "init_declarator")
+        .collect::<Vec<_>>();
+    let [declarator] = declarators.as_slice() else {
+        return Ok(None);
+    };
+    let (Some(target), Some(value)) = (
+        declarator.child_by_field_name("declarator"),
+        declarator.child_by_field_name("value"),
+    ) else {
+        return Ok(None);
+    };
+    // An aggregate initializer is initialization syntax, not an expression, and
+    // an array cannot be assigned to at all.
+    if value.kind() == "initializer_list" || target.kind() == "array_declarator" {
+        return Ok(None);
+    }
+    let Some(name) = innermost_identifier(target) else {
+        return Ok(None);
+    };
+    Ok(Some(DeclarationSplitFact {
+        declaration_range: node_range(node.start_byte(), node.end_byte())?,
+        strip_range: node_range(target.end_byte(), value.end_byte())?,
+        name: node_text(source, name)?.to_owned(),
+        value_range: node_range(value.start_byte(), value.end_byte())?,
+    }))
+}
+
+/// The identifier a declarator finally names, past any pointer stars.
+fn innermost_identifier(node: Node<'_>) -> Option<Node<'_>> {
+    let mut current = node;
+    loop {
+        match current.kind() {
+            "identifier" => return Some(current),
+            "pointer_declarator" | "parenthesized_declarator" => {
+                current = current.child_by_field_name("declarator")?;
+            }
+            _ => return None,
+        }
+    }
 }
 
 fn collect_control_body_fact(
