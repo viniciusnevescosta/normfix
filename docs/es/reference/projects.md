@@ -22,7 +22,8 @@ El analizador informa:
 - que `all` no sea el objetivo concreto por defecto;
 - descubrimiento de fuentes/objetos por comodín;
 - líneas largas que no pueden empaquetarse con seguridad;
-- espacios en blanco tras una barra invertida de continuación.
+- espacios en blanco tras una barra invertida de continuación;
+- una línea de receta indentada con espacios, que Make se niega a leer.
 
 Para una asignación simple al estilo `SRC`/`SRCS` cuyo valor completo está hecho
 de rutas `.c` relativas y literales, también comprueba si cada token existe y si

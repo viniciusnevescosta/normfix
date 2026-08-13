@@ -383,6 +383,12 @@ Les fichiers README sont réimprimés en CommonMark canonique par défaut. Cela 
 produire un large diff à la première exécution, ce qui est la raison habituelle
 de le désactiver.
 
+Le document est lu dans le dialecte dans lequel il a été écrit : les listes de
+tâches, les notes de bas de page, les tableaux et le texte barré reviennent tels
+quels. Lus comme du CommonMark simple, ce serait du texte ordinaire, et la
+réimpression échapperait leurs crochets : `- [x] fait` reviendrait en
+`- \[x\] fait` littéral.
+
 ## Opérations destructives
 
 Chacune de celles-ci supprime ou déplace quelque chose. Toutes conservent un

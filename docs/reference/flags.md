@@ -367,6 +367,11 @@ normfix --no-format-markdown
 README files are reprinted as canonical CommonMark by default. That can produce
 a large first-run diff, which is the usual reason to turn it off.
 
+The document is read in the dialect it was written in, so task lists,
+footnotes, tables, and strikethrough come back as themselves. Read as plain
+CommonMark they would be ordinary text, and the reprint would escape their
+brackets: `- [x] done` would come back as literal `- \[x\] done`.
+
 ## Destructive operations
 
 Each of these deletes or moves something. All of them keep recoverable external

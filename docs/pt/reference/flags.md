@@ -380,6 +380,11 @@ Arquivos README são reimpressos como CommonMark canônico por padrão. Isso pod
 produzir um diff grande na primeira execução, que é o motivo usual para
 desligar.
 
+O documento é lido no dialeto em que foi escrito, então listas de tarefas,
+notas de rodapé, tabelas e texto riscado voltam como eles mesmos. Lidos como
+CommonMark puro, seriam texto comum, e a reimpressão escaparia os colchetes:
+`- [x] feito` voltaria como `- \[x\] feito` literal.
+
 ## Operações destrutivas
 
 Cada uma destas apaga ou move algo. Todas mantêm armazenamento externo

@@ -20,7 +20,8 @@ The analyzer reports:
 - `all` not being the default concrete target;
 - wildcard source/object discovery;
 - long lines that cannot be safely packed;
-- whitespace after a continuation backslash.
+- whitespace after a continuation backslash;
+- a recipe line indented with spaces, which Make refuses to read at all.
 
 For a simple `SRC`/`SRCS`-style assignment whose complete value is made of
 literal relative `.c` paths, it also checks whether each token exists and

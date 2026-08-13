@@ -22,7 +22,8 @@ L'analyseur signale :
 - le fait que `all` ne soit pas la cible concrète par défaut ;
 - la découverte de sources/objets par joker ;
 - des lignes longues qui ne peuvent pas être compactées sans risque ;
-- des espaces après une barre oblique inverse de continuation.
+- des espaces après une barre oblique inverse de continuation ;
+- une ligne de recette indentée avec des espaces, que Make refuse de lire.
 
 Pour une affectation simple de style `SRC`/`SRCS` dont la valeur complète est
 faite de chemins `.c` relatifs et littéraux, il vérifie aussi si chaque jeton

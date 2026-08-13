@@ -21,7 +21,8 @@ O analisador relata:
 - `all` não sendo o alvo concreto padrão;
 - descoberta de fontes/objetos por curinga;
 - linhas longas que não podem ser empacotadas com segurança;
-- espaço em branco após uma barra invertida de continuação.
+- espaço em branco após uma barra invertida de continuação;
+- uma linha de receita indentada com espaços, que o Make se recusa a ler.
 
 Para uma atribuição simples no estilo `SRC`/`SRCS` cujo valor completo é feito de
 caminhos `.c` relativos e literais, ele também verifica se cada token existe e
