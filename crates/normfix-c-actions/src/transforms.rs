@@ -725,6 +725,11 @@ fn format_control_layout(context: &ParsedContext) -> Result<Vec<Edit>, CActionEr
         push_control_brace_newline(context, brace, &mut edits)?;
     }
     push_control_keyword_spacing(context, &mut edits)?;
+    push_binary_operator_spacing(context, &mut edits)?;
+    push_comma_spacing(context, &mut edits)?;
+    push_pointer_spacing(context, &mut edits)?;
+    push_inline_body_newline(context, &mut edits)?;
+    push_block_edge_blank_lines(context, &mut edits)?;
     for body in &context.facts().compound_bodies {
         push_block_line_breaks(context, *body, &mut edits)?;
     }
@@ -790,10 +795,10 @@ fn push_control_brace_newline(
     if relative >= text.len() || text[..relative].trim().is_empty() {
         return Ok(());
     }
+    // A brace written as `){` has no whitespace to replace, so this used to
+    // bail and leave the file with an official error after a run that reported
+    // success. An empty range is a valid insertion point.
     let (start, _) = whitespace_before(text, relative);
-    if start == relative {
-        return Ok(());
-    }
     let indent = &text[..leading_whitespace(text)];
     edits.push(Edit::new(
         line.start + start,
@@ -803,6 +808,233 @@ fn push_control_brace_newline(
         "placed a control block opening brace on its own line",
         Some(line_number),
     )?);
+    Ok(())
+}
+
+/// Gives a single-statement control body its own line.
+///
+/// The tree says where the body begins, so `if (n)n = 2;` is split without
+/// scanning the text for the parenthesis that closed the condition.
+fn push_inline_body_newline(
+    context: &ParsedContext,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(source, &lines);
+    for body in &context.facts().control_inline_bodies {
+        let start = body.start().get() as usize;
+        let line_number = lines.line_number_at(start);
+        if blocked.contains(&line_number) {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let relative = start.saturating_sub(line.start);
+        if text[..relative].trim().is_empty() {
+            continue;
+        }
+        let indent = text[..leading_whitespace(text)].to_owned();
+        let (whitespace_start, _) = whitespace_before(text, relative);
+        edits.push(Edit::new(
+            line.start + whitespace_start,
+            start,
+            format!("\n{indent}\t"),
+            "CONTROL_BODY_NEWLINE",
+            "placed a control body on its own line",
+            Some(line_number),
+        )?);
+    }
+    Ok(())
+}
+
+/// Removes a blank line pressed against a block's opening or closing brace.
+///
+/// A blank line means a separation between two things, and there is nothing on
+/// the other side of a brace to separate from.
+fn push_block_edge_blank_lines(
+    context: &ParsedContext,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    for body in &context.facts().compound_bodies {
+        let open_line = lines.line_number_at(body.start().get() as usize);
+        let close_line = lines.line_number_at((body.end().get() as usize).saturating_sub(1));
+        if close_line <= open_line + 1 {
+            continue;
+        }
+        for (line_number, keep) in [(open_line + 1, open_line), (close_line - 1, close_line)] {
+            let Some(line) = lines.get(line_number) else {
+                continue;
+            };
+            if !lines.text(line).trim().is_empty() {
+                continue;
+            }
+            let Some(anchor) = lines.get(keep) else {
+                continue;
+            };
+            let (start, end) = if keep < line_number {
+                (anchor.end, line.end)
+            } else {
+                (line.start, anchor.start)
+            };
+            if start < end && source.get(start..end).is_some() {
+                edits.push(Edit::new(
+                    start,
+                    end,
+                    "",
+                    "BLOCK_EDGE_BLANK_LINE",
+                    "removed a blank line pressed against a brace",
+                    Some(line_number),
+                )?);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Binds a declarator star to the name that follows it.
+///
+/// The grammar separates this star from multiplication, which is what makes
+/// the edit safe: `char * text` becomes `char *text`, while `a * b` is a
+/// binary expression and is never reached from here.
+fn push_pointer_spacing(
+    context: &ParsedContext,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(source, &lines);
+    for star in &context.facts().pointer_stars {
+        let end = star.end().get() as usize;
+        let line_number = lines.line_number_at(end);
+        if blocked.contains(&line_number) {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let (start, stop) = whitespace_after(text, end.saturating_sub(line.start));
+        if start == stop || stop >= text.len() {
+            continue;
+        }
+        edits.push(Edit::new(
+            line.start + start,
+            line.start + stop,
+            "",
+            "POINTER_SPACING",
+            "bound a declarator star to the name after it",
+            Some(line_number),
+        )?);
+    }
+    Ok(())
+}
+
+/// Puts no space before a comma and one space after it.
+///
+/// A comma separates, so it never has an operand of its own to disambiguate:
+/// the token alone settles it, as long as it is real punctuation rather than a
+/// byte inside a string or a comment.
+fn push_comma_spacing(context: &ParsedContext, edits: &mut Vec<Edit>) -> Result<(), CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(source, &lines);
+    let lexical = context.lexical();
+    for token in context.tokens().iter().filter(|token| token.text == ",") {
+        let line_number = lines.line_number_at(token.start);
+        if blocked.contains(&line_number) || lexical.is_protected(token.start) {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let relative = token.start.saturating_sub(line.start);
+        let (before_start, _) = whitespace_before(text, relative);
+        if before_start < relative && before_start > 0 {
+            edits.push(Edit::new(
+                line.start + before_start,
+                token.start,
+                "",
+                "COMMA_SPACING",
+                "removed the space before a comma",
+                Some(line_number),
+            )?);
+        }
+        // A comma that ends its line already separates by the line break.
+        let (after_start, after_end) = whitespace_after(text, relative + 1);
+        if after_end < text.len() && &text[after_start..after_end] != " " {
+            edits.push(Edit::new(
+                line.start + after_start,
+                line.start + after_end,
+                " ",
+                "COMMA_SPACING",
+                "left exactly one space after a comma",
+                Some(line_number),
+            )?);
+        }
+    }
+    Ok(())
+}
+
+/// Puts exactly one space on each side of a binary or assignment operator.
+///
+/// The proof is the node kind: the grammar gives `-a` and `a++` their own
+/// kinds, so an operator reached this way always has an operand on each side.
+/// Reacting to a one-sided official diagnostic instead used to leave `sum -1`,
+/// which the checker accepts and a reader reads as a unary minus.
+fn push_binary_operator_spacing(
+    context: &ParsedContext,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(source, &lines);
+    for operator in &context.facts().binary_operators {
+        let start = operator.start().get() as usize;
+        let end = operator.end().get() as usize;
+        let line_number = lines.line_number_at(start);
+        if blocked.contains(&line_number) || lines.line_number_at(end) != line_number {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let (open, close) = (
+            start.saturating_sub(line.start),
+            end.saturating_sub(line.start),
+        );
+
+        // A line break on either side is a deliberate continuation, and
+        // collapsing it would be a different edit than adding a space.
+        let (before_start, _) = whitespace_before(text, open);
+        if before_start > 0 && &text[before_start..open] != " " {
+            edits.push(Edit::new(
+                line.start + before_start,
+                start,
+                " ",
+                "OPERATOR_SPACING",
+                "left exactly one space before a binary operator",
+                Some(line_number),
+            )?);
+        }
+        let (after_start, after_end) = whitespace_after(text, close);
+        if after_end < text.len() && &text[after_start..after_end] != " " {
+            edits.push(Edit::new(
+                line.start + after_start,
+                line.start + after_end,
+                " ",
+                "OPERATOR_SPACING",
+                "left exactly one space after a binary operator",
+                Some(line_number),
+            )?);
+        }
+    }
     Ok(())
 }
 

@@ -1226,3 +1226,112 @@ fn indentation_inside_a_string_or_comment_is_content() {
     assert!(fixed.contains("    indented on purpose"), "{fixed}");
     assert!(fixed.contains("    kept as written"), "{fixed}");
 }
+
+#[test]
+fn spacing_and_layout_match_the_checker_run_without_one() {
+    // Every gap this covers was found by running the same file through both
+    // paths and diffing: the terminal fixed it, the browser did not.
+    let source = concat!(
+        "int\tadd(int a,int b)\n",
+        "{\n",
+        "\tint\tsum;\n",
+        "\n",
+        "\tsum = a+b;\n",
+        "\tsum = sum-1;\n",
+        "\tif (sum>10)\n",
+        "\t\tsum = sum*2;\n",
+        "\treturn (sum);\n",
+        "}\n",
+    );
+    assert_eq!(
+        apply(source, &[]),
+        concat!(
+            "int\tadd(int a, int b)\n",
+            "{\n",
+            "\tint\tsum;\n",
+            "\n",
+            "\tsum = a + b;\n",
+            "\tsum = sum - 1;\n",
+            "\tif (sum > 10)\n",
+            "\t\tsum = sum * 2;\n",
+            "\treturn (sum);\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+fn a_unary_operator_never_gains_a_space() {
+    // The grammar, not the surrounding whitespace, decides this. A rule that
+    // read the text would turn `-a` into `- a` and `a++` into `a+ +`.
+    let source = concat!(
+        "int\tsign(int a)\n",
+        "{\n",
+        "\ta++;\n",
+        "\ta = -a;\n",
+        "\ta = !a;\n",
+        "\treturn (a);\n",
+        "}\n",
+    );
+    assert_eq!(apply(source, &[]), source);
+}
+
+#[test]
+fn a_declarator_star_binds_to_its_name_and_multiplication_does_not() {
+    let source = concat!(
+        "int\tarea(int * width, int height)\n",
+        "{\n",
+        "\treturn (*(&width[0]) * height);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("int *width"), "{fixed}");
+    assert!(fixed.contains("]) * height"), "{fixed}");
+}
+
+#[test]
+fn a_brace_written_against_the_condition_still_moves() {
+    // `){` has no whitespace to replace, and the rule used to bail there,
+    // leaving an official error behind a run that reported success.
+    let source = concat!(
+        "int\tpick(int n)\n",
+        "{\n",
+        "\twhile (n > 0){\n",
+        "\t\tn--;\n",
+        "\t}\n",
+        "\treturn (n);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("while (n > 0)\n"), "{fixed}");
+    assert!(!fixed.contains("){"), "{fixed}");
+}
+
+#[test]
+fn a_control_body_and_a_brace_never_share_a_line() {
+    let source = concat!(
+        "int\tpick(int n)\n",
+        "{\n",
+        "\tif (n)n = 2;\n",
+        "\treturn (n);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\tif (n)\n\t\tn = 2;\n"), "{fixed}");
+}
+
+#[test]
+fn a_blank_line_never_sits_against_a_brace() {
+    let source = concat!(
+        "int\tfirst(void)\n",
+        "{\n",
+        "\n",
+        "\treturn (1);\n",
+        "\n",
+        "}\n",
+    );
+    assert_eq!(
+        apply(source, &[]),
+        concat!("int\tfirst(void)\n", "{\n", "\treturn (1);\n", "}\n")
+    );
+}

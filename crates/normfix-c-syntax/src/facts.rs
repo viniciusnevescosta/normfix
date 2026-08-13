@@ -27,6 +27,12 @@ pub struct SyntaxFacts {
     pub redundant_else_branches: Vec<RedundantElseFact>,
     /// Statements that are a lone `;`, which do nothing at all.
     pub empty_statements: Vec<TextRange>,
+    /// Operators that take an operand on each side, so each side takes a space.
+    pub binary_operators: Vec<TextRange>,
+    /// The `*` of a pointer declarator, which binds to the name after it.
+    pub pointer_stars: Vec<TextRange>,
+    /// Control-statement bodies that are a single statement, not a block.
+    pub control_inline_bodies: Vec<TextRange>,
     /// Direct local declarations in function bodies.
     pub local_declarations: Vec<LocalDeclarationFact>,
     /// Initial declaration blocks and the first following instruction.
@@ -310,20 +316,23 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
             // may sit immediately before it, because then the `;` may
             // terminate a statement that exists in only one build
             // configuration, which this parse cannot see.
+            // The grammar names the operator of a binary or assignment
+            // expression, and gives unary `-a` and `a++` their own node kinds.
+            // That distinction is the whole proof: only an operator with an
+            // operand on each side takes a space on each side, and reading it
+            // from the tree cannot confuse the two the way a text scan can.
+            // A declarator star binds to the name, and the grammar tells it
+            // apart from multiplication by node kind rather than by guessing
+            // from the surrounding spaces.
+            "pointer_declarator" | "abstract_pointer_declarator" => {
+                collect_pointer_star(node, &mut facts)?;
+            }
             "compound_statement" => {
                 facts
                     .compound_bodies
                     .push(node_range(node.start_byte(), node.end_byte())?);
             }
-            "expression_statement"
-                if direct_named_children(node).next().is_none()
-                    && node.parent().is_some_and(|parent| {
-                        matches!(parent.kind(), "compound_statement" | "translation_unit")
-                    })
-                    && !node
-                        .prev_sibling()
-                        .is_some_and(|sibling| sibling.kind().starts_with("preproc")) =>
-            {
+            "expression_statement" if is_stray_semicolon(node) => {
                 facts
                     .empty_statements
                     .push(node_range(node.start_byte(), node.end_byte())?);
@@ -332,7 +341,8 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
                 collect_control_body_fact(node.child_by_field_name("body"), &mut facts)?;
                 facts.loops.push(loop_fact(source, node)?);
             }
-            "binary_expression" => {
+            "binary_expression" | "assignment_expression" => {
+                collect_binary_operator(node, &mut facts)?;
                 if let Some(fact) = null_check_fact(source, node)? {
                     facts.null_checks.push(fact);
                 }
@@ -546,13 +556,75 @@ fn declarator_returns_pointer(declarator: Node<'_>, function: Node<'_>) -> bool 
     false
 }
 
+/// Records the `*` that binds a declarator to its name.
+///
+/// The grammar tells this star apart from multiplication by node kind rather
+/// than by guessing from the surrounding spaces.
+fn collect_pointer_star(node: Node<'_>, facts: &mut SyntaxFacts) -> Result<(), ParseFailure> {
+    let mut cursor = node.walk();
+    let star = node
+        .children(&mut cursor)
+        .find(|child| !child.is_named() && child.kind() == "*");
+    if let Some(star) = star {
+        facts
+            .pointer_stars
+            .push(node_range(star.start_byte(), star.end_byte())?);
+    }
+    Ok(())
+}
+
+/// Records an operator that has an operand on each side.
+///
+/// The grammar names the operator of a binary or assignment expression, and
+/// gives unary `-a` and `a++` their own node kinds. That distinction is the
+/// whole proof: only an operator with an operand on each side takes a space on
+/// each side, and reading it from the tree cannot confuse the two the way a
+/// text scan can.
+fn collect_binary_operator(node: Node<'_>, facts: &mut SyntaxFacts) -> Result<(), ParseFailure> {
+    if let Some(operator) = node.child_by_field_name("operator") {
+        facts
+            .binary_operators
+            .push(node_range(operator.start_byte(), operator.end_byte())?);
+    }
+    Ok(())
+}
+
+/// Whether this statement is a lone `;` that can be deleted.
+///
+/// A bare `;` parses as an expression statement with no expression: valid C
+/// that executes nothing. Two conditions carry the proof that deleting it
+/// changes nothing. First, the parent must be a block or the file itself: the
+/// same node shape is also how `while (x);` and `for (;;);` spell an empty
+/// body, and deleting one of those would silently promote the next statement
+/// into the loop. Second, no preprocessor directive may sit immediately before
+/// it, because then the `;` may terminate a statement that exists in only one
+/// build configuration, which this parse cannot see.
+fn is_stray_semicolon(node: Node<'_>) -> bool {
+    direct_named_children(node).next().is_none()
+        && node.parent().is_some_and(|parent| {
+            matches!(parent.kind(), "compound_statement" | "translation_unit")
+        })
+        && !node
+            .prev_sibling()
+            .is_some_and(|sibling| sibling.kind().starts_with("preproc"))
+}
+
 fn collect_control_body_fact(
     body: Option<Node<'_>>,
     facts: &mut SyntaxFacts,
 ) -> Result<(), ParseFailure> {
-    let Some(body) = body.filter(|body| body.kind() == "compound_statement") else {
+    let Some(body) = body else {
         return Ok(());
     };
+    if body.kind() != "compound_statement" {
+        // A single-statement body still owns its own line. Recording it here
+        // means the rule reads the tree instead of guessing where a condition
+        // ended by scanning parentheses in the text.
+        facts
+            .control_inline_bodies
+            .push(node_range(body.start_byte(), body.end_byte())?);
+        return Ok(());
+    }
     facts
         .control_compounds
         .push(node_range(body.start_byte(), body.end_byte())?);
