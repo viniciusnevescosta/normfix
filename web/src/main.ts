@@ -29,6 +29,7 @@ import {
   type ProjectSourceFile,
 } from "./project/files";
 import { ZipArchiveError, buildZip } from "./project/archive";
+import { markersFor } from "./project/markers";
 import { collectDroppedFiles, type DroppedFile } from "./project/drop";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
@@ -190,6 +191,7 @@ const elements = {
   dialog: requiredElement<HTMLDialogElement>("#new-file-dialog"),
   newFileForm: requiredElement<HTMLFormElement>("#new-file-form"),
   newFileName: requiredElement<HTMLInputElement>("#new-file-name"),
+  fileKinds: requiredElement<HTMLFieldSetElement>(".file-kinds"),
   newFileError: requiredElement<HTMLElement>("#new-file-error"),
   language: requiredElement<HTMLSelectElement>("#language"),
   theme: requiredElement<HTMLSelectElement>("#theme"),
@@ -453,6 +455,9 @@ function invalidateResults(): void {
   // kind of state that only stays harmless by accident.
   elements.applyAll.disabled = true;
   elements.applyResult.disabled = true;
+  // Marks describe a result. Once there is no result they describe a file that
+  // may already have been edited past them.
+  paintMarkers();
 }
 
 function syncEditor(): void {
@@ -730,6 +735,7 @@ async function runFormatter(): Promise<void> {
       ? state.selected
       : response.files[0]?.path ?? null;
     renderRunResult(response.summary);
+    paintMarkers();
     setRuntimeMessage("ready", "wasmReady");
     elements.results.hidden = false;
     elements.results.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -745,6 +751,22 @@ async function runFormatter(): Promise<void> {
 function formatHeaderTimestamp(date: Date): string {
   const part = (value: number): string => String(value).padStart(2, "0");
   return `${date.getFullYear()}/${part(date.getMonth() + 1)}/${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`;
+}
+
+/// Underlines each file's findings where they are, the way an editor does.
+///
+/// A diagnostic list beside the code makes a reader match a line number by eye,
+/// which is exactly the work an editor exists to remove. The findings describe
+/// the file that was submitted, so the marks belong on the input rather than on
+/// the formatted output — and they are cleared for a file that came back clean,
+/// otherwise a fixed file keeps wearing the marks of its previous run.
+function paintMarkers(): void {
+  const editor = state.editor;
+  if (!editor?.usingMonaco) return;
+  for (const path of state.files.keys()) {
+    const result = state.results.get(path);
+    editor.setMarkers(path, markersFor(result?.diagnostics ?? []));
+  }
 }
 
 function renderRunResult(providedSummary: BrowserSummary | null = null): void {
@@ -1161,9 +1183,35 @@ elements.filePicker.addEventListener("change", () => {
   });
 });
 elements.removeFile.addEventListener("click", removeSelected);
+/// The name a kind starts from, keeping any folder the reader already typed.
+///
+/// `.c` is not the only thing this page formats, and typing the extension by
+/// hand is how a reader discovers that only by getting it wrong. Picking a kind
+/// rewrites the name, and keeping the folder means choosing a kind after typing
+/// `src/utils.c` does not throw the folder away.
+function nameForKind(kind: string, current: string): string {
+  const separator = current.lastIndexOf("/");
+  const folder = separator >= 0 ? current.slice(0, separator + 1) : "";
+  // The stem the reader typed survives the switch; only `Makefile`, which has
+  // no stem of its own, is replaced when they move away from it.
+  const typed = current.slice(separator + 1).replace(/\.[^.]*$/, "");
+  if (kind === "makefile") return `${folder}Makefile`;
+  const stem = typed === "" || typed === "Makefile" ? "new_file" : typed;
+  return `${folder}${stem}.${kind}`;
+}
+
+elements.fileKinds.addEventListener("change", (event) => {
+  const kind = event.target;
+  if (!(kind instanceof HTMLInputElement)) return;
+  elements.newFileName.value = nameForKind(kind.value, elements.newFileName.value.trim());
+  elements.newFileName.focus();
+});
+
 elements.addFile.addEventListener("click", () => {
   elements.newFileError.textContent = "";
   elements.newFileName.value = "new_file.c";
+  const first = elements.fileKinds.querySelector<HTMLInputElement>("input[value='c']");
+  if (first) first.checked = true;
   elements.dialog.showModal();
   elements.newFileName.select();
 });

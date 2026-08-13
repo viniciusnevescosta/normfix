@@ -277,6 +277,17 @@
           <p data-i18n="offlineInstallable">
             Once this page has loaded, it keeps working without a network, and your browser can install it as an app.
           </p>
+          <p>
+            <a
+              class="release-link"
+              id="release-link"
+              href="https://github.com/viniciusnevescosta/normfix/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-i18n="fullToolLink"
+            >Get the full tool</a>
+            <span data-i18n="fullToolNote">The download runs the official checker and the compiler, which this page cannot.</span>
+          </p>
           <nav class="dependency-links" aria-label="Official dependencies" data-i18n-aria="officialDependencies">
             <span data-i18n="dependencies">Official tools</span>
             <a href="https://github.com/42school/norminette" target="_blank" rel="noopener noreferrer" data-i18n="norminette">Norminette</a>
@@ -293,10 +304,18 @@
           <p class="eyebrow" data-i18n="addSource">Add file</p>
           <h2 data-i18n="chooseFilename">Choose a relative filename</h2>
         </div>
+        <fieldset class="file-kinds">
+          <legend data-i18n="fileKind">Kind</legend>
+          <label><input type="radio" name="kind" value="c" checked><span>.c</span></label>
+          <label><input type="radio" name="kind" value="h"><span>.h</span></label>
+          <label><input type="radio" name="kind" value="makefile"><span>Makefile</span></label>
+          <label><input type="radio" name="kind" value="md"><span>.md</span></label>
+        </fieldset>
         <label>
           <span data-i18n="filename">Filename</span>
           <input id="new-file-name" name="filename" value="new_file.c" required>
         </label>
+        <p class="form-hint" data-i18n="folderHint">A path such as <code>src/utils.c</code> creates the folder with it.</p>
         <p class="form-error" id="new-file-error" role="alert"></p>
         <div class="dialog-actions">
           <button class="button secondary" value="cancel" formnovalidate data-i18n="cancel">Cancel</button>

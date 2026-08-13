@@ -1,6 +1,7 @@
 import type * as Monaco from "monaco-editor/editor.js";
 
 import type { Appearance } from "./theme";
+import type { EditorMarker } from "./project/markers";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 
 export interface SourceEditor {
@@ -10,8 +11,17 @@ export interface SourceEditor {
   focus(): void;
   /** Repaints the editor for the current appearance. A no-op without Monaco. */
   setAppearance(appearance: Appearance): void;
+  /**
+   * Underlines findings in the file, the way an editor underlines its own.
+   *
+   * A no-op without Monaco: the text area has no way to draw under a range,
+   * and the diagnostics panel is what a reader has there.
+   */
+  setMarkers(path: string, markers: readonly EditorMarker[]): void;
   usingMonaco: boolean;
 }
+
+
 
 interface EditorCallbacks {
   onChange: () => void;
@@ -59,6 +69,7 @@ function createFallbackEditor(
     focus: () => fallback.focus(),
     // The text area inherits the page palette through CSS.
     setAppearance: () => undefined,
+    setMarkers: () => undefined,
   };
 }
 
@@ -214,7 +225,35 @@ async function createMonacoEditor(
     },
     focus: () => instance.focus(),
     setAppearance: (next) => monaco.editor.setTheme(monacoThemeFor(next)),
+    setMarkers: (path, markers) => {
+      const model = models.get(path);
+      if (!model || model.isDisposed()) return;
+      monaco.editor.setModelMarkers(
+        model,
+        "normfix",
+        markers.map((marker) => ({
+          severity: monacoSeverity(monaco, marker.severity),
+          message: `${marker.ruleId}: ${marker.message}`,
+          startLineNumber: marker.line,
+          startColumn: marker.column,
+          endLineNumber: marker.line,
+          // The findings carry a position, not a span, so the underline runs to
+          // the end of the line rather than guessing at a width.
+          endColumn: model.getLineMaxColumn(
+            Math.min(Math.max(marker.line, 1), model.getLineCount()),
+          ),
+        })),
+      );
+    },
   };
+}
+
+function monacoSeverity(
+  monaco: typeof Monaco,
+  severity: EditorMarker["severity"],
+): Monaco.MarkerSeverity {
+  if (severity === "error") return monaco.MarkerSeverity.Error;
+  return severity === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info;
 }
 
 function monacoThemeFor(appearance: Appearance): string {

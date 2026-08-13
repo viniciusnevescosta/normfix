@@ -890,6 +890,38 @@ dialog input {
   color: var(--text);
 }
 
+.file-kinds {
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.file-kinds legend {
+  padding: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.file-kinds label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.form-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.release-link {
+  margin-right: 6px;
+  font-weight: 600;
+}
+
 .diagnostic-scope {
   margin: 12px 0 0;
   padding-top: 10px;
