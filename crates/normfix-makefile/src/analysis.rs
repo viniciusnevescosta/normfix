@@ -78,6 +78,8 @@ pub fn analyze_makefile(source: &str) -> Vec<MakefileDiagnostic> {
         }
     }
 
+    diagnostics.extend(space_indented_recipes(&lines));
+
     let rules = rules(&lines);
     let targets = rules
         .iter()
@@ -279,6 +281,55 @@ struct Rule<'a> {
     range: ByteRange,
 }
 
+/// Recipe lines a reader indented with spaces instead of a tab.
+///
+/// Make requires a tab, and refuses the whole file with `missing separator`
+/// when it does not find one. Formatting such a Makefile and reporting success
+/// says nothing about the fact that it cannot be run at all. It is reported
+/// rather than corrected because turning the spaces into a tab decides that the
+/// line was meant as a command, and only the person who wrote it knows that.
+fn space_indented_recipes(lines: &[SourceLine<'_>]) -> Vec<MakefileDiagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut inside_rule = false;
+    for line in lines {
+        let content = line.content;
+        if content.trim().is_empty() {
+            continue;
+        }
+        if content.starts_with('\t') {
+            inside_rule = true;
+            continue;
+        }
+        if content.starts_with(' ') {
+            if inside_rule {
+                diagnostics.push(diagnostic(
+                    "MAKEFILE_SPACE_INDENTED_RECIPE",
+                    "This recipe line is indented with spaces, so Make cannot read it",
+                    ByteRange::new(line.start, line.end),
+                    line.number,
+                    1,
+                    "Indent every recipe line with one tab; Make refuses the file otherwise.",
+                    "Make reports `missing separator` and stops, so no rule in this file runs.",
+                ));
+            }
+            continue;
+        }
+        inside_rule = is_rule_header(content);
+    }
+    diagnostics
+}
+
+fn is_rule_header(content: &str) -> bool {
+    // `:=` and `::=` are assignments, not targets, and the text before a real
+    // target never carries an `=`.
+    !content.starts_with('#')
+        && content.split_once(':').is_some_and(|(before, after)| {
+            !before.contains('=')
+                && !before.trim().is_empty()
+                && !after.trim_start_matches(':').starts_with('=')
+        })
+}
+
 fn rules<'a>(lines: &'a [SourceLine<'a>]) -> Vec<Rule<'a>> {
     static RULE: OnceLock<Regex> = OnceLock::new();
     let regex = RULE.get_or_init(|| {
@@ -437,5 +488,74 @@ mod tests {
             .find(|diagnostic| diagnostic.code == "MAKEFILE_TRAILING_AFTER_BACKSLASH")
             .expect("backslash whitespace");
         assert_eq!(&source[slash.range.start..slash.range.end], "  ");
+    }
+
+    #[test]
+    fn a_recipe_indented_with_spaces_is_reported() {
+        // Make refuses the whole file with `missing separator`, so nothing in
+        // it runs. Formatting it and reporting success said nothing about that.
+        let source = concat!(
+            "NAME = app\n",
+            "\n",
+            "all: $(NAME)\n",
+            "    $(CC) -o $(NAME)\n",
+            "\n",
+            "clean:\n",
+            "\trm -f $(NAME)\n",
+        );
+        let found = analyze_makefile(source);
+        let recipe = found
+            .iter()
+            .find(|diagnostic| diagnostic.code == "MAKEFILE_SPACE_INDENTED_RECIPE")
+            .expect("space-indented recipe");
+        assert_eq!(recipe.line, 4);
+    }
+
+    #[test]
+    fn an_assignment_with_a_colon_never_opens_a_rule() {
+        let source = concat!(
+            "NAME := app\n",
+            "export CFLAGS ::= -Wall\n",
+            "    CFLAGS += -Wextra\n",
+            "\n",
+            "all:\n",
+            "\techo done\n",
+        );
+        assert!(
+            !analyze_makefile(source)
+                .iter()
+                .any(|diagnostic| diagnostic.code == "MAKEFILE_SPACE_INDENTED_RECIPE"),
+            "{:?}",
+            analyze_makefile(source)
+        );
+    }
+
+    #[test]
+    fn indented_lines_outside_a_rule_are_left_alone() {
+        // A wrapped assignment, a conditional body, and a define block all
+        // carry leading spaces without being recipes.
+        let source = concat!(
+            "NAME = app\n",
+            "SRCS = one.c \\\n",
+            "    two.c\n",
+            "\n",
+            "ifeq ($(OS),Linux)\n",
+            "    CFLAGS += -DLINUX\n",
+            "endif\n",
+            "\n",
+            "define GREETING\n",
+            "    hello\n",
+            "endef\n",
+            "\n",
+            "all:\n",
+            "\techo done\n",
+        );
+        assert!(
+            !analyze_makefile(source)
+                .iter()
+                .any(|diagnostic| diagnostic.code == "MAKEFILE_SPACE_INDENTED_RECIPE"),
+            "{:?}",
+            analyze_makefile(source)
+        );
     }
 }
