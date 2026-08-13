@@ -727,6 +727,7 @@ fn format_control_layout(context: &ParsedContext) -> Result<Vec<Edit>, CActionEr
     push_control_keyword_spacing(context, &mut edits)?;
     push_binary_operator_spacing(context, &mut edits)?;
     push_comma_spacing(context, &mut edits)?;
+    push_subscript_spacing(context, &mut edits)?;
     push_pointer_spacing(context, &mut edits)?;
     push_inline_body_newline(context, &mut edits)?;
     push_block_edge_blank_lines(context, &mut edits)?;
@@ -928,6 +929,53 @@ fn push_pointer_spacing(
             "",
             "POINTER_SPACING",
             "bound a declarator star to the name after it",
+            Some(line_number),
+        )?);
+    }
+    Ok(())
+}
+
+/// Removes padding inside a subscript.
+///
+/// `numbers[ 2 ]` is the index written with room around it; the brackets are
+/// punctuation, so the space has nothing to separate.
+fn push_subscript_spacing(
+    context: &ParsedContext,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
+    let source = context.source();
+    let lines = context.lines();
+    let blocked = preprocessor_line_set(source, &lines);
+    let lexical = context.lexical();
+    for token in context
+        .tokens()
+        .iter()
+        .filter(|token| token.text == "[" || token.text == "]")
+    {
+        let line_number = lines.line_number_at(token.start);
+        if blocked.contains(&line_number) || lexical.is_protected(token.start) {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let relative = token.start.saturating_sub(line.start);
+        let (start, end) = if token.text == "[" {
+            whitespace_after(text, relative + 1)
+        } else {
+            whitespace_before(text, relative)
+        };
+        // A bracket at the edge of its line is a line break, not padding.
+        if start == end || end >= text.len() || start == 0 {
+            continue;
+        }
+        edits.push(Edit::new(
+            line.start + start,
+            line.start + end,
+            "",
+            "SUBSCRIPT_SPACING",
+            "removed padding inside a subscript",
             Some(line_number),
         )?);
     }
@@ -1631,12 +1679,20 @@ fn indentation_model(context: &ParsedContext) -> BTreeMap<u32, IndentInfo> {
     let mut brace_depth = 0_u32;
     let mut delimiter_depth = 0_u32;
     let mut continued = false;
+    // Braceless control headers nest, and each one indents whatever follows it
+    // by another level. Counting them separately from an expression that spills
+    // onto the next line is what makes both come out right: `if` inside `if`
+    // inside `if` is three levels deep, while `a +` over three lines is one.
+    let mut open_headers = 0_u32;
     for (line_number, line, text) in lines.iter() {
         let stripped = text.trim_start_matches([' ', '\t']);
         let closes = stripped.starts_with('}');
         let line_brace_depth = brace_depth.saturating_sub(u32::from(closes));
-        let continuation_extra =
-            u32::from(delimiter_depth == 0 && continued && !stripped.starts_with('{'));
+        let continuation_extra = if delimiter_depth == 0 && !stripped.starts_with('{') {
+            open_headers.saturating_add(u32::from(continued))
+        } else {
+            0
+        };
         let continuation = delimiter_depth > 0 || continuation_extra > 0;
         model.insert(
             line_number,
@@ -1667,10 +1723,34 @@ fn indentation_model(context: &ParsedContext) -> BTreeMap<u32, IndentInfo> {
             }
         }
         let code = stripped.trim_end();
-        continued =
-            !code.is_empty() && !matches!(code.as_bytes().last(), Some(b';' | b'{' | b'}' | b':'));
+        let statement_ends =
+            code.is_empty() || matches!(code.as_bytes().last(), Some(b';' | b'{' | b'}' | b':'));
+        if statement_ends {
+            open_headers = 0;
+        } else if is_control_header(code) {
+            open_headers = open_headers.saturating_add(1);
+        }
+        continued = !statement_ends && !is_control_header(code);
     }
     model
+}
+
+/// Whether this line opens a control structure whose body has no braces.
+///
+/// The distinction matters because such a header indents the statement after
+/// it, and unlike an unfinished expression it can stack: the body of an `if`
+/// may itself be another `if`.
+fn is_control_header(code: &str) -> bool {
+    const HEADED: [&str; 4] = ["if", "while", "for", "switch"];
+    if code == "do" || code == "else" {
+        return true;
+    }
+    let head = code.strip_prefix("else ").unwrap_or(code);
+    code.ends_with(')')
+        && HEADED.iter().any(|keyword| {
+            head.strip_prefix(keyword)
+                .is_some_and(|rest| rest.starts_with([' ', '(']))
+        })
 }
 
 #[allow(clippy::too_many_lines)]

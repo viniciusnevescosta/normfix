@@ -1335,3 +1335,70 @@ fn a_blank_line_never_sits_against_a_brace() {
         concat!("int\tfirst(void)\n", "{\n", "\treturn (1);\n", "}\n")
     );
 }
+
+#[test]
+fn nested_braceless_bodies_each_take_a_level() {
+    // The indentation model counted braces and treated everything else as one
+    // continuation, so a second braceless `if` shared the first one's level and
+    // the file kept an official TOO_FEW_TAB after a run that reported success.
+    let source = concat!(
+        "int\tf(int x)\n",
+        "{\n",
+        "    if (x)\n",
+        "        if (x > 1)\n",
+        "            return (2);\n",
+        "    return (0);\n",
+        "}\n",
+    );
+    assert_eq!(
+        apply(source, &[]),
+        concat!(
+            "int\tf(int x)\n",
+            "{\n",
+            "\tif (x)\n",
+            "\t\tif (x > 1)\n",
+            "\t\t\treturn (2);\n",
+            "\treturn (0);\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+fn an_expression_split_over_lines_stays_one_level_deep() {
+    // The counterpart to the rule above: an unfinished expression indents its
+    // continuation once, however many lines it runs for. Counting it the way a
+    // control header is counted would push each line one deeper than the last.
+    let source = concat!(
+        "int\tf(int alpha, int beta, int gamma)\n",
+        "{\n",
+        "\treturn (alpha * beta + gamma * alpha + beta * gamma +\n",
+        "\t\talpha * gamma + beta * alpha +\n",
+        "\t\tgamma * beta);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    for line in fixed.lines().filter(|line| line.starts_with('\t')) {
+        let depth = line.bytes().take_while(|byte| *byte == b'\t').count();
+        assert!(
+            depth <= 2,
+            "a continuation kept stacking: {line:?}\n{fixed}"
+        );
+    }
+}
+
+#[test]
+fn a_subscript_carries_no_padding() {
+    let source = concat!(
+        "int\tf(void)\n",
+        "{\n",
+        "\tint\tn[3];\n",
+        "\n",
+        "\tn[ 2 ] = 3;\n",
+        "\treturn (n[ 0 ]);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("n[2] = 3;"), "{fixed}");
+    assert!(fixed.contains("return (n[0]);"), "{fixed}");
+}
