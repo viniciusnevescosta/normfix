@@ -1433,6 +1433,20 @@ fn process_c(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("");
+    // A byte-order mark has to go before the header is written, not after. The
+    // hygiene pass that removes it only looks at the first byte, so a header
+    // inserted first pushed the mark into the middle of the file, where the
+    // official checker reads it as a stray lexeme on the same line as the first
+    // instruction. The run finished, reported success, and left it there.
+    if current.starts_with('\u{feff}') {
+        current.remove(0);
+        fixes.push(FixRecord {
+            rule_id: "REMOVE_BOM".to_owned(),
+            description: "removed the UTF-8 byte-order mark".to_owned(),
+            line: Some(1),
+            count: 1,
+        });
+    }
     let ensured = ensure_c_header(&current, filename, options.identity.as_ref(), clock);
     let header_inserted = ensured.inserted;
     append_header_fixes(&mut fixes, &ensured.fixes, &current);

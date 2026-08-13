@@ -79,6 +79,10 @@ const REPORTED: &[(&str, &str)] = &[
         "int\tmain(void)\n{\n\tint\ti;\n\n\ti = 0;\n\twhile(i < 3) { i++; }\n\treturn (0);\n}\n",
     ),
     (
+        "byte_order_mark.c",
+        "\u{feff}int\tmark(void)\n{\n\treturn (0);\n}\n",
+    ),
+    (
         "for_condition_brace.c",
         "int\tmain(void)\n{\n\tint\ti;\n\n\tfor(i = 0; i < 3; i++) { continue; }\n\treturn (0);\n}\n",
     ),
@@ -144,6 +148,28 @@ fn a_run_never_increases_official_diagnostics() {
             fs::read_to_string(&path).unwrap_or_default()
         );
     }
+}
+
+#[test]
+#[ignore = "requires the official Norminette 3.3.59 command"]
+fn a_byte_order_mark_never_survives_into_the_body() {
+    // The header used to be written above the mark, which moved it off byte
+    // zero and out of reach of the pass that removes it. The official checker
+    // then read it as a stray lexeme sharing a line with the first instruction:
+    // fewer errors than before, so the differential guard stayed quiet, but a
+    // worse file than the one the run reported success on.
+    let project = TempDir::new().expect("temporary project");
+    let path = project.path().join("mark.c");
+    fs::write(&path, "\u{feff}int\tmark(void)\n{\n\treturn (0);\n}\n").expect("source");
+
+    fix_in_place(&project);
+
+    let after = fs::read_to_string(&path).expect("read back");
+    assert!(
+        !after.contains('\u{feff}'),
+        "the mark survived the run:\n{after}"
+    );
+    assert_eq!(norminette_errors(&path), 0, "{after}");
 }
 
 #[test]

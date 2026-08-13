@@ -51,7 +51,7 @@ pub fn analyze_markdown(
     canonical_format: bool,
 ) -> Result<MarkdownResult, MarkdownError> {
     let arena = Arena::new();
-    let options = Options::default();
+    let options = dialect();
     let root = parse_document(&arena, source, &options);
     let mut issues = structural_issues(root);
     issues.extend(line_issues(source));
@@ -68,6 +68,24 @@ pub fn analyze_markdown(
         None
     };
     Ok(MarkdownResult { issues, formatted })
+}
+
+/// The Markdown dialect these documents are actually written in.
+///
+/// Plain `CommonMark` has no task lists, footnotes, tables, or strikethrough,
+/// so a parser without them reads `- [x] done` and `[^1]` as ordinary text —
+/// and a reprinter, faithful to that reading, escapes the brackets. The result
+/// is a README whose checkboxes and footnotes are gone, changed by a run that
+/// called itself semantics-preserving. Reading the document in the dialect it
+/// was written in is what makes the reprint safe.
+fn dialect() -> Options<'static> {
+    let mut options = Options::default();
+    options.extension.table = true;
+    options.extension.tasklist = true;
+    options.extension.footnotes = true;
+    options.extension.strikethrough = true;
+    options.extension.autolink = true;
+    options
 }
 
 fn structural_issues<'a>(root: &'a comrak::nodes::AstNode<'a>) -> Vec<MarkdownIssue> {
@@ -156,5 +174,56 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(first.ends_with('\n'));
+    }
+
+    #[test]
+    fn a_reprint_never_escapes_away_a_checkbox_or_a_footnote() {
+        // Read as plain CommonMark, `- [x]` and `[^1]` are ordinary text, and a
+        // faithful reprinter escapes their brackets. A README came back with
+        // its checkboxes rendered as literal `\[x\]` and its footnotes gone,
+        // from a run that called itself semantics-preserving.
+        let source = concat!(
+            "# Title\n",
+            "\n",
+            "- [x] done\n",
+            "- [ ] pending\n",
+            "\n",
+            "A claim with a footnote[^1] and ~~a retraction~~.\n",
+            "\n",
+            "[^1]: The body.\n",
+        );
+        let formatted = analyze_markdown(source, true)
+            .expect("analysis")
+            .formatted
+            .expect("formatted");
+
+        assert!(!formatted.contains("\\["), "{formatted}");
+        assert!(formatted.contains("- [x] done"), "{formatted}");
+        assert!(formatted.contains("- [ ] pending"), "{formatted}");
+        assert!(formatted.contains("[^1]"), "{formatted}");
+        assert!(formatted.contains("~~a retraction~~"), "{formatted}");
+    }
+
+    #[test]
+    fn a_table_survives_a_reprint_as_a_table() {
+        let source = "| Function | Returns |\n|---|---|\n| `ft_strlen` | `size_t` |\n";
+        let formatted = analyze_markdown(source, true)
+            .expect("analysis")
+            .formatted
+            .expect("formatted");
+
+        assert!(formatted.contains("| Function | Returns |"), "{formatted}");
+        assert!(
+            formatted.contains("| `ft_strlen` | `size_t` |"),
+            "{formatted}"
+        );
+        assert_eq!(
+            analyze_markdown(&formatted, true)
+                .expect("second")
+                .formatted
+                .expect("formatted"),
+            formatted,
+            "the reprint must settle"
+        );
     }
 }

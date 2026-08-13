@@ -485,15 +485,14 @@ fn format_c_source(
     let source = source_without_bom(&file.source);
     let header = ensure_c_header(source, filename, identity, clock);
     let header_inserted = header.inserted;
-    let mut header_fixes = header
-        .fixes
+    let mut header_fixes = bom_fix(&file.source)
         .into_iter()
-        .map(|fix| BrowserFix {
+        .chain(header.fixes.into_iter().map(|fix| BrowserFix {
             rule_id: fix.code.to_owned(),
             description: fix.description,
             line: Some(1),
             applicability: "safe_semantic",
-        })
+        }))
         .collect::<Vec<_>>();
     let mut header_issues = header.issues;
     match apply_c_actions(path, &header.output, &[], options) {
@@ -613,15 +612,14 @@ fn format_makefile_source(
     });
     diagnostics
         .dedup_by(|left, right| left.rule_id == right.rule_id && left.message == right.message);
-    let fixes = result
-        .fixes
+    let fixes = bom_fix(&file.source)
         .into_iter()
-        .map(|fix| BrowserFix {
+        .chain(result.fixes.into_iter().map(|fix| BrowserFix {
             rule_id: fix.code.to_owned(),
             description: fix.description,
             line: None,
             applicability: "safe_layout",
-        })
+        }))
         .collect();
     let changed = formatted != file.source;
     let diff = unified_diff(&file.path, &file.source, &formatted);
@@ -665,16 +663,15 @@ fn format_markdown_source(file: SourceFile) -> BrowserFileResult {
                 formatted: formatted.clone(),
                 changed,
                 stable: true,
-                fixes: if changed {
-                    vec![BrowserFix {
+                fixes: bom_fix(&file.source)
+                    .into_iter()
+                    .chain(changed.then(|| BrowserFix {
                         rule_id: "FORMAT_MARKDOWN".to_owned(),
                         description: "canonically formatted the Markdown document".to_owned(),
                         line: None,
                         applicability: "safe_layout",
-                    }]
-                } else {
-                    Vec::new()
-                },
+                    }))
+                    .collect(),
                 diagnostics,
                 budget: Vec::new(),
                 diff: unified_diff(&file.path, &file.source, &formatted),
@@ -687,6 +684,19 @@ fn format_markdown_source(file: SourceFile) -> BrowserFileResult {
 
 fn source_without_bom(source: &str) -> &str {
     source.strip_prefix('\u{feff}').unwrap_or(source)
+}
+
+/// The fix record for a byte-order mark this run removed.
+///
+/// Removing it silently made the browser and the terminal disagree about what
+/// had happened to the same file: both dropped the mark, only one said so.
+fn bom_fix(source: &str) -> Option<BrowserFix> {
+    source.starts_with('\u{feff}').then(|| BrowserFix {
+        rule_id: "REMOVE_BOM".to_owned(),
+        description: "removed the UTF-8 byte-order mark".to_owned(),
+        line: Some(1),
+        applicability: "safe_layout",
+    })
 }
 
 fn failed_file(file: SourceFile, error: String) -> BrowserFileResult {
