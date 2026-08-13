@@ -113,10 +113,46 @@ documented path for the full CLI already runs through WSL.
 
 ## 1.6 — correctness, security, and speed
 
-A pass over the whole project for bugs, vulnerabilities, and measured
+Shipped. A pass over the whole project for bugs, vulnerabilities, and measured
 performance changes.
 
-### 1.6.1 — say it in language people actually understand
+Most of it came from running the same files through the terminal and through the
+checkerless browser path and comparing the bytes, which found what reading the
+code had not: layout rules that only fired where the official checker had
+already pointed, and so did nothing at all in the playground; a brace written as
+`){` that was never moved; nested braceless bodies indented too shallowly; a
+README whose checkboxes and footnotes were escaped away; a byte-order mark that
+ended up in the middle of the file. A run also reads a file once to plan and
+once per accepted batch to prove, where it used to read it twice per pass and
+discard the proving read — a clean file is 45% faster than in 1.5.0, and a test
+holds that budget by counting reads rather than timing them.
+
+### 1.6.1 — the edits and the surfaces around them
+
+Splitting a declaration from its assignment: `int teste = 10;` becomes
+`int teste;` and an assignment after the declaration block. The official checker
+already calls this `DECL_ASSIGN_LINE`, and normfix has only ever reported it.
+Four shapes are excluded because the split would change the program: `const`
+and aggregate initialisers cannot be assigned later, `static` initialises once
+where an assignment would rerun, and a file-scope declaration has nowhere to put
+one.
+
+`normfix leaks` names the line an allocation came from. Valgrind already emits a
+stack trace per loss record; normfix reads only the totals and discards the
+rest. A binary built without debug information has no line to name, and that is
+said rather than left silent.
+
+The playground gains folders that nest, a `.zip` download that keeps their
+structure, a warning when an uploaded folder carries files it does not handle,
+and file creation that treats `.md`, `.h`, and `Makefile` as the first-class
+choices they are. It links the latest release so a reader can get the full tool,
+and says that the site installs and runs offline where the browser supports it.
+Diagnostics are shown inline, the way an editor underlines them.
+
+None of it at the cost of what 1.6 measured: the parse budget, the differential
+proof, and the parity between the two runs all still hold.
+
+### 1.6.2 — say it in language people actually understand
 
 A translation and documentation pass across the whole project, English
 included. Some strings do not read as the language they claim to be, some use
@@ -130,7 +166,9 @@ install it, and the one-line installer is the one that works everywhere.
 
 The documentation is rewritten alongside the strings to be clearer and easier to
 follow. The point of translating was accessibility, and a sentence a reader has
-to decode is not accessible in any language.
+to decode is not accessible in any language. Each page also publishes its own
+`llms.txt`, so an agent reading one page gets that page's instructions instead
+of having to reconstruct them from the whole site.
 
 ## 1.7 — Python projects
 
