@@ -155,20 +155,28 @@ proof, and the parity between the two runs all still hold.
 ### 1.6.2 — say it in language people actually understand
 
 A translation and documentation pass across the whole project, English
-included. Some strings do not read as the language they claim to be, some use
-terms nobody outside the project knows, and some contradict each other — three
-were found and fixed during 1.4 and 1.5 alone, each one a sentence that had been
-true one release earlier.
+included. The root problem is that the translations are literal: each sentence
+was carried across word by word, so it is grammatical and says nothing. A reader
+learning from it has to translate it back before it means anything, which is the
+opposite of why it was translated. On top of that, some strings use terms nobody
+outside the project knows, and some contradict each other — three were found and
+fixed during 1.4 and 1.5 alone, each one a sentence that had been true one
+release earlier.
 
 Calling Homebrew and Scoop "conveniences" goes too: it reads as dismissing the
 way many people will actually install the tool. They are supported ways to
 install it, and the one-line installer is the one that works everywhere.
 
-The documentation is rewritten alongside the strings to be clearer and easier to
-follow. The point of translating was accessibility, and a sentence a reader has
-to decode is not accessible in any language. Each page also publishes its own
-`llms.txt`, so an agent reading one page gets that page's instructions instead
-of having to reconstruct them from the whole site.
+So the rewrite is not a correction pass over the existing sentences. Each page is
+rewritten to teach: what the reader is trying to do, what the tool does about
+it, and what they should do next — then written again in each language as
+someone would actually say it there, rather than translated. The point of
+translating was accessibility, and a sentence a reader has to decode is not
+accessible in any language.
+
+Each page also publishes its own `llms.txt`, so an agent reading one page gets
+that page's instructions instead of having to reconstruct them from the whole
+site.
 
 ## 1.7 — Python projects
 
