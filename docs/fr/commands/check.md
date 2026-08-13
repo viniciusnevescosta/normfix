@@ -46,7 +46,7 @@ personne.
 $ normfix check --format json
 {
   "schema_version": 2,
-  "tool_version": "1.5.0",
+  "tool_version": "1.6.0",
   "mode": "check",
   "summary": {
     "files": 4,

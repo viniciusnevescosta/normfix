@@ -10,6 +10,94 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.6.0] / 2026-08-13
+
+Bug fixes across the project, found by running the same files through both
+runs and comparing the bytes rather than by reading the code.
+
+### Fixed
+
+- **Layout rules only fired where the official checker had already pointed.**
+  In the terminal that is invisible, because the checker is right there. In the
+  browser playground there is no Norminette, so those rules were inert: it
+  returned a file it called formatted with `if(`, a one-line block, space
+  indentation and an untabbed signature still in it, and reported no style
+  problem over any of them.
+
+  Every one of those answers was already derivable from the syntax tree, so the
+  official report was selecting lines rather than deciding anything. One space
+  between a control keyword and its parenthesis, over a closed set of reserved
+  words no call can enter. A block's statements and its closing brace on their
+  own lines. Indentation from the brace depth the parser reports, skipped where
+  the leading whitespace is inside a string or a comment and is content. One tab
+  between a return type and its declarator, which the identical prototype rule
+  already did without asking. One space on each side of a binary or assignment
+  operator, read from the operator the grammar names, so unary `-a` and `a++`
+  are never reached. No space before a comma and one after. A declarator star
+  bound to its name, while multiplication stays untouched. A single-statement
+  control body on its own line. No blank line pressed against a brace. No
+  padding inside a subscript.
+
+  The two runs now produce identical bytes on the reported files.
+
+- **A brace written as `){` was never moved.** The rule replaced the whitespace
+  in front of the brace and, finding none, gave up — so a run reported success
+  and left the file with an official error.
+
+- **Nested braceless bodies were indented too shallowly.** The model counted
+  braces and treated everything else as a single continuation, so `if` inside
+  `if` inside `if` put the body at the header's own depth. A control header and
+  an unfinished expression need opposite counting: `if (x)` stacks, `a +` does
+  not.
+
+- **A statement that is only a semicolon is deleted.** `return (0);;` and a
+  stray `;` after a block survived every phase. The deletion carries its own
+  proof: the parent must be a block or the file, since the same shape is how
+  `while (x);` spells an empty body, and no preprocessor directive may precede
+  it, since the `;` may then belong to one build configuration only.
+
+- **A README lost its checkboxes and footnotes.** The reprinter read plain
+  CommonMark, which has no task lists, footnotes, tables, or strikethrough, so
+  `- [x] done` and `[^1]` were ordinary text and a faithful reprint escaped
+  their brackets. Documents are now read in the dialect they are written in.
+
+- **A byte-order mark ended up in the middle of the file.** The pass that
+  removes it looks at the first byte, and the 42 header was written above it
+  first, so the mark moved to where the official checker reads it as a stray
+  lexeme sharing a line with an instruction. Three official errors became two,
+  so the differential guard stayed quiet while the file got worse.
+
+- **The playground could hang waiting for a frame that never came.** Pressing
+  Run yielded to let the "formatting" message paint, and yielded by waiting for
+  an animation frame; a hidden or backgrounded tab never fires one.
+
+### Added
+
+- **A recipe line indented with spaces is reported.** Make refuses the entire
+  file with `missing separator`, so nothing in it runs. It is reported rather
+  than corrected, because replacing the spaces with a tab decides that the line
+  was meant as a command.
+
+### Performance
+
+A run reads the file once to plan, once per accepted batch to prove the batch,
+and no more. It used to read it twice per pass and throw the proving read away,
+and each proven layout rule derived the preprocessor line set by scanning the
+whole file for itself — once per rule, and once per block for the rule that runs
+per block.
+
+```text
+clean 50 lines    963 µs -> 525 µs
+messy 40 lines   1.93 ms -> 2.11 ms
+messy 800 lines    38 ms ->  42 ms
+```
+
+A clean file is 45% faster than in 1.5.0. A messy one is within a tenth of it
+while applying five times as many fixes, because this release finds far more to
+fix. A test holds the scheduler to that budget by counting reads rather than
+timing them, so it means the same thing on any machine — the benchmark CI runs
+is informational, and nothing would have failed when this regressed.
+
 ## [1.5.0] / 2026-08-12
 
 A leak check you can actually run, with the boundary it needed drawn where a
@@ -1066,6 +1154,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.6.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.0
 [1.5.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.5.0
 [1.4.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.4.0
 [1.3.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.3.2
