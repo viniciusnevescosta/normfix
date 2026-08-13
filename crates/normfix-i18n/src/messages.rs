@@ -109,6 +109,8 @@ pub struct Messages {
     pub destructive_none: &'static str,
     /// Removal of comments rejected at exact official locations.
     pub destructive_invalid_comments: &'static str,
+    /// Removal of a local the compiler proved unused.
+    pub destructive_unused_variables: &'static str,
     /// Compaction of simple standard NULL comparisons.
     pub destructive_null_checks: &'static str,
     /// Removal of proven-missing or trivia-only Makefile source tokens.
@@ -305,6 +307,7 @@ const ENGLISH: Messages = Messages {
 
     destructive_none: "none",
     destructive_invalid_comments: "invalid comments",
+    destructive_unused_variables: "variables the compiler proved unused",
     destructive_null_checks: "NULL-check compaction",
     destructive_makefile_entries: "missing or trivia-only Makefile entries",
     destructive_orphan_prototypes: "orphan header prototypes",
@@ -424,6 +427,7 @@ const PORTUGUESE: Messages = Messages {
 
     destructive_none: "nenhum",
     destructive_invalid_comments: "comentários inválidos",
+    destructive_unused_variables: "variáveis que o compilador provou não usadas",
     destructive_null_checks: "compactação de comparações com NULL",
     destructive_makefile_entries: "entradas do Makefile ausentes ou só com trivialidades",
     destructive_orphan_prototypes: "protótipos órfãos de cabeçalho",
@@ -543,6 +547,7 @@ const SPANISH: Messages = Messages {
 
     destructive_none: "ninguno",
     destructive_invalid_comments: "comentarios inválidos",
+    destructive_unused_variables: "variables que el compilador demostró sin usar",
     destructive_null_checks: "compactación de comparaciones con NULL",
     destructive_makefile_entries: "entradas del Makefile ausentes o solo con trivialidades",
     destructive_orphan_prototypes: "prototipos huérfanos de cabecera",
@@ -662,6 +667,7 @@ const FRENCH: Messages = Messages {
 
     destructive_none: "aucun",
     destructive_invalid_comments: "commentaires invalides",
+    destructive_unused_variables: "variables que le compilateur a prouvées inutilisées",
     destructive_null_checks: "compactage des comparaisons avec NULL",
     destructive_makefile_entries: "entrées du Makefile absentes ou sans code",
     destructive_orphan_prototypes: "prototypes orphelins d'en-tête",
@@ -793,6 +799,10 @@ mod tests {
             (
                 "destructive_invalid_comments",
                 messages.destructive_invalid_comments,
+            ),
+            (
+                "destructive_unused_variables",
+                messages.destructive_unused_variables,
             ),
             ("destructive_null_checks", messages.destructive_null_checks),
             (

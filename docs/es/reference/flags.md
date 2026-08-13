@@ -425,7 +425,13 @@ ruta relativa preservada, y un destino existente nunca se sobrescribe.
 ### `--unsafe`
 
 Activa el conjunto cerrado de arriba, más la compactación de comparaciones con
-NULL y la eliminación de fuentes obsoletas del Makefile.
+NULL, la eliminación de fuentes obsoletas del Makefile y el borrado de una
+variable local que nada lee.
+
+Esa última se rechaza siempre que la declaración guarda algo que se ejecuta.
+`int n = g();` es una llamada, y un `malloc` ahí vería su fuga reparada por
+accidente, convirtiéndose en un programa que tú no escribiste. Esos casos se
+informan.
 
 ```sh
 normfix --unsafe

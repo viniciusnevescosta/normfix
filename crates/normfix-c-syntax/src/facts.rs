@@ -1,6 +1,8 @@
 //! Backend-neutral structural facts extracted during the single C parse.
 
 use normfix_core::{TextRange, TextSize};
+use std::collections::HashMap;
+
 use tree_sitter::Node;
 
 use crate::parser::ParseFailure;
@@ -35,6 +37,9 @@ pub struct SyntaxFacts {
     pub control_inline_bodies: Vec<TextRange>,
     /// Declarations whose initializer can become a separate assignment.
     pub declaration_splits: Vec<DeclarationSplitFact>,
+    /// Local declarations nothing reads, whose removal deletes nothing that
+    /// runs.
+    pub inert_declarations: Vec<UnusedLocalFact>,
     /// Direct local declarations in function bodies.
     pub local_declarations: Vec<LocalDeclarationFact>,
     /// Initial declaration blocks and the first following instruction.
@@ -153,6 +158,15 @@ pub struct LocalDeclarationFact {
     pub scope_range: TextRange,
     /// Whether the declaration belongs to the initial declaration block.
     pub initial: bool,
+}
+
+/// A local nothing reads, holding nothing that runs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnusedLocalFact {
+    /// The whole declaration.
+    pub range: TextRange,
+    /// The name it declares.
+    pub name: String,
 }
 
 /// A declaration that can be split into a declaration and an assignment.
@@ -311,11 +325,7 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
                     facts.functions.push(fact);
                 }
             }
-            "declaration" => {
-                if let Some(fact) = declaration_split_fact(source, node)? {
-                    facts.declaration_splits.push(fact);
-                }
-            }
+            "declaration" => collect_declaration_facts(source, node, &mut facts)?,
             "enumerator" => {
                 if let Some(fact) = enum_fact(source, node)? {
                     facts.enum_constants.push(fact);
@@ -407,6 +417,15 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
         let mut cursor = node.walk();
         let children = node.children(&mut cursor).collect::<Vec<_>>();
         pending.extend(children.into_iter().rev());
+    }
+    // A candidate only survives if its name appears exactly once in the whole
+    // file: once in the tree, so nothing reads it, and once in the raw text, so
+    // no macro body mentions it where the tree cannot see.
+    if !facts.inert_declarations.is_empty() {
+        let words = word_counts(source);
+        facts
+            .inert_declarations
+            .retain(|candidate| words.get(candidate.name.as_str()).copied() == Some(1));
     }
     sort_facts(&mut facts);
     Ok(facts)
@@ -635,6 +654,128 @@ fn is_stray_semicolon(node: Node<'_>) -> bool {
         && !node
             .prev_sibling()
             .is_some_and(|sibling| sibling.kind().starts_with("preproc"))
+}
+
+/// Records what a local declaration allows: splitting it, or deleting it.
+fn collect_declaration_facts(
+    source: &str,
+    node: Node<'_>,
+    facts: &mut SyntaxFacts,
+) -> Result<(), ParseFailure> {
+    if let Some(fact) = declaration_split_fact(source, node)? {
+        facts.declaration_splits.push(fact);
+    }
+    if let Some(name) = unused_local_name(source, node) {
+        // Whether anything else mentions it is settled once, after the walk.
+        facts.inert_declarations.push(UnusedLocalFact {
+            range: node_range(node.start_byte(), node.end_byte())?,
+            name,
+        });
+    }
+    Ok(())
+}
+
+/// The name of a local that nothing reads and whose removal loses nothing.
+///
+/// Two separate things have to hold. The declaration must carry nothing that
+/// runs: `int n = g();` is a call, and deleting it deletes the call, while a
+/// `malloc` there would have its leak repaired by accident into a program the
+/// reader did not write. And the name must appear exactly once in the file —
+/// its own declaration — counted both in the tree and in the raw text, because
+/// a macro body mentioning it is text the tree never shows.
+fn unused_local_name(source: &str, node: Node<'_>) -> Option<String> {
+    if !declaration_is_inert(node) {
+        return None;
+    }
+    let mut cursor = node.walk();
+    let declarators = node
+        .children(&mut cursor)
+        .filter(|child| matches!(child.kind(), "init_declarator" | "identifier"))
+        .collect::<Vec<_>>();
+    let [declarator] = declarators.as_slice() else {
+        return None;
+    };
+    let target = if declarator.kind() == "identifier" {
+        *declarator
+    } else {
+        innermost_identifier(declarator.child_by_field_name("declarator")?)?
+    };
+    let name = node_text(source, target).ok()?.to_owned();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Every word in the raw text, counted once.
+///
+/// Counting per candidate meant re-reading the whole file for each one, which
+/// on an eight-hundred-line source was quadratic and showed up as a sevenfold
+/// slowdown in the benchmark. One pass answers all of them.
+fn word_counts(source: &str) -> HashMap<&str, usize> {
+    let mut counts = HashMap::new();
+    let mut start = None;
+    for (index, character) in source.char_indices() {
+        let is_part = character.is_alphanumeric() || character == '_';
+        match (is_part, start) {
+            (true, None) => start = Some(index),
+            (false, Some(begin)) => {
+                *counts.entry(&source[begin..index]).or_insert(0) += 1;
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(begin) = start {
+        *counts.entry(&source[begin..]).or_insert(0) += 1;
+    }
+    counts
+}
+
+/// Whether deleting this declaration would delete nothing that runs.
+///
+/// A compiler saying a variable is unused is not on its own permission to
+/// delete it: `-Wunused-variable` fires just as readily for `int n = g();` as
+/// for `int n;`, and the first one carries a call. What makes the removal safe
+/// is the initializer being something that cannot do anything — a literal, or
+/// reading another variable — or there being no initializer at all. Anything
+/// else, including a `malloc` whose removal would silently repair a leak into
+/// a different program, is left alone.
+fn declaration_is_inert(node: Node<'_>) -> bool {
+    if !has_ancestor_kind(node, "function_definition") {
+        return false;
+    }
+    let mut cursor = node.walk();
+    let children = node.children(&mut cursor).collect::<Vec<_>>();
+    if children
+        .iter()
+        .any(|child| matches!(child.kind(), "storage_class_specifier" | "ERROR"))
+    {
+        return false;
+    }
+    children.iter().all(|child| match child.kind() {
+        "init_declarator" => child
+            .child_by_field_name("value")
+            .is_some_and(is_inert_expression),
+        _ => true,
+    })
+}
+
+/// Whether evaluating this expression can be skipped without losing anything.
+fn is_inert_expression(node: Node<'_>) -> bool {
+    match node.kind() {
+        "number_literal"
+        | "char_literal"
+        | "true"
+        | "false"
+        | "null"
+        | "identifier"
+        | "string_literal"
+        | "concatenated_string"
+        | "sizeof_expression" => true,
+        "parenthesized_expression" | "unary_expression" | "cast_expression" => {
+            direct_named_children(node).all(is_inert_expression)
+        }
+        "binary_expression" => direct_named_children(node).all(is_inert_expression),
+        _ => false,
+    }
 }
 
 /// Reads a declaration that can be split from its initializer.

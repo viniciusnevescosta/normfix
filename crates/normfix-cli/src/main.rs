@@ -966,6 +966,7 @@ fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions
     options.timeout = cli.timeout;
     options.cache = !cli.no_cache;
     options.remove_invalid_comments = cli.remove_invalid_comments || cli.unsafe_mode;
+    options.remove_unused_variables = cli.unsafe_mode;
     options.compact_null_checks = cli.unsafe_mode;
     options.remove_missing_makefile_sources = input.destructive.remove_missing_makefile_sources;
     options.remove_orphan_prototypes = input.destructive.remove_orphan_prototypes;
@@ -1159,6 +1160,9 @@ fn destructive_description(options: &FixOptions, messages: &normfix_i18n::Messag
     if options.remove_invalid_comments {
         destructive.push(messages.destructive_invalid_comments);
     }
+    if options.remove_unused_variables {
+        destructive.push(messages.destructive_unused_variables);
+    }
     if options.compact_null_checks {
         destructive.push(messages.destructive_null_checks);
     }
@@ -1269,6 +1273,7 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
         return ExitCode::from(2);
     }
     if options.remove_invalid_comments
+        || options.remove_unused_variables
         || options.compact_null_checks
         || options.remove_missing_makefile_sources
         || options.remove_unused_static

@@ -167,6 +167,9 @@ pub struct FixOptions {
     pub cache: bool,
     /// Explicitly remove only comments rejected at exact official locations.
     pub remove_invalid_comments: bool,
+    /// Explicitly remove locals the compiler proved unused, when the
+    /// declaration carries nothing that runs.
+    pub remove_unused_variables: bool,
     /// Compact simple standard NULL comparisons under explicit unsafe mode.
     pub compact_null_checks: bool,
     /// Reorder contiguous include blocks: system headers before project
@@ -218,6 +221,7 @@ impl FixOptions {
             timeout: Duration::from_secs(5),
             cache: true,
             remove_invalid_comments: false,
+            remove_unused_variables: false,
             compact_null_checks: false,
             reorder_includes: true,
             remove_missing_makefile_sources: false,
@@ -1476,6 +1480,7 @@ fn process_c(
         max_columns: options.max_columns,
         max_passes: options.max_passes,
         remove_invalid_comments: options.remove_invalid_comments,
+        remove_unused_variables: options.remove_unused_variables,
         format_proven_declarations: true,
         compact_null_checks: options.compact_null_checks,
         reorder_includes: options.reorder_includes,

@@ -56,6 +56,7 @@ pub(crate) enum Phase {
     Preprocessor,
     IncludeOrder,
     InvalidComments,
+    UnusedVariables,
     EmptyStatements,
     CompactContinuations,
     BlankLines,
@@ -82,6 +83,9 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
     }
     if options.remove_invalid_comments {
         result.push(Phase::InvalidComments);
+    }
+    if options.remove_unused_variables {
+        result.push(Phase::UnusedVariables);
     }
     result.extend([
         Phase::EmptyStatements,
@@ -132,6 +136,13 @@ impl Phase {
             Self::EmptyStatements => Ok(ActionBatch::semantic(
                 "REMOVE_EMPTY_STATEMENT",
                 remove_empty_statements(context)?,
+            )),
+            // Proven by the fact, permitted by the option: the applicability
+            // says how it is known to be safe, and `--unsafe` says whether the
+            // reader asked for it at all.
+            Self::UnusedVariables => Ok(ActionBatch::semantic(
+                "REMOVE_UNUSED_VARIABLE",
+                remove_unused_variables(context)?,
             )),
             Self::CompactContinuations => Ok(ActionBatch::layout(
                 "COMPACT_CONTINUATION",
@@ -1213,6 +1224,46 @@ fn remove_empty_statements(context: &ParsedContext) -> Result<Vec<Edit>, CAction
             "REMOVE_EMPTY_STATEMENT",
             "removed a statement that was only a semicolon",
             Some(lines.line_number_at(end.saturating_sub(1))),
+        )?);
+    }
+    Ok(edits)
+}
+
+/// Deletes a local nothing reads, when nothing in it runs.
+///
+/// The proof is the fact's, and it is deliberately not the compiler's. The
+/// compiler runs after this stage precisely so its findings never authorize an
+/// edit, and `-Wunused-variable` would be the wrong permission anyway: it fires
+/// for `int n = g();` exactly as it does for `int n;`, and deleting the first
+/// deletes a call. A declaration holding a `malloc` is the sharpest case —
+/// removing it would repair a leak by accident, into a program the reader did
+/// not write. Proving it here instead means the browser reaches it too.
+fn remove_unused_variables(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for declaration in &context.facts().inert_declarations {
+        let start = declaration.range.start().get() as usize;
+        let end = declaration.range.end().get() as usize;
+        let line_number = lines.line_number_at(start);
+        if lines.line_number_at(end) != line_number {
+            continue;
+        }
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        // Only when the declaration is the whole line. Anything sharing it is
+        // something this rule was never shown.
+        let text = lines.text(line);
+        if text.trim() != context.source().get(start..end).unwrap_or_default().trim() {
+            continue;
+        }
+        edits.push(Edit::new(
+            line.start,
+            line.end,
+            "",
+            "REMOVE_UNUSED_VARIABLE",
+            "removed a variable the compiler proved unused",
+            Some(line_number),
         )?);
     }
     Ok(edits)

@@ -412,8 +412,12 @@ path preserved, and an existing destination is never overwritten.
 
 ### `--unsafe`
 
-Enable the closed set above, plus NULL-check compaction and stale Makefile
-source removal.
+Enable the closed set above, plus NULL-check compaction, stale Makefile
+source removal, and deleting a local variable nothing reads.
+
+That last one is refused whenever the declaration holds something that runs.
+`int n = g();` is a call, and a `malloc` there would have its leak repaired by
+accident — into a program you did not write. Those are reported instead.
 
 ```sh
 normfix --unsafe

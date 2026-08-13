@@ -1523,3 +1523,92 @@ fn a_declaration_that_cannot_be_assigned_later_is_left_alone() {
         assert!(fixed.contains(kept), "{kept:?} was rewritten:\n{fixed}");
     }
 }
+
+#[test]
+fn a_local_nothing_reads_is_removed_when_it_holds_nothing_that_runs() {
+    let source = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\tnever_touched;\n",
+        "\tint\tfrom_literal = 10;\n",
+        "\tint\tused;\n",
+        "\n",
+        "\tused = n;\n",
+        "\treturn (used);\n",
+        "}\n",
+    );
+    let options = CActionOptions {
+        remove_unused_variables: true,
+        ..CActionOptions::default()
+    };
+    let fixed = apply_c_actions(Utf8Path::new("unused.c"), source, &[], &options)
+        .expect("the fixture must stay safe")
+        .source;
+    assert!(!fixed.contains("never_touched"), "{fixed}");
+    assert!(!fixed.contains("from_literal"), "{fixed}");
+    assert!(fixed.contains("used = n;"), "{fixed}");
+}
+
+#[test]
+fn a_declaration_holding_a_call_keeps_the_call_even_when_nothing_reads_it() {
+    // This is the case a compiler's `-Wunused-variable` would wave through:
+    // it fires for `int n = g();` exactly as for `int n;`, and deleting the
+    // first deletes the call. A `malloc` there is sharper still — removing it
+    // would repair a leak by accident.
+    let source = concat!(
+        "int\tg(void);\n",
+        "\n",
+        "int\tf(void)\n",
+        "{\n",
+        "\tint\tfrom_call = g();\n",
+        "\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+    let options = CActionOptions {
+        remove_unused_variables: true,
+        ..CActionOptions::default()
+    };
+    let fixed = apply_c_actions(Utf8Path::new("call.c"), source, &[], &options)
+        .expect("the fixture must stay safe")
+        .source;
+    assert!(fixed.contains("g();"), "the call was deleted:\n{fixed}");
+}
+
+#[test]
+fn a_name_a_macro_mentions_is_never_removed() {
+    // The tree does not show a macro body, so a local the tree sees once may
+    // still be reached by text the tree never parsed.
+    let source = concat!(
+        "#define CLEAR() (tracked = 0)\n",
+        "\n",
+        "int\tf(void)\n",
+        "{\n",
+        "\tint\ttracked;\n",
+        "\n",
+        "\tCLEAR();\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+    let options = CActionOptions {
+        remove_unused_variables: true,
+        ..CActionOptions::default()
+    };
+    let fixed = apply_c_actions(Utf8Path::new("macro.c"), source, &[], &options)
+        .expect("the fixture must stay safe")
+        .source;
+    assert!(fixed.contains("int\ttracked;"), "{fixed}");
+}
+
+#[test]
+fn removing_an_unused_local_is_never_done_without_being_asked() {
+    let source = concat!(
+        "int\tf(void)\n",
+        "{\n",
+        "\tint\tnever_touched;\n",
+        "\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+    assert!(apply(source, &[]).contains("never_touched"));
+}

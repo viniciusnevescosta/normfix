@@ -78,6 +78,9 @@ pub struct CActionOptions {
     pub max_passes: usize,
     /// Explicit permission to delete comments rejected by Norminette.
     pub remove_invalid_comments: bool,
+    /// Explicit permission to delete a local the compiler proved unused, when
+    /// the declaration carries nothing that runs.
+    pub remove_unused_variables: bool,
     /// Format unambiguously simple prototype and variable declaration groups
     /// even when an external checker did not report their location.
     pub format_proven_declarations: bool,
@@ -97,6 +100,7 @@ impl Default for CActionOptions {
             max_columns: 80,
             max_passes: 100,
             remove_invalid_comments: false,
+            remove_unused_variables: false,
             format_proven_declarations: true,
             compact_null_checks: false,
             reorder_includes: true,
