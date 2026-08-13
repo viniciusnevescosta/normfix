@@ -204,6 +204,9 @@ pub fn apply_c_actions(
 
     let mut seen = HashSet::new();
     seen.insert(source_digest(&current));
+    // The parse of the bytes the next pass will start from, when the pass that
+    // produced them already proved it safe.
+    let mut carried: Option<ParsedContext> = None;
     let mut completed_one_shot = BTreeSet::new();
     let ordered_phases = phases(options);
     let mut stable = false;
@@ -214,8 +217,19 @@ pub fn apply_c_actions(
         // is the only thing that rewrites it, and that breaks out immediately.
         // Parsing per phase therefore reparsed the same bytes once for every
         // phase, which for an already-correct file was the whole cost.
-        let before = ParsedContext::parse(&mut parser, &current)?;
-        before.require_safe()?;
+        //
+        // Validating an accepted batch already parses the bytes this pass is
+        // about to parse again, and that parse used to be dropped on the floor.
+        // Carrying it forward halves the parses a run does, and the more a file
+        // needs fixing the more passes it takes, so the saving grows exactly
+        // where the cost is.
+        let before = if let Some(context) = carried.take() {
+            context
+        } else {
+            let context = ParsedContext::parse(&mut parser, &current)?;
+            context.require_safe()?;
+            context
+        };
         for phase in &ordered_phases {
             if phase.one_shot() && completed_one_shot.contains(phase) {
                 continue;
@@ -239,13 +253,14 @@ pub fn apply_c_actions(
                 }
                 continue;
             }
-            validate_candidate(&mut parser, &before, &candidate, &batch)?;
+            let after = validate_candidate(&mut parser, &before, &candidate, &batch)?;
             if !seen.insert(source_digest(&candidate)) {
                 return Err(CActionError::Cycle);
             }
             active_diagnostics =
                 remap_diagnostics(&current, &candidate, &active_diagnostics, &accepted_edits);
             current = candidate;
+            carried = Some(after);
             fixes.extend(accepted_edits.into_iter().map(|edit| Fix {
                 rule_id: edit.rule_id,
                 description: edit.description,
@@ -259,6 +274,8 @@ pub fn apply_c_actions(
             break;
         }
         if !accepted {
+            // Nothing changed, so this parse still describes the final bytes.
+            carried = Some(before);
             stable = true;
             break;
         }
@@ -280,7 +297,11 @@ pub fn apply_c_actions(
         stable = true;
     }
 
-    let final_context = ParsedContext::parse(&mut parser, &current)?;
+    let final_context = if let Some(context) = carried {
+        context
+    } else {
+        ParsedContext::parse(&mut parser, &current)?
+    };
     final_context.require_safe()?;
     let diagnostics = final_diagnostics(
         path,
@@ -400,12 +421,16 @@ fn floor_char_boundary(source: &str, mut offset: usize) -> usize {
     offset
 }
 
+/// Proves a candidate and returns the parse that proved it.
+///
+/// The context is the caller's to keep: it is the parse of the exact bytes the
+/// next pass works on, so returning it saves that pass from parsing them again.
 fn validate_candidate(
     parser: &mut CParser,
     before: &ParsedContext,
     candidate: &str,
     batch: &ActionBatch,
-) -> Result<(), CActionError> {
+) -> Result<ParsedContext, CActionError> {
     let after = ParsedContext::parse(parser, candidate)?;
     if after.require_safe().is_err() {
         return Err(CActionError::CandidateSyntax {
@@ -429,7 +454,7 @@ fn validate_candidate(
             rule_id: batch.rule_id.to_owned(),
         });
     }
-    Ok(())
+    Ok(after)
 }
 
 #[cfg(test)]

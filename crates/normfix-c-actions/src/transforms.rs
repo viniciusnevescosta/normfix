@@ -699,6 +699,11 @@ fn fix_braces_and_controls(
 
 fn format_control_layout(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
     let lines = context.lines();
+    // Every rule below skips preprocessor lines, and each used to derive that
+    // set for itself by scanning the whole file — once per rule, and once per
+    // block for the one that runs per block. It is the same answer for all of
+    // them, and on a large file deriving it repeatedly dominated this phase.
+    let blocked = preprocessor_line_set(context.source(), &lines);
     let mut edits = Vec::new();
     for token in context.tokens().iter().filter(|token| token.text == "else") {
         let line_number = lines.line_number_at(token.start);
@@ -724,15 +729,15 @@ fn format_control_layout(context: &ParsedContext) -> Result<Vec<Edit>, CActionEr
         let brace = body.start().get() as usize;
         push_control_brace_newline(context, brace, &mut edits)?;
     }
-    push_control_keyword_spacing(context, &mut edits)?;
-    push_binary_operator_spacing(context, &mut edits)?;
-    push_comma_spacing(context, &mut edits)?;
-    push_subscript_spacing(context, &mut edits)?;
-    push_pointer_spacing(context, &mut edits)?;
-    push_inline_body_newline(context, &mut edits)?;
+    push_control_keyword_spacing(context, &blocked, &mut edits)?;
+    push_binary_operator_spacing(context, &blocked, &mut edits)?;
+    push_comma_spacing(context, &blocked, &mut edits)?;
+    push_subscript_spacing(context, &blocked, &mut edits)?;
+    push_pointer_spacing(context, &blocked, &mut edits)?;
+    push_inline_body_newline(context, &blocked, &mut edits)?;
     push_block_edge_blank_lines(context, &mut edits)?;
     for body in &context.facts().compound_bodies {
-        push_block_line_breaks(context, *body, &mut edits)?;
+        push_block_line_breaks(context, *body, &blocked, &mut edits)?;
     }
     Ok(edits)
 }
@@ -745,12 +750,11 @@ fn format_control_layout(context: &ParsedContext) -> Result<Vec<Edit>, CActionEr
 /// the browser playground reaches it too.
 fn push_control_keyword_spacing(
     context: &ParsedContext,
+    blocked: &BTreeSet<u32>,
     edits: &mut Vec<Edit>,
 ) -> Result<(), CActionError> {
     const KEYWORDS: [&str; 5] = ["if", "while", "for", "switch", "return"];
-    let source = context.source();
     let lines = context.lines();
-    let blocked = preprocessor_line_set(source, &lines);
     for token in context
         .tokens()
         .iter()
@@ -818,11 +822,10 @@ fn push_control_brace_newline(
 /// scanning the text for the parenthesis that closed the condition.
 fn push_inline_body_newline(
     context: &ParsedContext,
+    blocked: &BTreeSet<u32>,
     edits: &mut Vec<Edit>,
 ) -> Result<(), CActionError> {
-    let source = context.source();
     let lines = context.lines();
-    let blocked = preprocessor_line_set(source, &lines);
     for body in &context.facts().control_inline_bodies {
         let start = body.start().get() as usize;
         let line_number = lines.line_number_at(start);
@@ -904,11 +907,10 @@ fn push_block_edge_blank_lines(
 /// binary expression and is never reached from here.
 fn push_pointer_spacing(
     context: &ParsedContext,
+    blocked: &BTreeSet<u32>,
     edits: &mut Vec<Edit>,
 ) -> Result<(), CActionError> {
-    let source = context.source();
     let lines = context.lines();
-    let blocked = preprocessor_line_set(source, &lines);
     for star in &context.facts().pointer_stars {
         let end = star.end().get() as usize;
         let line_number = lines.line_number_at(end);
@@ -941,11 +943,10 @@ fn push_pointer_spacing(
 /// punctuation, so the space has nothing to separate.
 fn push_subscript_spacing(
     context: &ParsedContext,
+    blocked: &BTreeSet<u32>,
     edits: &mut Vec<Edit>,
 ) -> Result<(), CActionError> {
-    let source = context.source();
     let lines = context.lines();
-    let blocked = preprocessor_line_set(source, &lines);
     let lexical = context.lexical();
     for token in context
         .tokens()
@@ -987,10 +988,12 @@ fn push_subscript_spacing(
 /// A comma separates, so it never has an operand of its own to disambiguate:
 /// the token alone settles it, as long as it is real punctuation rather than a
 /// byte inside a string or a comment.
-fn push_comma_spacing(context: &ParsedContext, edits: &mut Vec<Edit>) -> Result<(), CActionError> {
-    let source = context.source();
+fn push_comma_spacing(
+    context: &ParsedContext,
+    blocked: &BTreeSet<u32>,
+    edits: &mut Vec<Edit>,
+) -> Result<(), CActionError> {
     let lines = context.lines();
-    let blocked = preprocessor_line_set(source, &lines);
     let lexical = context.lexical();
     for token in context.tokens().iter().filter(|token| token.text == ",") {
         let line_number = lines.line_number_at(token.start);
@@ -1037,11 +1040,10 @@ fn push_comma_spacing(context: &ParsedContext, edits: &mut Vec<Edit>) -> Result<
 /// which the checker accepts and a reader reads as a unary minus.
 fn push_binary_operator_spacing(
     context: &ParsedContext,
+    blocked: &BTreeSet<u32>,
     edits: &mut Vec<Edit>,
 ) -> Result<(), CActionError> {
-    let source = context.source();
     let lines = context.lines();
-    let blocked = preprocessor_line_set(source, &lines);
     for operator in &context.facts().binary_operators {
         let start = operator.start().get() as usize;
         let end = operator.end().get() as usize;
@@ -1095,11 +1097,10 @@ fn push_binary_operator_spacing(
 fn push_block_line_breaks(
     context: &ParsedContext,
     body: TextRange,
+    blocked: &BTreeSet<u32>,
     edits: &mut Vec<Edit>,
 ) -> Result<(), CActionError> {
-    let source = context.source();
     let lines = context.lines();
-    let blocked = preprocessor_line_set(source, &lines);
     let open = body.start().get() as usize;
     let close = (body.end().get() as usize).saturating_sub(1);
     let open_line_number = lines.line_number_at(open);
