@@ -691,7 +691,21 @@ async function runFormatter(): Promise<void> {
   elements.run.disabled = true;
   setRuntimeMessage("loading", "formatting");
   try {
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    // Yield once so the "formatting" message paints before the synchronous
+    // WebAssembly call takes the thread. An animation frame alone would be a
+    // trap: a hidden or backgrounded tab never fires one, so a reader who
+    // pressed Run and switched away came back to a disabled button and a
+    // message that had been waiting the whole time. The timer always fires.
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const settle = (): void => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      requestAnimationFrame(settle);
+      window.setTimeout(settle, 50);
+    });
     validateProjectSources(state.files);
     const request = {
       files: [...state.files.entries()].map(([path, source]) => ({ path, source })),
