@@ -1503,9 +1503,8 @@ fn a_pointer_declaration_assigns_the_name_not_the_star() {
 fn a_declaration_that_cannot_be_assigned_later_is_left_alone() {
     // Each of these would be a different program after the split: a `const`
     // cannot be assigned at all, an aggregate initializer is initialization
-    // syntax rather than an expression, a `static` is initialized once where an
-    // assignment would run on every call, and one range cannot tell two
-    // initializers apart.
+    // syntax rather than an expression, and a `static` is initialized once
+    // where an assignment would run on every call.
     let source = concat!(
         "int\tf(void)\n",
         "{\n",
@@ -1524,10 +1523,14 @@ fn a_declaration_that_cannot_be_assigned_later_is_left_alone() {
         "const int\ta = 1;",
         "static int\tb = 2;",
         "c[] = {1, 2};",
-        "d = 1, e = 2;",
     ] {
         assert!(fixed.contains(kept), "{kept:?} was rewritten:\n{fixed}");
     }
+    // Two initializers in one declaration are no longer beyond reach: each
+    // name takes its own line first, and each value is then separated from a
+    // declaration that holds exactly one.
+    assert!(fixed.contains("\tint\td;\n"), "{fixed}");
+    assert!(fixed.contains("\td = 1;\n\te = 2;\n"), "{fixed}");
 }
 
 #[test]
@@ -1647,6 +1650,33 @@ fn a_control_body_starting_with_a_star_does_not_deadlock_two_rules() {
         "}\n",
     );
     assert!(apply(wrapped, &[]).contains("return (sum(first, second));"));
+}
+
+#[test]
+fn each_declared_name_gets_its_own_line_and_keeps_its_star() {
+    // `int *p, q;` is one pointer and one int, which is the reason the Norm
+    // asks for one per line. Copying each declarator as written keeps that
+    // true; rebuilding a type from the specifiers would not.
+    let source = concat!(
+        "int\tshapes(int n)\n",
+        "{\n",
+        "\tint\ta, b;\n",
+        "\tint\t*p, q;\n",
+        "\n",
+        "\ta = n;\n",
+        "\tb = 2;\n",
+        "\tp = &a;\n",
+        "\tq = *p;\n",
+        "\treturn (a + b + q);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\tint\ta;\n"), "{fixed}");
+    assert!(fixed.contains("\tint\tb;\n"), "{fixed}");
+    assert!(fixed.contains("\tint\t*p;\n"), "{fixed}");
+    assert!(fixed.contains("\tint\tq;\n"), "{fixed}");
+    assert!(!fixed.contains(", "), "{fixed}");
+    assert_eq!(apply(&fixed, &[]), fixed);
 }
 
 #[test]

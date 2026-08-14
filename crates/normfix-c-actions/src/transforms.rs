@@ -66,6 +66,7 @@ pub(crate) enum Phase {
     RedundantElse,
     ForLoops,
     Ternaries,
+    SharedDeclarations,
     SplitDeclarations,
     FunctionLayout,
     Indentation,
@@ -100,6 +101,7 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
         Phase::RedundantElse,
         Phase::ForLoops,
         Phase::Ternaries,
+        Phase::SharedDeclarations,
         Phase::SplitDeclarations,
         Phase::FunctionLayout,
         Phase::Indentation,
@@ -185,6 +187,10 @@ impl Phase {
             Self::Ternaries => Ok(ActionBatch::semantic(
                 "REPLACE_TERNARY",
                 rewrite_ternaries(context)?,
+            )),
+            Self::SharedDeclarations => Ok(ActionBatch::semantic(
+                "ONE_DECLARATION_PER_LINE",
+                split_shared_declarations(context)?,
             )),
             Self::SplitDeclarations => Ok(ActionBatch::semantic(
                 "SPLIT_DECLARATION_ASSIGNMENT",
@@ -1368,6 +1374,57 @@ fn split_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError
 
 /// The Norm's limit on a function body, which a rewrite that adds lines spends.
 const FUNCTION_LINES: u32 = 25;
+
+/// Gives each variable of a shared declaration its own line.
+///
+/// `int *a, b;` declares one pointer and one int, which is the reason the Norm
+/// asks for one per line: written out, nobody has to remember that the star
+/// binds to the name. Each declarator is copied exactly as written, so the
+/// pointer stays a pointer and an array keeps its bound, and the specifiers in
+/// front are repeated verbatim rather than rebuilt from a type this would have
+/// to guess at.
+fn split_shared_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    use std::fmt::Write as _;
+
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for declaration in &context.facts().shared_declarations {
+        let start = declaration.range.start().get() as usize;
+        let end = declaration.range.end().get() as usize;
+        let line_number = lines.line_number_at(start);
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        // Anything sharing the line, before or after, means the replacement
+        // would land beside text it knows nothing about.
+        let text = lines.text(line);
+        let relative = start.saturating_sub(line.start);
+        if !text[..relative].trim().is_empty() || !text[end.saturating_sub(line.start)..].trim().is_empty()
+        {
+            continue;
+        }
+        let indent = &text[..leading_whitespace(text)];
+        let mut replacement = String::new();
+        for (index, declarator) in declaration.declarators.iter().enumerate() {
+            if index > 0 {
+                let _ = write!(replacement, "\n{indent}");
+            }
+            // A tab, never a space: the Norm puts one between a type and the
+            // name it declares, and the rule that lines the names up expects
+            // to find one there.
+            let _ = write!(replacement, "{}\t{declarator};", declaration.specifiers);
+        }
+        edits.push(Edit::new(
+            start,
+            end,
+            replacement,
+            "ONE_DECLARATION_PER_LINE",
+            "gave each declared name its own line",
+            Some(line_number),
+        )?);
+    }
+    Ok(edits)
+}
 
 /// Gives a second instruction sharing a line its own line.
 ///

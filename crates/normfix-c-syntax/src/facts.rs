@@ -66,6 +66,19 @@ pub struct SyntaxFacts {
     pub for_loops: Vec<ForLoopFact>,
     /// Gaps where a second instruction begins on a line already holding one.
     pub crowded_statements: Vec<TextRange>,
+    /// Declarations naming more than one variable at once.
+    pub shared_declarations: Vec<SharedDeclarationFact>,
+}
+
+/// A declaration that names several variables, which the Norm splits.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SharedDeclarationFact {
+    /// The whole declaration, replaced as a unit.
+    pub range: TextRange,
+    /// The specifiers every declarator shares, such as `static int`.
+    pub specifiers: String,
+    /// Each declarator exactly as written, stars and all.
+    pub declarators: Vec<String>,
 }
 
 /// A `for` loop the Norm forbids, and the three pieces a `while` needs.
@@ -397,7 +410,12 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
                     facts.functions.push(fact);
                 }
             }
-            "declaration" => collect_declaration_facts(source, node, &mut facts)?,
+            "declaration" => {
+                collect_declaration_facts(source, node, &mut facts)?;
+                if let Some(fact) = shared_declaration_fact(source, node)? {
+                    facts.shared_declarations.push(fact);
+                }
+            }
             "enumerator" => {
                 if let Some(fact) = enum_fact(source, node)? {
                     facts.enum_constants.push(fact);
@@ -1503,6 +1521,75 @@ fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, Par
         alternative_range: node_range(alternative.start_byte(), alternative.end_byte())?,
         condition_parenthesized: condition.kind() == "parenthesized_expression",
         function_body_range: node_range(body.start_byte(), body.end_byte())?,
+    }))
+}
+
+/// A declaration naming several variables at once.
+///
+/// `int *a, b;` declares one pointer and one int, and that is the reason the
+/// Norm asks for one per line: written out, nobody has to remember that the
+/// star binds to the name and not to the type. So the split copies the
+/// specifiers and keeps each declarator exactly as written, stars included,
+/// rather than rebuilding a type it would have to guess at.
+///
+/// The declaration must be a plain one. A `typedef`, a struct or union body, or
+/// anything the parser flagged is left alone, since the shared part is then not
+/// a simple prefix that can be repeated.
+fn shared_declaration_fact(
+    source: &str,
+    node: Node<'_>,
+) -> Result<Option<SharedDeclarationFact>, ParseFailure> {
+    // Almost every declaration names one thing, so the count and the
+    // disqualifying kinds are settled in one pass that allocates nothing.
+    let is_declarator = |kind: &str| {
+        matches!(
+            kind,
+            "init_declarator"
+                | "identifier"
+                | "pointer_declarator"
+                | "array_declarator"
+                | "function_declarator"
+        )
+    };
+    let mut cursor = node.walk();
+    let mut count = 0_usize;
+    let mut refused = false;
+    for child in node.children(&mut cursor) {
+        if is_declarator(child.kind()) {
+            count += 1;
+        } else if matches!(
+            child.kind(),
+            "ERROR" | "struct_specifier" | "union_specifier" | "enum_specifier"
+        ) {
+            refused = true;
+        }
+    }
+    if count < 2 || refused || contains_kind(node, "comment") {
+        return Ok(None);
+    }
+    let mut cursor = node.walk();
+    let declarators = node
+        .children(&mut cursor)
+        .filter(|child| is_declarator(child.kind()))
+        .collect::<Vec<_>>();
+    let Some(first) = declarators.first() else {
+        return Ok(None);
+    };
+    let specifiers = source
+        .get(node.start_byte()..first.start_byte())
+        .unwrap_or_default()
+        .trim_end()
+        .to_owned();
+    if specifiers.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(SharedDeclarationFact {
+        range: node_range(node.start_byte(), node.end_byte())?,
+        specifiers,
+        declarators: declarators
+            .iter()
+            .map(|declarator| node_text(source, *declarator).map(str::to_owned))
+            .collect::<Result<Vec<_>, _>>()?,
     }))
 }
 
