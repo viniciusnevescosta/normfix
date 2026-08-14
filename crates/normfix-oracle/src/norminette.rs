@@ -58,6 +58,15 @@ pub struct NorminetteFingerprint {
 /// One official Norminette diagnostic.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct NorminetteDiagnostic {
+    /// Whether the checker called this an error or only a notice.
+    ///
+    /// A notice is the checker remarking on something it accepts —
+    /// `GLOBAL_VAR_DETECTED` asks a reader to confirm a global was deliberate,
+    /// and the file still passes. Counting one as an error would make a clean
+    /// file look rejected; refusing to read one made the file unprocessable,
+    /// which is what this used to do.
+    #[serde(default)]
+    pub advisory: bool,
     /// One-based physical line.
     pub line: u32,
     /// One-based display column reported by Norminette.
@@ -81,7 +90,12 @@ impl NorminetteReport {
     /// Returns whether the official oracle accepted the source.
     #[must_use]
     pub fn is_clean(&self) -> bool {
-        self.diagnostics.is_empty()
+        // A notice is the checker remarking on something it accepted. The file
+        // passed, so treating one as a rejection would report a clean file as
+        // failing.
+        self.diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.advisory)
     }
 }
 
@@ -410,6 +424,20 @@ fn parse_lint_output(
             diagnostics,
         });
     }
+    // A file whose only remark is a notice prints `OK!` and still exits 1. The
+    // checker is saying it passed and that something is worth a second look,
+    // which is neither a clean exit nor a rejection, and reading it as
+    // inconsistent made every file carrying a global unprocessable.
+    if saw_ok
+        && !saw_error
+        && diagnostics.iter().all(|diagnostic| diagnostic.advisory)
+        && matches!(output.exit_code, Some(0 | 1))
+    {
+        return Ok(NorminetteReport {
+            file_name: file_name.to_owned(),
+            diagnostics,
+        });
+    }
     if saw_error && !saw_ok && !diagnostics.is_empty() && matches!(output.exit_code, Some(1)) {
         return Ok(NorminetteReport {
             file_name: file_name.to_owned(),
@@ -426,7 +454,10 @@ fn parse_lint_output(
 }
 
 fn parse_diagnostic(line: &str) -> Option<NorminetteDiagnostic> {
-    let rest = line.strip_prefix("Error: ")?;
+    let (advisory, rest) = line.strip_prefix("Error: ").map_or_else(
+        || line.strip_prefix("Notice: ").map(|rest| (true, rest)),
+        |rest| Some((false, rest)),
+    )?;
     let marker = rest.find("(line:")?;
     let rule_id = rest.get(..marker)?.trim();
     if rule_id.is_empty()
@@ -440,6 +471,7 @@ fn parse_diagnostic(line: &str) -> Option<NorminetteDiagnostic> {
     let (line_text, location) = location.split_once(", col:")?;
     let (column_text, message) = location.split_once("):")?;
     Some(NorminetteDiagnostic {
+        advisory,
         line: line_text.trim().parse().ok()?,
         column: column_text.trim().parse().ok()?,
         rule_id: rule_id.to_owned(),
@@ -461,6 +493,42 @@ fn tool_failure(output: &BoundedOutput) -> NorminetteError {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_notice_is_read_as_a_remark_rather_than_refused() {
+        // `GLOBAL_VAR_DETECTED` is the checker accepting a file and asking a
+        // reader to confirm a global was deliberate. Refusing to parse the line
+        // made every file carrying one unprocessable, and counting it as an
+        // error would report a passing file as rejected.
+        let output = crate::process::BoundedOutput {
+            stdout: "n.c: OK!\nNotice: GLOBAL_VAR_DETECTED  (line:   1, col:   1):\tGlobal variable present in file.\n".to_owned(),
+            stderr: String::new(),
+            exit_code: Some(1),
+        };
+        let report = super::parse_lint_output("n.c", &output).expect("a notice must be readable");
+
+        assert_eq!(report.diagnostics.len(), 1);
+        assert!(report.diagnostics[0].advisory);
+        assert_eq!(report.diagnostics[0].rule_id, "GLOBAL_VAR_DETECTED");
+        assert!(
+            report.is_clean(),
+            "a file the checker passed is not rejected"
+        );
+    }
+
+    #[test]
+    fn an_error_beside_a_notice_still_rejects() {
+        let output = crate::process::BoundedOutput {
+            stdout: "n.c: Error!\nNotice: GLOBAL_VAR_DETECTED  (line:   1, col:   1):\tGlobal.\nError: INVALID_HEADER       (line:   1, col:   1):\tMissing or invalid 42 header\n".to_owned(),
+            stderr: String::new(),
+            exit_code: Some(1),
+        };
+        let report = super::parse_lint_output("n.c", &output).expect("a readable report");
+
+        assert_eq!(report.diagnostics.len(), 2);
+        assert!(!report.is_clean(), "an error is still an error");
+    }
+
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 

@@ -334,9 +334,15 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
             "array_declarator" => facts.arrays.push(array_fact(source, node)?),
             "if_statement" => {
                 collect_control_body_fact(node.child_by_field_name("consequence"), &mut facts)?;
+                // An alternative that is itself an `if` is `else if`, which is
+                // one construct written on one line. Treating it as a body to
+                // put on its own line splits it into an `else` holding a
+                // nested `if` — a line longer and a level deeper, in a Norm
+                // that counts both.
                 collect_control_body_fact(
                     node.child_by_field_name("alternative")
-                        .and_then(alternative_statement),
+                        .and_then(alternative_statement)
+                        .filter(|body| body.kind() != "if_statement"),
                     &mut facts,
                 )?;
                 if let Some(fact) = redundant_else_fact(source, node)? {

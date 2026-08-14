@@ -1612,3 +1612,24 @@ fn removing_an_unused_local_is_never_done_without_being_asked() {
     );
     assert!(apply(source, &[]).contains("never_touched"));
 }
+
+#[test]
+fn else_if_stays_on_one_line() {
+    // `else if` is one construct written on one line. Treating the `if` as the
+    // body of the `else` split it into an `else` holding a nested `if`: a line
+    // longer and a level deeper, in a Norm that counts both.
+    let source = concat!(
+        "int\tclassify(int n)\n",
+        "{\n",
+        "\tif (n > 10)\n",
+        "\t\treturn (1);\n",
+        "\telse if (n > 5)\n",
+        "\t\treturn (2);\n",
+        "\telse\n",
+        "\t\treturn (3);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\telse if (n > 5)\n"), "{fixed}");
+    assert!(!fixed.contains("\telse\n\t\tif "), "{fixed}");
+}
