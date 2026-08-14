@@ -21,36 +21,36 @@ hero:
       link: /fr/guide/playground
 
 features:
-  - title: Uniquement des éditions prouvées
+  - title: Il ne change que ce qu'il peut prouver
     details: >-
-      Les règles proposent des remplacements sur des plages d’octets étroites,
-      contre des tampons fantômes immuables. Une preuve qui échoue ne peut pas
-      modifier un fichier à moitié, et tout ce qui est ambigu est signalé plutôt
-      que réécrit.
-  - title: C’est le vérificateur officiel qui tranche
+      Une modification touche exactement le morceau sur lequel il a prouvé
+      quelque chose, et rien d'autre. Ce qu'il ne peut pas prouver, il le signale
+      et n'y touche pas — vous pouvez donc le lancer en plein travail et lire le
+      diff.
+  - title: Le dernier mot revient à la Norminette
     details: >-
-      La Norminette officielle installée fait autorité. La version 3.3.59 est la
-      base vérifiée ; une autre version reste utilisable, avec un avertissement
-      de compatibilité visible.
-  - title: Récupérable par construction
+      normfix ne discute jamais avec l'outil qui vous évalue. Il lance le
+      vérificateur officiel avant et après ses modifications, et jette tout lot
+      qui a aggravé les choses.
+  - title: Rien ne se perd
     details: >-
-      Les écritures passent par une transaction unique et auditable, avec
-      sauvegardes externes, journal, commits ordonnés, rollback et un undo qui
-      échoue en position fermée devant toute cible modifiée.
-  - title: Privé dans le navigateur
+      Chaque fichier qu'il réécrit est d'abord copié hors de votre projet.
+      `normfix undo` annule une exécution, et refuse si vous avez touché à ces
+      fichiers depuis.
+  - title: Essayez sans rien installer
     details: >-
-      Le playground WebAssembly réutilise le même analyseur natif et les mêmes
-      actions C dans votre onglet. Aucun envoi, compte, analytique ni backend.
+      Le playground tourne dans votre onglet. Rien n'est envoyé, il n'y a pas de
+      compte, et personne ne regarde ce que vous y collez.
 ---
 
 ## Ce qu’est normfix
 
-`normfix` formate et diagnostique le code C, les headers, les Makefiles et les
-documents README des projets 42. Ce n’est pas un réécrivain C généraliste : il
-opère sous les règles de mise en page physique de la Norme, garde la
-[Norminette officielle](https://github.com/42School/norminette) comme autorité
-de compatibilité, et refuse de deviner là où la syntaxe C seule ne peut pas
-prouver qu’un changement est sûr.
+`normfix` met en forme et vérifie les fichiers C, les headers, les Makefiles et
+les READMEs d’un projet 42. Ce n’est pas un outil de réécriture C généraliste :
+il travaille dans les règles de mise en page de la Norme, considère la
+[Norminette officielle](https://github.com/42School/norminette) comme l’autorité
+sur ce que ces règles veulent dire, et refuse de deviner dès que la syntaxe C
+seule ne montre pas qu’un changement est sûr.
 
 ## Ce qu’il ne fera pas
 
@@ -58,14 +58,13 @@ Chaque limite ci-dessous est délibérée et documentée dans la
 [politique de compatibilité](/fr/COMPATIBILITY) et
 dans le [registre d’architecture](/fr/ARCHITECTURE) :
 
-- il ne revendique pas de compatibilité testée des règles natives pour une
-  version de la Norminette autre que 3.3.59 ; il identifie cette version avant
-  de continuer ;
-- il n’extrait pas les fonctions trop longues à votre place, car choisir où une
-  fonction s’arrête change la structure du programme ;
-- il ne prouve pas l’absence de fuites, et la sortie de l’analyseur reste
-  informative ;
-- il ne garantit pas un résultat strict de 80 colonnes lorsqu’aucune coupure
-  sûre n’existe ;
-- il ne supprime rien sans une autorisation de capacité explicite et sans
-  stockage externe récupérable.
+- il n'appellera pas « supportée » une version de la Norminette non testée : il
+  dit laquelle il a trouvée et continue avec un avertissement ;
+- il ne découpera pas une fonction longue à votre place, car choisir où la
+  couper change la façon dont votre programme est construit ;
+- il ne prouvera pas que votre programme ne fuit pas ; l'analyseur désigne une
+  fuite probable, jamais l'absence de fuite ;
+- il ne forcera pas 80 colonnes quand il n'existe aucun endroit sûr où couper la
+  ligne ;
+- il n'effacera rien sans que vous le demandiez, et jamais sans une copie depuis
+  laquelle restaurer.

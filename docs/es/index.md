@@ -20,36 +20,35 @@ hero:
       link: /es/guide/playground
 
 features:
-  - title: Solo ediciones demostradas
+  - title: Solo cambia lo que puede demostrar
     details: >-
-      Las reglas proponen sustituciones en rangos estrechos de bytes contra
-      búferes sombra inmutables. Una demostración fallida no puede modificar un
-      archivo a medias, y todo lo ambiguo se informa en vez de reescribirse.
-  - title: Decide el verificador oficial
+      Una edición toca exactamente el trozo sobre el que demostró algo, y nada
+      más. Lo que no puede demostrar lo avisa y lo deja en paz, así que puedes
+      ejecutarlo a mitad del trabajo y seguir leyendo el diff.
+  - title: La última palabra es de la Norminette
     details: >-
-      La Norminette oficial instalada es la autoridad. La versión 3.3.59 es la
-      base verificada; otra versión sigue siendo utilizable, con una advertencia
-      de compatibilidad visible.
-  - title: Recuperable por construcción
+      normfix nunca discute con la herramienta que te evalúa. Ejecuta el
+      verificador oficial antes y después de sus ediciones, y descarta cualquier
+      lote que haya empeorado las cosas.
+  - title: No se pierde nada
     details: >-
-      Las escrituras pasan por una única transacción auditable, con copias de
-      seguridad externas, journal, commits ordenados, rollback y un undo que
-      falla en cerrado ante cualquier destino modificado.
-  - title: Privado en el navegador
+      Cada archivo que reescribe se copia antes fuera de tu proyecto. `normfix
+      undo` deshace una ejecución, y se niega si has tocado esos archivos
+      después.
+  - title: Pruébalo sin instalar
     details: >-
-      El playground en WebAssembly reutiliza el mismo analizador nativo y las
-      mismas acciones de C dentro de tu pestaña. Sin subidas, cuenta, analítica
-      ni backend.
+      El playground funciona en la pestaña de tu navegador. No se sube nada, no
+      hay cuenta, y no hay nadie mirando lo que pegas ahí.
 ---
 
 ## Qué es normfix
 
-`normfix` formatea y diagnostica código C, headers, Makefiles y documentos
-README de proyectos de 42. No es un reescritor genérico de C: opera bajo las
-reglas de disposición física de la Norma, mantiene la
-[Norminette oficial](https://github.com/42School/norminette) como autoridad de
-compatibilidad, y se niega a adivinar donde la sintaxis de C por sí sola no
-puede demostrar que un cambio es seguro.
+`normfix` formatea y revisa los archivos C, headers, Makefiles y READMEs de un
+proyecto de 42. No sirve para reescribir C en general: trabaja dentro de las
+reglas de formato de la Norma, trata la
+[Norminette oficial](https://github.com/42School/norminette) como la autoridad
+sobre lo que significan esas reglas, y se niega a adivinar siempre que la
+sintaxis de C por sí sola no demuestra que un cambio es seguro.
 
 ## Qué no va a hacer
 
@@ -57,13 +56,12 @@ Cada límite de abajo es deliberado y está documentado en la
 [política de compatibilidad](/es/COMPATIBILITY) y
 en el [registro de arquitectura](/es/ARCHITECTURE):
 
-- no afirma compatibilidad probada de las reglas nativas para una versión de la
-  Norminette distinta de la 3.3.59; identifica esa versión antes de continuar;
-- no extrae funciones largas por ti, porque elegir dónde termina una función
-  cambia la estructura del programa;
-- no demuestra la ausencia de fugas de memoria, y la salida del analizador
-  sigue siendo informativa;
-- no garantiza un resultado estricto de 80 columnas cuando no existe un corte
-  seguro;
-- no borra nada sin una concesión explícita de capacidad y sin almacenamiento
-  externo recuperable.
+- no va a llamar soportada a una versión de la Norminette que no se ha probado:
+  dice cuál encontró y sigue con un aviso;
+- no va a partir una función larga por ti, porque elegir dónde cortarla cambia
+  cómo está montado tu programa;
+- no va a demostrar que tu programa no pierde memoria; el analizador señala una
+  fuga probable, nunca la ausencia de una;
+- no va a forzar 80 columnas cuando no hay un sitio seguro para cortar la línea;
+- no va a borrar nada sin que lo pidas, y nunca sin una copia desde la que
+  puedas restaurar.
