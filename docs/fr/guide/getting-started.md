@@ -1,68 +1,101 @@
-# Bien démarrer
+# Premiers pas
 
-## Prérequis
+À la fin de cette page, `normfix` sera installé et vous l'aurez lancé une fois
+sur un vrai projet, sans qu'il touche à un seul fichier.
 
-- La commande de la
-  [Norminette officielle](https://github.com/42School/norminette) disponible
-  dans le `PATH`, ou fournie avec `--norminette CHEMIN`. La version `3.3.59` est
-  la base de compatibilité testée.
-- [Rust](https://www.rust-lang.org/tools/install) 1.85 ou plus récent
-  **uniquement** pour compiler depuis les sources. Les archives de release
-  contiennent un binaire natif et ne demandent aucune toolchain Rust.
+## L'installer
 
-Installez la Norminette en suivant les instructions de son propre dépôt :
-**[42School/norminette](https://github.com/42School/norminette)**. Ce projet est
-propriétaire de la façon dont il s’installe, et son README est la seule source
-qui reste correcte quand cela change.
-
-Une fois installée, vérifiez que `normfix` va la trouver :
-
-```sh
-norminette --version
-```
-
-Un environnement géré par le campus convient aussi. Pour `normfix`, seules
-comptent la version de la commande et sa présence dans le `PATH`.
-
-::: warning Compatibilité de version
-Une autre version de la Norminette encore interprétable s’exécute avec un
-avertissement de compatibilité bien visible, afin qu’une mise à jour du campus
-ne désactive pas l’outil. Utilisez `--strict-norminette-version` pour refuser
-tout ce qui n’est pas `3.3.59` dans une CI à version figée. Voyez la
-[politique de compatibilité](/fr/COMPATIBILITY).
-:::
-
-## Installation
-
-### L’installateur en une ligne
+Une seule commande, sur Linux, macOS et Windows :
 
 ```sh
 curl -fsSL https://normfix.vercel.app/install.sh | sh
 ```
 
-Il détecte votre plateforme, télécharge l’archive de release correspondante, la
-vérifie contre le `SHA256SUMS` publié et installe le binaire dans
-`~/.local/bin`. Il n’utilise jamais `sudo`, n’écrit jamais dans un répertoire
-système et n’installe jamais de toolchain : il fonctionne donc sur un poste de
-42 où vous n’avez pas les droits d’administration. Par défaut il prend la
-dernière release stable de GitHub. Si le projet n’a pas encore publié de version
-stable, il se rabat sans risque sur la pré-version la plus récente, pour que le
-candidat de release courant reste installable.
+Elle détermine sur quelle machine vous êtes, télécharge la version qui
+correspond, la compare aux sommes de contrôle publiées et place le programme
+dans `~/.local/bin`. Elle ne demande pas `sudo`, n'écrit rien hors de votre
+dossier personnel et n'installe aucun compilateur — c'est ce qui lui permet de
+fonctionner sur un poste de 42, où vous n'êtes pas administrateur.
 
-Deux variables d’environnement changent son comportement :
+Sous Windows, lancez-la depuis n'importe quel shell POSIX : Git Bash, MSYS2,
+Cygwin ou WSL.
+
+Vérifiez qu'elle est bien arrivée :
 
 ```sh
-NORMFIX_VERSION=v1.6.2 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
-NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+normfix --version
 ```
 
-`NORMFIX_VERSION` est exacte : l’installateur télécharge cette étiquette et
-n’effectue aucune sélection de canal.
+Si le terminal ne trouve pas la commande, c'est que `~/.local/bin` n'est pas
+encore dans votre `PATH`. Ajoutez ce dossier au fichier de démarrage de votre
+shell et ouvrez un nouveau terminal.
 
-Une somme de contrôle qui ne correspond pas interrompt l’installation et affiche
-les deux empreintes. Lisez le script avant de le donner à un shell, si vous
-préférez voir ce qu’il fait :
+::: tip Lire avant de lancer
+Envoyer un script directement au shell, c'est exécuter du code que vous n'avez
+pas lu. Si vous préférez le regarder d'abord, il est ici :
 <https://normfix.vercel.app/install.sh>
+:::
+
+## Il vous faut aussi la Norminette
+
+Ce n'est pas `normfix` qui décide ce que dit la Norm, c'est la Norminette
+officielle, et `normfix` le lui demande. Le vérificateur doit donc être installé
+et présent dans votre `PATH`, sinon une exécution ne veut rien dire.
+
+Installez-la depuis son propre dépôt, [42School/norminette][norminette]. C'est
+ce projet qui décide comment elle s'installe, et son README est la seule page
+qui reste juste quand cela change.
+
+[norminette]: https://github.com/42School/norminette
+
+Vérifiez ensuite que `normfix` la trouvera :
+
+```sh
+norminette --version
+```
+
+Une installation gérée par le campus convient. Seul compte que la commande
+réponde et annonce sa version.
+
+::: warning Si votre campus met la Norminette à jour
+`3.3.59` est la version contre laquelle cette release a été testée. Une autre
+fonctionne quand même, avec un avertissement, pour qu'une mise à jour du campus
+ne vous prive jamais de l'outil. Dans une pipeline où vous voulez la version
+figée, `--strict-norminette-version` refuse tout le reste. La [politique de
+compatibilité](/fr/COMPATIBILITY) explique ce que cet avertissement coûte.
+:::
+
+## La première exécution ne change rien
+
+Placez-vous dans un projet et demandez ce que `normfix` ferait :
+
+```sh
+normfix --check
+```
+
+Cela lit vos fichiers sans en écrire aucun. Il affiche ce qu'il corrigerait, ce
+qu'il ne peut pas corriger, et pourquoi.
+
+Pour voir les modifications elles-mêmes plutôt qu'un résumé :
+
+```sh
+normfix --diff
+```
+
+Quand vous êtes prêt :
+
+```sh
+normfix
+```
+
+Celle-ci écrit. Avant cela, elle copie chaque fichier qu'elle va toucher dans un
+dossier de sauvegarde hors de votre projet, pour que `normfix undo` puisse les
+remettre.
+
+## Autres façons d'installer
+
+L'installateur ci-dessus est celui qui marche partout. Les autres sont là parce
+que vous en utilisez peut-être déjà une.
 
 ### Homebrew
 
@@ -70,18 +103,22 @@ préférez voir ce qu’il fait :
 brew install viniciusnevescosta/normfix/normfix
 ```
 
-La formule installe le même binaire précompilé et vérifié ; elle ne compile pas
-depuis les sources. Disponible pour macOS et Linuxbrew.
+Installe le même programme déjà vérifié, au lieu de le compiler. Pour macOS et
+Linuxbrew.
 
-### Binaires précompilés
+### Scoop, sous Windows sans shell POSIX
 
-Les releases étiquetées fournissent des archives natives pour Linux x86-64 et
-ARM64, ainsi que macOS Intel et Apple Silicon. Téléchargez l’archive qui
-correspond à votre machine depuis la
-[dernière release](https://github.com/viniciusnevescosta/normfix/releases/latest),
-vérifiez-la contre `SHA256SUMS`, et placez `normfix` dans le `PATH`.
+```powershell
+scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
+scoop install normfix
+```
 
-| Plateforme | Archive de release |
+### Télécharger l'archive vous-même
+
+Chaque release publie une archive par plateforme, avec un fichier `SHA256SUMS` à
+côté :
+
+| Plateforme | Archive |
 |---|---|
 | Linux x86-64 | `normfix-x86_64-linux-gnu.tar.gz` |
 | Linux ARM64 | `normfix-aarch64-linux-gnu.tar.gz` |
@@ -91,7 +128,7 @@ vérifiez-la contre `SHA256SUMS`, et placez `normfix` dans le `PATH`.
 | Windows ARM64 | `normfix-aarch64-windows.zip` |
 | FreeBSD x86-64 | `normfix-x86_64-freebsd.tar.gz` |
 
-Par exemple, sur Apple Silicon avec la release `1.6.2` :
+Sur Apple Silicon, par exemple :
 
 ```sh
 version=1.6.2
@@ -104,50 +141,23 @@ install -m 0755 normfix "$HOME/.local/bin/normfix"
 normfix --version
 ```
 
-Créez d’abord `$HOME/.local/bin` si nécessaire et assurez-vous qu’il est dans le
-`PATH`.
+Créez d'abord `$HOME/.local/bin` s'il n'existe pas, et assurez-vous qu'il est
+dans votre `PATH`.
 
-### Quand le système dit que le développeur ne peut pas être vérifié
-
-macOS et Windows avertissent au sujet des programmes qui ne sont pas signés avec
-un certificat de développeur payant. normfix ne l’est pas : vous verrez peut-être
-un avertissement — et la route choisie décide si vous le voyez.
-
-L’installateur en une ligne télécharge avec `curl`, qui n’attache pas la marque
-déclenchant l’avertissement. En installant ainsi, vous ne verrez rien. Un
-navigateur l’attache : une archive téléchargée depuis la page des releases est le
-cas qui avertit.
-
-Sur macOS, le message indique que le développeur ne peut pas être vérifié. Ouvrez
-le fichier une fois depuis le Finder avec **clic droit → Ouvrir**, qui propose un
-bouton que le double-clic ordinaire n’offre pas, ou retirez la marque
-directement :
+### Figer une version, ou choisir où il atterrit
 
 ```sh
-xattr -d com.apple.quarantine ./normfix
+NORMFIX_VERSION=v1.6.2 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
 
-Sous Windows, SmartScreen annonce avoir protégé votre PC. Choisissez
-**Informations complémentaires**, puis **Exécuter quand même**. Depuis
-PowerShell :
+`NORMFIX_VERSION` est pris au pied de la lettre : ce tag est téléchargé, sans
+choix de canal. Sans lui, vous obtenez la release stable la plus récente — ou,
+s'il n'y en a pas encore, la préversion la plus récente, pour qu'un candidat à
+la release reste installable.
 
-```powershell
-Unblock-File .\normfix.exe
-```
-
-Ne pas être signé est une position délibérée, pas un oubli. Un certificat de
-signature prouve que quelqu’un a payé une autorité de certification ; il ne dit
-rien du contenu du binaire. Chaque archive ici est publiée avec un manifeste de
-sommes de contrôle et une provenance de build qui la relie à l’exécution du
-workflow qui l’a produite — une affirmation plus forte, que le système
-d’exploitation ne consulte tout simplement pas :
-
-```sh
-gh attestation verify normfix-aarch64-macos.tar.gz --repo viniciusnevescosta/normfix
-```
-
-Si cette commande réussit, le fichier que vous avez est sorti du workflow de
-release de ce projet, quoi que le système dise de sa signature.
+Si une somme de contrôle ne correspond pas, l'installation s'arrête et affiche
+les deux valeurs.
 
 ### Compiler depuis les sources
 
@@ -157,64 +167,63 @@ cd normfix
 cargo install --path crates/normfix-cli --locked
 ```
 
-Ou produisez un binaire de release sans l’installer :
+Ou compiler sans installer :
 
 ```sh
 cargo build --release --locked -p normfix
 ./target/release/normfix --version
 ```
 
-Cargo installe normalement la commande dans `~/.cargo/bin` ; assurez-vous que ce
-répertoire est dans le `PATH`.
+C'est le seul chemin qui demande Rust — 1.85 ou plus récent. Cargo installe dans
+`~/.cargo/bin`, ce dossier doit donc être dans votre `PATH`.
 
-### Windows
+## Si le système dit que le développeur ne peut pas être vérifié
 
-Le même installateur en une ligne fonctionne depuis n’importe quel shell POSIX —
-Git Bash, MSYS2, Cygwin ou WSL — et installe `normfix.exe` :
+macOS et Windows avertissent au sujet des programmes qui ne sont pas signés avec
+un certificat de développeur payant. `normfix` ne l'est pas, vous verrez donc
+peut-être cet avertissement — et le chemin que vous avez pris décide si vous le
+voyez du tout.
+
+L'installateur en une ligne télécharge avec `curl`, qui n'attache pas la marque
+déclenchant l'avertissement : en installant ainsi, vous ne le verrez jamais. Un
+navigateur l'attache, donc télécharger une archive depuis la page des releases
+est le cas qui avertit.
+
+**Sous macOS**, le message dit que le développeur n'a pas pu être vérifié.
+Ouvrez-le une fois depuis le Finder avec **clic droit → Ouvrir**, qui propose un
+bouton que le double-clic ne propose pas. Ou retirez la marque vous-même :
 
 ```sh
-curl -fsSL https://normfix.vercel.app/install.sh | sh
+xattr -d com.apple.quarantine ./normfix
 ```
 
-Avec seulement PowerShell, Scoop est la commodité :
+**Sous Windows**, SmartScreen annonce qu'il a protégé votre PC. Choisissez
+**Informations complémentaires**, puis **Exécuter quand même**. Depuis
+PowerShell :
 
 ```powershell
-scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
-scoop install normfix
+Unblock-File .\normfix.exe
 ```
 
-Ou téléchargez `normfix-x86_64-windows.zip` ou `normfix-aarch64-windows.zip`
-depuis la page des releases et placez `normfix.exe` dans le `PATH`.
-
-La Norminette officielle est un programme Python et s’installe sous Windows
-comme partout ailleurs. Exécuter la compilation Linux dans WSL reste pris en
-charge et inchangé ; la [politique de compatibilité](/fr/COMPATIBILITY) nomme
-les deux points où Windows natif se comporte différemment d’Unix.
-
-## Première exécution sûre
-
-Prévisualisez un projet avant d’écrire quoi que ce soit :
+Ne pas signer est une décision, pas un oubli. Un certificat prouve que quelqu'un
+a payé une autorité de certification ; il ne dit rien de ce que contient le
+fichier. Chaque archive ici est publiée avec sa somme de contrôle et avec une
+provenance de compilation qui la relie à l'exécution exacte qui l'a produite —
+une affirmation plus forte, que le système d'exploitation ne consulte tout
+simplement pas :
 
 ```sh
-normfix --check
-normfix --diff
+gh attestation verify normfix-aarch64-macos.tar.gz --repo viniciusnevescosta/normfix
 ```
 
-Appliquez ensuite les changements retenus :
+Si cette commande réussit, le fichier que vous avez sort de la chaîne de release
+de ce projet, quoi que votre système dise de sa signature.
 
-```sh
-normfix
-```
+## Où aller ensuite
 
-Le mode de correction par défaut écrit sur place, mais conserve les fichiers
-d’origine dans un répertoire de sauvegarde externe. Aucun fichier du projet
-n’est écrit dans les modes `--check` ou `--diff`.
-
-## Étapes suivantes
-
-- [Ligne de commande](/fr/guide/command-line) : déroulés, options, portées Git
-  et codes de sortie.
-- [Playground dans le navigateur](/fr/guide/playground) : essayez le formateur
-  sans rien installer.
-- [Architecture](/fr/ARCHITECTURE) : ce que possède chaque crate et pourquoi les
-  frontières existent.
+- [Ligne de commande](/fr/guide/command-line) — les flux, les options et ce que
+  signifie chaque code de sortie.
+- [Playground dans le navigateur](/fr/guide/playground) — essayez sans rien
+  installer.
+- [Architecture](/fr/ARCHITECTURE) — comment les pièces s'assemblent et pourquoi
+  les frontières sont là où elles sont.
