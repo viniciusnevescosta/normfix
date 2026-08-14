@@ -62,6 +62,31 @@ pub struct SyntaxFacts {
     pub loops: Vec<LoopFact>,
     /// Statements whose entire value is one forbidden conditional expression.
     pub ternary_statements: Vec<TernaryFact>,
+    /// Forbidden `for` loops that a `while` can say exactly.
+    pub for_loops: Vec<ForLoopFact>,
+}
+
+/// A `for` loop the Norm forbids, and the three pieces a `while` needs.
+///
+/// The rewrite is only the same loop when the step still runs after every
+/// iteration of the body, which is why the fact records enough to check that
+/// nothing in the body jumps over it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForLoopFact {
+    /// The whole loop, replaced as a unit.
+    pub statement_range: TextRange,
+    /// What runs once before the loop, if anything.
+    pub initializer_range: Option<TextRange>,
+    /// What is tested before each iteration; absent means it loops forever.
+    pub condition_range: Option<TextRange>,
+    /// What runs after each iteration, if anything.
+    pub step_range: Option<TextRange>,
+    /// The body, whether or not it is a block.
+    pub body_range: TextRange,
+    /// Whether the body already carries its own braces.
+    pub body_is_block: bool,
+    /// Body of the function that owns the loop, whose line budget it spends.
+    pub function_body_range: TextRange,
 }
 
 /// A statement that exists only to choose between two values.
@@ -434,6 +459,11 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
             "while_statement" | "for_statement" | "do_statement" => {
                 collect_control_body_fact(node.child_by_field_name("body"), &mut facts)?;
                 facts.loops.push(loop_fact(source, node)?);
+                if node.kind() == "for_statement"
+                    && let Some(fact) = for_loop_fact(node)?
+                {
+                    facts.for_loops.push(fact);
+                }
             }
             "binary_expression" | "assignment_expression" => {
                 collect_binary_operator(node, &mut facts)?;
@@ -1471,6 +1501,73 @@ fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, Par
         condition_parenthesized: condition.kind() == "parenthesized_expression",
         function_body_range: node_range(body.start_byte(), body.end_byte())?,
     }))
+}
+
+/// A `for` loop a `while` can say exactly.
+///
+/// The Norm forbids `for` outright, and the pieces map across: the initializer
+/// runs once before the loop, the condition is the `while` condition, and the
+/// step goes last in the body, where it still runs after every iteration.
+///
+/// That last part is the whole proof, and it is what the guards protect. A
+/// `continue` bound to this loop jumps to the step in a `for` and past it in a
+/// `while`, which is a different loop and usually an endless one. A declaration
+/// in the initializer is scoped to the loop, and moving it out widens that
+/// scope. The loop must sit directly in a block, since one statement becomes
+/// two and an unbraced body above it would keep only the first.
+fn for_loop_fact(node: Node<'_>) -> Result<Option<ForLoopFact>, ParseFailure> {
+    let (Some(body), Some(parent)) = (node.child_by_field_name("body"), node.parent()) else {
+        return Ok(None);
+    };
+    let initializer = node.child_by_field_name("initializer");
+    if parent.kind() != "compound_statement"
+        || initializer.is_some_and(|init| init.kind() == "declaration")
+        || contains_kind(node, "comment")
+        || jumps_to_the_step(body)
+    {
+        return Ok(None);
+    }
+    let mut owner = node;
+    while owner.kind() != "function_definition" {
+        let Some(next) = owner.parent() else {
+            return Ok(None);
+        };
+        owner = next;
+    }
+    let Some(function_body) = owner.child_by_field_name("body") else {
+        return Ok(None);
+    };
+    let range = |part: Option<Node<'_>>| {
+        part.map(|part| node_range(part.start_byte(), part.end_byte()))
+            .transpose()
+    };
+    Ok(Some(ForLoopFact {
+        statement_range: node_range(node.start_byte(), node.end_byte())?,
+        initializer_range: range(initializer)?,
+        condition_range: range(node.child_by_field_name("condition"))?,
+        step_range: range(node.child_by_field_name("update"))?,
+        body_range: node_range(body.start_byte(), body.end_byte())?,
+        body_is_block: body.kind() == "compound_statement",
+        function_body_range: node_range(function_body.start_byte(), function_body.end_byte())?,
+    }))
+}
+
+/// Whether `continue` inside this body would skip a step moved to the end.
+///
+/// A `continue` in a loop nested inside the body belongs to that loop and never
+/// reaches this one, so the walk stops where a new loop begins.
+fn jumps_to_the_step(node: Node<'_>) -> bool {
+    if node.kind() == "continue_statement" {
+        return true;
+    }
+    if matches!(
+        node.kind(),
+        "for_statement" | "while_statement" | "do_statement"
+    ) {
+        return false;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(jumps_to_the_step)
 }
 
 /// Peels the parentheses a value was written inside, which change no meaning.

@@ -63,6 +63,7 @@ pub(crate) enum Phase {
     BracesAndControls,
     SingleStatementBlocks,
     RedundantElse,
+    ForLoops,
     Ternaries,
     SplitDeclarations,
     FunctionLayout,
@@ -95,6 +96,7 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
         Phase::BracesAndControls,
         Phase::SingleStatementBlocks,
         Phase::RedundantElse,
+        Phase::ForLoops,
         Phase::Ternaries,
         Phase::SplitDeclarations,
         Phase::FunctionLayout,
@@ -113,7 +115,12 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
 
 impl Phase {
     pub(crate) const fn one_shot(self) -> bool {
-        !matches!(self, Self::CompactContinuations | Self::LongLines)
+        // A loop nested in another is only reachable once the outer one has
+        // become a `while`, so this phase has to be allowed to come back.
+        !matches!(
+            self,
+            Self::CompactContinuations | Self::LongLines | Self::ForLoops
+        )
     }
 
     pub(crate) fn plan(
@@ -161,6 +168,10 @@ impl Phase {
             Self::SingleStatementBlocks => Ok(ActionBatch::semantic(
                 "REMOVE_SINGLE_STATEMENT_BRACES",
                 remove_single_statement_braces(context)?,
+            )),
+            Self::ForLoops => Ok(ActionBatch::semantic(
+                "REPLACE_FOR_LOOP",
+                rewrite_for_loops(context)?,
             )),
             Self::Ternaries => Ok(ActionBatch::semantic(
                 "REPLACE_TERNARY",
@@ -1346,6 +1357,118 @@ fn split_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError
     Ok(edits)
 }
 
+/// The Norm's limit on a function body, which a rewrite that adds lines spends.
+const FUNCTION_LINES: u32 = 25;
+
+/// Replaces a forbidden `for` with the `while` that says the same loop.
+///
+/// The initializer runs once, so it moves above the loop. The condition is the
+/// `while` condition, and an absent one is the `1` the `for` meant. The step
+/// goes last in the body, where it still runs after every iteration — which is
+/// exactly what the fact's guards establish, since a `continue` would reach it
+/// in a `for` and skip it here.
+///
+/// A body that already has braces keeps them and its own indentation, and the
+/// step is spliced in before the closing one. A body that is a single statement
+/// gains braces, because it is about to hold two statements.
+fn rewrite_for_loops(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    use std::fmt::Write as _;
+
+    let source = context.source();
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    let mut spent: HashMap<TextRange, u32> = HashMap::new();
+    // Facts arrive outermost first, and one loop nested in another gives two
+    // edits over the same bytes, which would take the whole batch down. The
+    // outer one goes now; the inner one is still a loop in a block afterwards,
+    // so the next pass reaches it.
+    let mut rewritten_through = 0_usize;
+    for loop_fact in &context.facts().for_loops {
+        let start = loop_fact.statement_range.start().get() as usize;
+        let end = loop_fact.statement_range.end().get() as usize;
+        if start < rewritten_through {
+            continue;
+        }
+        let text = |range: Option<TextRange>| range.and_then(|range| source.get(range_bounds(range)));
+        let (initializer, step) = (text(loop_fact.initializer_range), text(loop_fact.step_range));
+        let condition = text(loop_fact.condition_range).unwrap_or("1");
+        let Some(body) = source.get(range_bounds(loop_fact.body_range)) else {
+            continue;
+        };
+        let line_number = lines.line_number_at(start);
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        // A comment written after the loop's last statement is a sibling of the
+        // loop, not part of it, so replacing the loop would leave it stranded
+        // below the closing brace, describing the wrong thing. The reader's
+        // words stay where the reader put them.
+        let closing = lines.line_number_at(end.saturating_sub(1));
+        if lines
+            .get(closing)
+            .is_some_and(|last| !lines.text(last)[end.saturating_sub(last.start)..].trim().is_empty())
+        {
+            continue;
+        }
+        let indent = lines.text(line)[..leading_whitespace(lines.text(line))].to_owned();
+        let growth = u32::from(initializer.is_some())
+            + u32::from(step.is_some())
+            + if loop_fact.body_is_block { 0 } else { 2 };
+        let already = spent.entry(loop_fact.function_body_range).or_default();
+        if body_line_count(&lines, loop_fact.function_body_range) + *already + growth
+            > FUNCTION_LINES
+        {
+            continue;
+        }
+        let mut replacement = String::new();
+        if let Some(initializer) = initializer {
+            let _ = write!(replacement, "{initializer};\n{indent}");
+        }
+        let _ = write!(replacement, "while ({condition})\n{indent}");
+        match (loop_fact.body_is_block, step) {
+            (true, None) => replacement.push_str(body),
+            // Everything up to the closing brace already ends with that
+            // brace's own indentation, so the step lands beside the statements
+            // it follows rather than beside the brace.
+            (true, Some(step)) => {
+                let Some(inner) = body.strip_suffix('}') else {
+                    continue;
+                };
+                let _ = write!(replacement, "{inner}\t{step};\n{indent}}}");
+            }
+            // Braces are for a body that holds more than one instruction, and
+            // the rule that takes needless ones away has already had its turn
+            // by the time this phase runs. Emitting them only where they are
+            // needed leaves nothing behind for it to undo.
+            (false, None) => {
+                let _ = write!(replacement, "\t{body}");
+            }
+            // A body of only `;` did nothing but hold the loop open for the
+            // step. Written out, the step is the whole body.
+            (false, Some(step)) if body.trim() == ";" => {
+                let _ = write!(replacement, "\t{step};");
+            }
+            (false, Some(step)) => {
+                let _ = write!(
+                    replacement,
+                    "{{\n{indent}\t{body}\n{indent}\t{step};\n{indent}}}"
+                );
+            }
+        }
+        edits.push(Edit::new(
+            start,
+            end,
+            replacement,
+            "REPLACE_FOR_LOOP",
+            "replaced a forbidden for with the while it stood for",
+            Some(line_number),
+        )?);
+        *already += growth;
+        rewritten_through = end;
+    }
+    Ok(edits)
+}
+
 /// Replaces a forbidden `?:` with the branch it was hiding.
 ///
 /// `x = a > b ? a : b;` becomes an `if`/`else` writing to `x`, and
@@ -1361,8 +1484,6 @@ fn split_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError
 fn rewrite_ternaries(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
     use std::fmt::Write as _;
 
-    /// The Norm's limit on a function body.
-    const FUNCTION_LINES: u32 = 25;
 
     let source = context.source();
     let lines = context.lines();

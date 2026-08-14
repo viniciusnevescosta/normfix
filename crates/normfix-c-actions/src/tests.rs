@@ -1142,7 +1142,13 @@ fn an_empty_loop_body_is_never_mistaken_for_a_stray_semicolon() {
         "\treturn (c);\n",
         "}\n",
     );
-    assert_eq!(apply(source, &[]), source);
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\twhile (c--)\n\t\t;\n"), "{fixed}");
+    // The `for` is forbidden and becomes a `while`, which moves its step into
+    // the body. Its own empty body then holds nothing and is no longer a loop
+    // body, so losing it is the one case where losing it changes nothing.
+    assert!(fixed.contains("\tc = 0;\n\twhile (c < 2)\n\t\tc++;\n"), "{fixed}");
+    assert_eq!(apply(&fixed, &[]), fixed);
 }
 
 #[test]
@@ -1641,6 +1647,154 @@ fn a_control_body_starting_with_a_star_does_not_deadlock_two_rules() {
         "}\n",
     );
     assert!(apply(wrapped, &[]).contains("return (sum(first, second));"));
+}
+
+#[test]
+fn a_for_becomes_the_while_it_stood_for() {
+    // The Norm forbids `for`. The pieces map across exactly: the initializer
+    // runs once above the loop, the condition is the condition, and the step
+    // goes last in the body, where it still runs after every iteration.
+    let source = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\ti;\n",
+        "\tint\ts;\n",
+        "\n",
+        "\ts = 0;\n",
+        "\tfor (i = 0; i < n; i++)\n",
+        "\t\ts += i;\n",
+        "\treturn (s);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(
+        fixed.contains("\ti = 0;\n\twhile (i < n)\n\t{\n\t\ts += i;\n\t\ti++;\n\t}\n"),
+        "{fixed}"
+    );
+    assert!(!fixed.contains("for ("), "{fixed}");
+    assert_eq!(apply(&fixed, &[]), fixed);
+}
+
+#[test]
+fn a_loop_inside_a_loop_is_reached_on_the_next_pass() {
+    // Two edits over the same bytes would take the whole batch down, so the
+    // outer loop goes first and the inner one is still a loop in a block
+    // afterwards. It only converges if the phase is allowed to come back.
+    let source = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\ti;\n",
+        "\tint\tj;\n",
+        "\tint\ts;\n",
+        "\n",
+        "\ts = 0;\n",
+        "\tfor (i = 0; i < n; i++)\n",
+        "\t{\n",
+        "\t\tfor (j = 0; j < i; j++)\n",
+        "\t\t\ts += j;\n",
+        "\t}\n",
+        "\treturn (s);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(!fixed.contains("for ("), "{fixed}");
+    assert!(fixed.contains("\t\tj = 0;\n\t\twhile (j < i)\n"), "{fixed}");
+}
+
+#[test]
+fn a_for_whose_step_would_be_skipped_stays() {
+    // `continue` reaches the step in a `for` and jumps past it in a `while`,
+    // which is a different loop and, here, one that never ends.
+    let source = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\ti;\n",
+        "\tint\ts;\n",
+        "\n",
+        "\ts = 0;\n",
+        "\tfor (i = 0; i < n; i++)\n",
+        "\t{\n",
+        "\t\tif (i == 2)\n",
+        "\t\t\tcontinue ;\n",
+        "\t\ts += i;\n",
+        "\t}\n",
+        "\treturn (s);\n",
+        "}\n",
+    );
+    assert!(apply(source, &[]).contains("for ("));
+
+    // A `continue` in a nested loop belongs to that loop and never reaches
+    // this step, so it is no reason to refuse.
+    let inner = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\ti;\n",
+        "\tint\tj;\n",
+        "\n",
+        "\tj = n;\n",
+        "\tfor (i = 0; i < n; i++)\n",
+        "\t{\n",
+        "\t\twhile (j > 0)\n",
+        "\t\t{\n",
+        "\t\t\tj--;\n",
+        "\t\t\tcontinue ;\n",
+        "\t\t}\n",
+        "\t}\n",
+        "\treturn (j);\n",
+        "}\n",
+    );
+    assert!(!apply(inner, &[]).contains("for ("));
+}
+
+#[test]
+fn a_for_stays_when_moving_its_pieces_would_move_more_than_them() {
+    // A declaration in the initializer is scoped to the loop, and lifting it
+    // out widens that scope.
+    let scoped = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\ts;\n",
+        "\n",
+        "\ts = 0;\n",
+        "\tfor (int i = 0; i < n; i++)\n",
+        "\t\ts += i;\n",
+        "\treturn (s);\n",
+        "}\n",
+    );
+    assert!(apply(scoped, &[]).contains("for ("));
+
+    // One statement becomes two, and an unbraced body above would keep only
+    // the initializer.
+    let unbraced = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\ti;\n",
+        "\tint\ts;\n",
+        "\n",
+        "\ts = 0;\n",
+        "\tif (n > 0)\n",
+        "\t\tfor (i = 0; i < n; i++)\n",
+        "\t\t\ts += i;\n",
+        "\treturn (s);\n",
+        "}\n",
+    );
+    assert!(apply(unbraced, &[]).contains("for ("));
+
+    // A comment after the last statement is a sibling of the loop, and would
+    // be left below the closing brace describing the wrong thing.
+    let annotated = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\ti;\n",
+        "\tint\ts;\n",
+        "\n",
+        "\ts = 0;\n",
+        "\tfor (i = 0; i < n; i++)\n",
+        "\t\ts += i; /* soma */\n",
+        "\treturn (s);\n",
+        "}\n",
+    );
+    assert!(apply(annotated, &[]).contains("for ("));
 }
 
 #[test]
