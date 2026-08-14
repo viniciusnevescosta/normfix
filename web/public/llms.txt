@@ -11,6 +11,11 @@ diagnostics than it started with.
 
 ## For agents
 
+Every page below is also published as plain text at its own address plus
+`.txt`, so one page's instructions can be fetched without parsing the site:
+`https://normfix.vercel.app/docs/guide/ai-agents.txt`.
+
+
 - [AI agent guide](https://normfix.vercel.app/docs/guide/ai-agents): how to run
   normfix without a person watching, and what it will refuse to do.
 - [JSON report schema](https://normfix.vercel.app/docs/reference/reporting):

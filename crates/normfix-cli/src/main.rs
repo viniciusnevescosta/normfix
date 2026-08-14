@@ -480,9 +480,26 @@ fn run_uninstall(cli: &Cli, arguments: &UninstallArguments) -> ExitCode {
         }
     };
 
-    eprint!("{}", uninstall::describe(&plan));
-    if plan.removes_recovery_data() {
-        eprintln!("{}", messages.uninstall_recovery_warning);
+    if cli.format == OutputFormat::Json {
+        print_json_outcome(
+            "uninstall",
+            if arguments.dry_run {
+                "planned"
+            } else {
+                "success"
+            },
+            &serde_json::json!({
+                "dry_run": arguments.dry_run,
+                "purge": arguments.purge,
+                "removes_recovery_data": plan.removes_recovery_data(),
+                "plan": uninstall::describe(&plan),
+            }),
+        );
+    } else {
+        eprint!("{}", uninstall::describe(&plan));
+        if plan.removes_recovery_data() {
+            eprintln!("{}", messages.uninstall_recovery_warning);
+        }
     }
     if arguments.dry_run {
         return ExitCode::SUCCESS;
@@ -495,7 +512,9 @@ fn run_uninstall(cli: &Cli, arguments: &UninstallArguments) -> ExitCode {
 
     match uninstall::remove(&plan) {
         Ok(()) => {
-            eprintln!("{}", messages.uninstall_done);
+            if cli.format != OutputFormat::Json {
+                eprintln!("{}", messages.uninstall_done);
+            }
             ExitCode::SUCCESS
         }
         Err(message) => {
@@ -824,21 +843,61 @@ fn run_upgrade(
     messages: &normfix_i18n::Messages,
     check_only: bool,
 ) -> ExitCode {
+    let json = format == OutputFormat::Json;
     match upgrade::upgrade(env!("CARGO_PKG_VERSION"), check_only) {
         Ok(upgrade::Outcome::Current(version)) => {
-            println!("normfix {version} is already the newest release.");
+            if json {
+                print_json_outcome(
+                    "upgrade",
+                    "success",
+                    &serde_json::json!({
+                        "state": "current",
+                        "current_version": version,
+                        "latest_version": version,
+                        "installed": false,
+                    }),
+                );
+            } else {
+                println!("normfix {version} is already the newest release.");
+            }
             ExitCode::SUCCESS
         }
         Ok(upgrade::Outcome::Available { current, latest }) => {
-            println!("normfix {latest} is available; this is {current}.");
-            println!("Install it with: normfix upgrade");
+            if json {
+                print_json_outcome(
+                    "upgrade",
+                    "success",
+                    &serde_json::json!({
+                        "state": "available",
+                        "current_version": current,
+                        "latest_version": latest,
+                        "installed": false,
+                    }),
+                );
+            } else {
+                println!("normfix {latest} is available; this is {current}.");
+                println!("Install it with: normfix upgrade");
+            }
             ExitCode::SUCCESS
         }
         Ok(upgrade::Outcome::Installed {
             previous,
             installed,
         }) => {
-            println!("Upgraded normfix {previous} to {installed}.");
+            if json {
+                print_json_outcome(
+                    "upgrade",
+                    "success",
+                    &serde_json::json!({
+                        "state": "installed",
+                        "current_version": previous,
+                        "latest_version": installed,
+                        "installed": true,
+                    }),
+                );
+            } else {
+                println!("Upgraded normfix {previous} to {installed}.");
+            }
             ExitCode::SUCCESS
         }
         Err(message) => {
@@ -1606,9 +1665,13 @@ fn render_undo_list(format: OutputFormat, runs: &[UndoRun]) {
                 println!("  {}  {} file(s)", run.run_id, run.files.len());
             }
         }
-        OutputFormat::Json => println!(
-            "{}",
-            serde_json::to_string_pretty(runs).expect("undo list JSON is serializable")
+        OutputFormat::Json => print_json_outcome(
+            "undo",
+            "success",
+            &serde_json::json!({
+                "recovery_points": runs,
+                "count": runs.len(),
+            }),
         ),
     }
 }
@@ -1750,6 +1813,30 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
     }
     Duration::try_from_secs_f64(seconds)
         .map_err(|_| "timeout is outside the supported range".to_owned())
+}
+
+/// Prints one command's answer as the object a caller can rely on.
+///
+/// Every command that speaks JSON says the same three things before saying
+/// anything of its own: which schema this is, which command answered, and
+/// whether it succeeded. A caller reading `outcome` never has to infer failure
+/// from a field that happens to be absent, and a bare array — which is what
+/// `undo --list` used to return — cannot carry any of it.
+///
+/// It goes to standard output, always. Prose belongs on standard error so a
+/// human can watch a run; a machine-readable answer is the result, and a result
+/// a caller has to fish out of the diagnostic stream is not an interface.
+fn print_json_outcome(command: &str, outcome: &str, payload: &serde_json::Value) {
+    let value = serde_json::json!({
+        "schema_version": normfix_report::REPORT_SCHEMA_VERSION,
+        "command": command,
+        "outcome": outcome,
+        "result": payload,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&value).expect("the command outcome schema is serializable")
+    );
 }
 
 fn print_run_error(format: OutputFormat, messages: &normfix_i18n::Messages, message: &str) {

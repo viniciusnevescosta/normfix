@@ -11,7 +11,7 @@
     "predev": "npm run sync",
     "dev": "vitepress dev",
     "prebuild": "npm run sync",
-    "build": "vitepress build",
+    "build": "vitepress build && node .vitepress/build-text-pages.mjs",
     "preview": "vitepress preview"
   },
   "devDependencies": {

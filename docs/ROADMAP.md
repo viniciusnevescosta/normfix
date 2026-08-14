@@ -165,19 +165,23 @@ leaving a consumer to infer it from an absent field.
 `--format json` also has to mean the same thing everywhere: every command, and
 every flag, rather than the subset that happens to have been written for a
 person watching a terminal. Running each command and reading what came back
-finds four gaps.
+finds three gaps.
 
 `upgrade --check` answers in English prose whatever the format, so nothing can
 read whether an update exists. `uninstall --dry-run` writes nothing at all to
 standard output and describes what it would remove on standard error, which is
 the stream a caller is least likely to be parsing. `undo --list` answers with a
 bare `[]`, carrying no envelope and no `schema_version`, so "no recovery points"
-cannot be told apart from "this build did not understand the request". And
-`leaks` writes the same error object to both streams, so a caller that merges
-them sees the failure twice.
+cannot be told apart from "this build did not understand the request".
 
 The commands that already answer properly — `format`, `lint`, `check`,
-`budget`, `preflight`, `explain` — are the shape the rest have to reach.
+`budget`, `preflight`, `explain`, and `leaks` — are the shape the rest have to
+reach: one object on standard output, naming the schema, the command, and
+whether it succeeded, before anything of its own.
+
+Because this release is about being read by something that is not a person, the
+documentation also ships a plain-text copy of every page, so an agent can fetch
+one page's instructions without parsing the site around them.
 
 `schema_version` already exists and is honoured. What follows it is coverage:
 each command's payload documented as the contract it is, so nothing has to be
@@ -205,9 +209,8 @@ someone would actually say it there, rather than translated. The point of
 translating was accessibility, and a sentence a reader has to decode is not
 accessible in any language.
 
-Each page also publishes its own `llms.txt`, so an agent reading one page gets
-that page's instructions instead of having to reconstruct them from the whole
-site.
+The plain-text copy of every page ships in 1.6.2, alongside the JSON work,
+since both exist for the same reader.
 
 ## 1.7 — Python projects
 

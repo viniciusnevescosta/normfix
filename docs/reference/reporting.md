@@ -79,6 +79,46 @@ outcomes, per-file change/write/failure fields, fixes, before/after diagnostics,
 summary counts, optional preflight `evaluation`, and `duration_seconds`. Source
 buffers and unified diffs are intentionally omitted.
 
+### The commands that answer with one object
+
+`format`, `lint`, `check`, `budget`, and `preflight` all answer with the run
+report above. The commands that do something else answer with an envelope
+naming the schema, the command, and whether it succeeded, so nothing has to be
+inferred from a field that happens to be absent:
+
+```json
+{
+  "schema_version": 2,
+  "command": "upgrade",
+  "outcome": "success",
+  "result": {
+    "state": "available",
+    "current_version": "1.6.1",
+    "latest_version": "1.7.0",
+    "installed": false
+  }
+}
+```
+
+`outcome` is `success`, `planned` for a `--dry-run`, or `failure`. The `result`
+object is the command's own:
+
+| Command | `result` holds |
+|---|---|
+| `upgrade` | `state` (`current`, `available`, `installed`), both versions, and `installed` |
+| `undo` | `recovery_points` in run order, and their `count` |
+| `uninstall` | `dry_run`, `purge`, `removes_recovery_data`, and the `plan` as text |
+| `explain` | `rule_id` and the `explanation` |
+| `leaks` | the checker report, its allocation sites, and its memory errors |
+
+The answer always goes to standard output. Prose belongs on standard error so a
+person can watch a run, and a result a caller has to fish out of the diagnostic
+stream is not an interface.
+
+Every documentation page is also published as plain text at its own address
+plus `.txt` — `/docs/guide/ai-agents.txt` — so one page's instructions can be
+fetched without parsing the site around them.
+
 `normfix preflight` adds a deterministic, explicitly non-conclusive estimate:
 `score`, `grade`, `verdict`, and exactly located `hard_failures`. The verdict is
 `hard_fail` when the evaluated scope contains an unexpected file, a finding
