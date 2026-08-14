@@ -115,6 +115,18 @@ The answer always goes to standard output. Prose belongs on standard error so a
 person can watch a run, and a result a caller has to fish out of the diagnostic
 stream is not an interface.
 
+A refusal answers in the same envelope, with `outcome: "failure"` and an
+`error` object naming the code and the message, so `outcome` is read in one
+place rather than two shapes being learned.
+
+Two fields describe the run rather than the files. `granted_capabilities` lists
+what this run was allowed to do — `unsafe`, `force`, `remove_unused`,
+`remove_unexpected`, `remove_invalid_comments` — and is present and empty for
+an ordinary run, so its absence never has to be interpreted. And `--diff` puts
+each file's unified diff on its entry as `diff`; the report leaves diffs out by
+default because they double its size for a reader who did not ask, and the flag
+is the reader asking.
+
 Every documentation page is also published as plain text at its own address
 plus `.txt` — `/docs/guide/ai-agents.txt` — so one page's instructions can be
 fetched without parsing the site around them.

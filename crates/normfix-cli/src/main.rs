@@ -1303,11 +1303,81 @@ fn render_report(cli: &Cli, report: &RunReport) -> Result<(), String> {
             );
             Ok(())
         }
-        OutputFormat::Json => report
-            .to_pretty_json()
-            .map(|json| print!("{json}"))
-            .map_err(|error| format!("Could not serialize the run report: {error}")),
+        OutputFormat::Json => {
+            let mut value = serde_json::to_value(report)
+                .map_err(|error| format!("Could not serialize the run report: {error}"))?;
+            // Asking for a diff and being handed a mode label is not an answer.
+            // The report leaves diffs out by default because they double its
+            // size for a reader who did not ask; `--diff` is the reader asking.
+            if cli.diff {
+                attach_unified_diffs(&mut value, report);
+            }
+            attach_granted_capabilities(&mut value, cli);
+            let json = serde_json::to_string_pretty(&value)
+                .map_err(|error| format!("Could not serialize the run report: {error}"))?;
+            println!("{json}");
+            Ok(())
+        }
     }
+}
+
+/// Puts each file's unified diff beside its entry, when one was asked for.
+fn attach_unified_diffs(value: &mut serde_json::Value, report: &RunReport) {
+    let Some(files) = value
+        .get_mut("files")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for (entry, file) in files.iter_mut().zip(&report.files) {
+        let Some(object) = entry.as_object_mut() else {
+            continue;
+        };
+        object.insert(
+            "diff".to_owned(),
+            normfix_report::unified_diff(file).map_or(serde_json::Value::Null, |diff| {
+                serde_json::Value::String(diff)
+            }),
+        );
+    }
+}
+
+/// Names the destructive capabilities this run was granted.
+///
+/// A caller deciding whether to trust a result has to know what the run was
+/// allowed to do, and reading that back from the flags it passed is only
+/// possible for the caller that passed them. An empty list is the answer for
+/// an ordinary run, and is present rather than omitted so its absence never
+/// has to be interpreted.
+fn attach_granted_capabilities(value: &mut serde_json::Value, cli: &Cli) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    let mut granted = Vec::new();
+    if cli.unsafe_mode {
+        granted.push("unsafe");
+    }
+    if cli.remove_invalid_comments {
+        granted.push("remove_invalid_comments");
+    }
+    if cli.remove_unused {
+        granted.push("remove_unused");
+    }
+    if cli.remove_unexpected {
+        granted.push("remove_unexpected");
+    }
+    if cli.force {
+        granted.push("force");
+    }
+    object.insert(
+        "granted_capabilities".to_owned(),
+        serde_json::Value::Array(
+            granted
+                .into_iter()
+                .map(|name| serde_json::Value::String(name.to_owned()))
+                .collect(),
+        ),
+    );
 }
 
 fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCode {
@@ -1847,8 +1917,11 @@ fn print_run_error(format: OutputFormat, messages: &normfix_i18n::Messages, mess
             eprintln!("{}", messages.error_nothing_written);
         }
         OutputFormat::Json => {
+            // The same envelope a successful command answers with, so a caller
+            // reads `outcome` in one place instead of learning two shapes.
             let value = serde_json::json!({
                 "schema_version": normfix_report::REPORT_SCHEMA_VERSION,
+                "outcome": "failure",
                 "error": {
                     "code": "run_error",
                     "message": message,
