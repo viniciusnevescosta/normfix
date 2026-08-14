@@ -1,6 +1,6 @@
 # O que é o normfix, e por quê
 
-## O ponto
+## Para que serve
 
 O recurso mais escasso de um estudante da 42 é tempo. Não talento, não esforço.
 Horas. E uma parcela significativa dessas horas vai para espaço em branco:
@@ -9,8 +9,8 @@ cabeçalhos. Ao longo de um cursus que tem milhares de arquivos, projeto após
 projeto, e nada disso te ensina nada na segunda vez que você faz.
 
 O `normfix` existe para devolver essas horas. Ele corrige, em um comando e no
-projeto inteiro, os erros que são mecânicos, e se recusa a tocar naqueles que são
-de fato sobre o seu programa, porque esses são os que valem o seu tempo.
+projeto inteiro, os erros que são mecânicos, e se recusa a tocar nos que são
+sobre o seu programa de verdade — porque esses são os que valem o seu tempo.
 
 ## Em um parágrafo
 
@@ -19,8 +19,8 @@ Você escreve C para um projeto da 42. A
 tem a indentação errada, que uma função é longa demais, que uma declaração está
 no lugar errado, e então para, porque relatar é tudo o que ela faz.
 O `normfix` lê o mesmo projeto, corrige os erros que consegue provar que é seguro
-corrigir, e explica o resto em palavras, em vez de um nome de regra. É um comando
-que deixa seu projeto mais perto de passar do que ele o encontrou, ou te diz
+corrigir, e explica o resto com uma frase, em vez de um nome de regra. É um comando
+que deixa o seu projeto mais perto de passar do que estava, ou te diz
 exatamente por que não conseguiu.
 
 ```sh
@@ -53,40 +53,40 @@ escreveu.
 **Ele usa o verificador oficial como autoridade.** A Norminette instalada roda
 antes e depois de cada lote de edições. Se um lote introduz uma violação de regra
 que não existia antes, o lote inteiro é revertido e os seus bytes originais
-permanecem. A versão 3.3.59 é a linha de base de compatibilidade testada; uma
-versão instalada diferente continua utilizável, mas é nomeada em um aviso
-destacado, porque as regras nativas não receberam a mesma validação. O `normfix`
+permanecem. A 3.3.59 é a versão contra a qual ele foi testado; outra versão
+instalada continua funcionando, mas aparece num aviso bem visível, porque as
+regras nativas não passaram pela mesma checagem. O `normfix`
 nunca discute com a ferramenta pela qual você é de fato avaliado.
 
-**Ele edita intervalos estreitos de bytes, não arquivos inteiros.** Uma mudança
-toca o intervalo sobre o qual provou algo e nada além, então o diff é revisável e
-o resto do seu arquivo fica idêntico byte a byte. É por isso que você pode rodá-lo
-em trabalho em andamento.
+**Ele mexe em trechos exatos, não em arquivos inteiros.** Uma mudança toca só o
+pedaço sobre o qual ele provou alguma coisa; o resto do arquivo fica igualzinho,
+byte por byte. Por isso dá para rodar no meio do trabalho, com o diff ainda
+legível.
 
-**Ele recusa mais do que aceita.** Reordenar includes através de um `#ifdef`
-poderia mudar quais declarações existem, então ele para no condicional. Extrair
-uma função de um corpo de 40 linhas exige nomear a nova função, o que é uma
-decisão de projeto, então ele relata o comprimento e deixa você decidir. Toda
-recusa vem com o motivo e o próximo passo.
+**Ele recusa mais do que aceita.** Reordenar includes que atravessam um `#ifdef`
+poderia mudar quais declarações existem, então ele para no condicional. Tirar uma
+função de um corpo de 40 linhas exige dar um nome pra ela, e o nome é você quem
+escolhe — então ele avisa o tamanho e deixa a decisão com você. Toda recusa vem
+com o motivo e o próximo passo.
 
 **Tudo o que ele grava é recuperável.** As gravações passam por uma única
 transação com backups externos e um journal. O `normfix undo` restaura uma
-execução, e se recusa a fazer isso se você editou aqueles arquivos desde então.
+execução, e se recusa a fazer isso se você mexeu nesses arquivos depois.
 
 ## O que ele não vai fazer
 
 Esta é a lista honesta, e ela é o propósito da ferramenta, não uma limitação da
-versão atual:
+versão de agora:
 
 - Ele não vai extrair uma função longa por você.
 - Ele não vai redesenhar fluxo de controle, renomear no projeto inteiro nem
   mudar uma assinatura pública.
-- Ele não vai provar que seu programa não tem vazamentos. A passagem do
-  analisador pode sugerir um vazamento; ela não pode provar a ausência dele.
+- Ele não vai provar que seu programa não tem vazamentos. O analisador pode
+  apontar um vazamento provável; ele não consegue provar que não existe nenhum.
 - Ele não vai chamar uma versão não testada da Norminette de "suportada". Ele
   continua com um aviso visível de compatibilidade para que uma atualização da 42
-  não torne a ferramenta inutilizável, enquanto `--strict-norminette-version`
-  restaura o comportamento de falhar fechado.
+  não torne a ferramenta inutilizável, e `--strict-norminette-version` é como você
+  pede que ele recuse em vez de continuar.
 - Ele não vai garantir 80 colunas quando não existe uma quebra segura. Uma string
   longa ou uma macro continua longa e é relatada.
 
@@ -105,7 +105,7 @@ versão atual:
 > Mude o que pode ser provado, explique o que não pode, e nunca transforme
 > incerteza em permissão.
 
-Toda decisão de design em [na arquitetura](/ARCHITECTURE) decorre dessa frase,
+Toda decisão descrita [na arquitetura](/pt/ARCHITECTURE) sai dessa frase —
 inclusive as que fazem a ferramenta fazer menos do que poderia.
 
 ## A seguir

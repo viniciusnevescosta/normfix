@@ -212,4 +212,4 @@ présents sur le disque.
 Pour chaque option et chaque limite de preuve, poursuivez avec
 [Toutes les options](/fr/reference/flags),
 [Sûreté et récupération](/fr/reference/safety),
-[Rapports](/fr/reference/reporting) et [Architecture](/ARCHITECTURE).
+[Rapports](/fr/reference/reporting) et [Architecture](/fr/ARCHITECTURE).

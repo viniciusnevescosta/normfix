@@ -105,7 +105,7 @@ de la versión actual:
 > Cambia lo que puede probarse, explica lo que no, y nunca conviertas la
 > incertidumbre en permiso.
 
-Cada decisión de diseño en [la arquitectura](/ARCHITECTURE) se deriva de esa
+Cada decisión de diseño en [la arquitectura](/es/ARCHITECTURE) se deriva de esa
 frase, incluidas las que hacen que la herramienta haga menos de lo que podría.
 
 ## A continuación

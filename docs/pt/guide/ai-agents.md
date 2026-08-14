@@ -204,4 +204,4 @@ originais em disco da Norminette e do Makefile.
 Para cada opção e limite de prova, continue em
 [Todas as flags](/pt/reference/flags),
 [Segurança e recuperação](/pt/reference/safety),
-[Relatórios](/pt/reference/reporting) e [Arquitetura](/ARCHITECTURE).
+[Relatórios](/pt/reference/reporting) e [Arquitetura](/pt/ARCHITECTURE).

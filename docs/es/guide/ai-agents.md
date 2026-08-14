@@ -208,4 +208,4 @@ Makefile.
 Para cada opción y límite de prueba, continúa en
 [Todas las flags](/es/reference/flags),
 [Seguridad y recuperación](/es/reference/safety),
-[Informes](/es/reference/reporting) y [Arquitectura](/ARCHITECTURE).
+[Informes](/es/reference/reporting) y [Arquitectura](/es/ARCHITECTURE).

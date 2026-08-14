@@ -109,7 +109,7 @@ de la version actuelle :
 > Changez ce qui peut être prouvé, expliquez ce qui ne peut pas l'être, et ne
 > transformez jamais l'incertitude en permission.
 
-Chaque décision de conception dans [l'architecture](/ARCHITECTURE) découle de
+Chaque décision de conception dans [l'architecture](/fr/ARCHITECTURE) découle de
 cette phrase, y compris celles qui font que l'outil en fait moins qu'il ne le
 pourrait.
 
