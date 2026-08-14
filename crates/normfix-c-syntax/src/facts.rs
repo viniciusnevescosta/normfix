@@ -60,6 +60,48 @@ pub struct SyntaxFacts {
     pub macros: Vec<MacroFact>,
     /// Syntactically obvious unbounded loops and their exit evidence.
     pub loops: Vec<LoopFact>,
+    /// Statements whose entire value is one forbidden conditional expression.
+    pub ternary_statements: Vec<TernaryFact>,
+}
+
+/// A statement that exists only to choose between two values.
+///
+/// The Norm forbids `?:` outright, and the rewrite that removes it has to know
+/// more than where the operator is: what the statement does with the value it
+/// picks, and how much room the enclosing function has left, since one line
+/// becomes three or four.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TernaryFact {
+    /// The whole statement, replaced as a unit.
+    pub statement_range: TextRange,
+    /// What the statement does with the chosen value.
+    pub form: TernaryForm,
+    /// The condition being tested.
+    pub condition_range: TextRange,
+    /// The value taken when the condition holds.
+    pub consequence_range: TextRange,
+    /// The value taken otherwise.
+    pub alternative_range: TextRange,
+    /// Whether the condition already carries its own parentheses.
+    pub condition_parenthesized: bool,
+    /// Body of the function that owns the statement, whose line budget the
+    /// rewrite spends.
+    pub function_body_range: TextRange,
+}
+
+/// What a ternary statement does with the value it selects.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TernaryForm {
+    /// `target = cond ? a : b;`, keeping whichever assignment operator was
+    /// written.
+    Assignment {
+        /// The text naming what is assigned to.
+        target: String,
+        /// The assignment operator, which may be compound.
+        operator: String,
+    },
+    /// `return (cond ? a : b);`
+    Return,
 }
 
 /// Definition versus declaration.
@@ -307,6 +349,9 @@ pub struct ArrayDeclaratorFact {
     pub bound_range: Option<TextRange>,
 }
 
+// One arm per node kind the Norm has something to say about: the dispatch is a
+// table, and breaking it up would scatter the walk it belongs to.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts, ParseFailure> {
     let mut facts = SyntaxFacts::default();
     let mut pending = vec![root];
@@ -380,6 +425,11 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
                 facts
                     .empty_statements
                     .push(node_range(node.start_byte(), node.end_byte())?);
+            }
+            "expression_statement" | "return_statement" => {
+                if let Some(fact) = ternary_fact(source, node)? {
+                    facts.ternary_statements.push(fact);
+                }
             }
             "while_statement" | "for_statement" | "do_statement" => {
                 collect_control_body_fact(node.child_by_field_name("body"), &mut facts)?;
@@ -1316,6 +1366,112 @@ fn direct_named_children(node: Node<'_>) -> impl Iterator<Item = Node<'_>> {
     node.named_children(&mut cursor)
         .collect::<Vec<_>>()
         .into_iter()
+}
+
+/// A statement whose whole value is one `?:`, when rewriting it is provably the
+/// same program.
+///
+/// The Norm forbids the operator, so every one of these has to go; the guards
+/// decide which ones normfix may retire itself instead of handing back.
+///
+/// The statement must sit directly in a block. The same rewrite under an
+/// unbraced `if` body would put an `if` where one statement was, and the
+/// trailing `else` would bind to the wrong branch — a silent change of meaning.
+///
+/// It must carry no comment, which the new shape has nowhere to put.
+///
+/// An assignment target is written into both branches, so it must hold nothing
+/// that runs: a call or an increment there happens once today and would have to
+/// happen once still, which only a side-effect-free target guarantees.
+///
+/// And no part may hold a second `?:`. That one would end up inside a branch,
+/// where this collector no longer looks, and the run would report a ternary
+/// removed while the file still had one.
+fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, ParseFailure> {
+    if node.parent().is_none_or(|parent| parent.kind() != "compound_statement")
+        || contains_kind(node, "comment")
+    {
+        return Ok(None);
+    }
+    let Some(value) = node.named_child(0) else {
+        return Ok(None);
+    };
+    let (form, conditional) = if node.kind() == "return_statement" {
+        (TernaryForm::Return, unwrap_parentheses(value))
+    } else {
+        let (Some(target), Some(operator), Some(right)) = (
+            value.child_by_field_name("left"),
+            value.child_by_field_name("operator"),
+            value.child_by_field_name("right"),
+        ) else {
+            return Ok(None);
+        };
+        if value.kind() != "assignment_expression"
+            || ["call_expression", "update_expression", "assignment_expression"]
+                .iter()
+                .any(|kind| contains_kind(target, kind))
+        {
+            return Ok(None);
+        }
+        let form = TernaryForm::Assignment {
+            target: node_text(source, target)?.to_owned(),
+            operator: node_text(source, operator)?.to_owned(),
+        };
+        (form, unwrap_parentheses(right))
+    };
+    let (Some(condition), Some(consequence), Some(alternative)) = (
+        conditional.child_by_field_name("condition"),
+        conditional.child_by_field_name("consequence"),
+        conditional.child_by_field_name("alternative"),
+    ) else {
+        return Ok(None);
+    };
+    if conditional.kind() != "conditional_expression"
+        || [condition, consequence, alternative]
+            .iter()
+            .any(|part| contains_kind(*part, "conditional_expression"))
+    {
+        return Ok(None);
+    }
+    let mut owner = node;
+    while owner.kind() != "function_definition" {
+        let Some(parent) = owner.parent() else {
+            return Ok(None);
+        };
+        owner = parent;
+    }
+    let Some(body) = owner.child_by_field_name("body") else {
+        return Ok(None);
+    };
+    Ok(Some(TernaryFact {
+        statement_range: node_range(node.start_byte(), node.end_byte())?,
+        form,
+        condition_range: node_range(condition.start_byte(), condition.end_byte())?,
+        consequence_range: node_range(consequence.start_byte(), consequence.end_byte())?,
+        alternative_range: node_range(alternative.start_byte(), alternative.end_byte())?,
+        condition_parenthesized: condition.kind() == "parenthesized_expression",
+        function_body_range: node_range(body.start_byte(), body.end_byte())?,
+    }))
+}
+
+/// Peels the parentheses a value was written inside, which change no meaning.
+fn unwrap_parentheses(mut node: Node<'_>) -> Node<'_> {
+    while node.kind() == "parenthesized_expression" {
+        let Some(inner) = node.named_child(0) else {
+            return node;
+        };
+        node = inner;
+    }
+    node
+}
+
+/// Whether `kind` appears anywhere at or below `node`.
+fn contains_kind(node: Node<'_>, kind: &str) -> bool {
+    if node.kind() == kind {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(|child| contains_kind(child, kind))
 }
 
 fn has_ancestor_kind(mut node: Node<'_>, kind: &str) -> bool {

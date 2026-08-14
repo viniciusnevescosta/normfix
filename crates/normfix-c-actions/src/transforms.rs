@@ -1,9 +1,9 @@
 //! Ordered native C transformation phases.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::OnceLock;
 
-use normfix_c_syntax::CFunctionKind;
+use normfix_c_syntax::{CFunctionKind, TernaryForm};
 use normfix_core::TextRange;
 use regex::Regex;
 
@@ -63,6 +63,7 @@ pub(crate) enum Phase {
     BracesAndControls,
     SingleStatementBlocks,
     RedundantElse,
+    Ternaries,
     SplitDeclarations,
     FunctionLayout,
     Indentation,
@@ -94,6 +95,7 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
         Phase::BracesAndControls,
         Phase::SingleStatementBlocks,
         Phase::RedundantElse,
+        Phase::Ternaries,
         Phase::SplitDeclarations,
         Phase::FunctionLayout,
         Phase::Indentation,
@@ -159,6 +161,10 @@ impl Phase {
             Self::SingleStatementBlocks => Ok(ActionBatch::semantic(
                 "REMOVE_SINGLE_STATEMENT_BRACES",
                 remove_single_statement_braces(context)?,
+            )),
+            Self::Ternaries => Ok(ActionBatch::semantic(
+                "REPLACE_TERNARY",
+                rewrite_ternaries(context)?,
             )),
             Self::SplitDeclarations => Ok(ActionBatch::semantic(
                 "SPLIT_DECLARATION_ASSIGNMENT",
@@ -1338,6 +1344,113 @@ fn split_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError
         }
     }
     Ok(edits)
+}
+
+/// Replaces a forbidden `?:` with the branch it was hiding.
+///
+/// `x = a > b ? a : b;` becomes an `if`/`else` writing to `x`, and
+/// `return (c ? a : b);` becomes an `if` that returns, then a return. Both keep
+/// the original evaluation order exactly: the condition runs first, then one
+/// branch and never the other, which is what the operator did.
+///
+/// One line becomes three or four, and a function is allowed twenty-five. A
+/// rewrite that pushed a function over that limit would trade a ternary the
+/// student can rewrite in place for a structural error that forces them to
+/// carve up a function, so the count is checked first and the statement is left
+/// to be reported when the room is not there.
+fn rewrite_ternaries(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    use std::fmt::Write as _;
+
+    /// The Norm's limit on a function body.
+    const FUNCTION_LINES: u32 = 25;
+
+    let source = context.source();
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    let mut spent: HashMap<TextRange, u32> = HashMap::new();
+    for ternary in &context.facts().ternary_statements {
+        let start = ternary.statement_range.start().get() as usize;
+        let end = ternary.statement_range.end().get() as usize;
+        let (Some(condition), Some(consequence), Some(alternative)) = (
+            source.get(range_bounds(ternary.condition_range)),
+            source.get(range_bounds(ternary.consequence_range)),
+            source.get(range_bounds(ternary.alternative_range)),
+        ) else {
+            continue;
+        };
+        let line_number = lines.line_number_at(start);
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        // The replacement text starts where the statement's first token does,
+        // so its own indentation is already on the line; every line after it
+        // has to carry that indentation itself.
+        let indent = lines.text(line)[..leading_whitespace(lines.text(line))].to_owned();
+        let growth = match ternary.form {
+            TernaryForm::Return => 2,
+            TernaryForm::Assignment { .. } => 3,
+        };
+        let already = spent.entry(ternary.function_body_range).or_default();
+        if body_line_count(&lines, ternary.function_body_range) + *already + growth > FUNCTION_LINES
+        {
+            continue;
+        }
+        let test = if ternary.condition_parenthesized {
+            format!("if {condition}")
+        } else {
+            format!("if ({condition})")
+        };
+        let mut replacement = String::new();
+        match &ternary.form {
+            TernaryForm::Return => {
+                let _ = write!(
+                    replacement,
+                    "{test}\n{indent}\treturn {};\n{indent}return {};",
+                    parenthesized(consequence),
+                    parenthesized(alternative),
+                );
+            }
+            TernaryForm::Assignment { target, operator } => {
+                let _ = write!(
+                    replacement,
+                    "{test}\n{indent}\t{target} {operator} {consequence};\n\
+                     {indent}else\n{indent}\t{target} {operator} {alternative};",
+                );
+            }
+        }
+        edits.push(Edit::new(
+            start,
+            end,
+            replacement,
+            "REPLACE_TERNARY",
+            "replaced a forbidden ternary with the branch it stood for",
+            Some(line_number),
+        )?);
+        *already += growth;
+    }
+    Ok(edits)
+}
+
+/// A returned value, wearing the parentheses the Norm asks of it exactly once.
+fn parenthesized(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with('(') && trimmed.ends_with(')') {
+        trimmed.to_owned()
+    } else {
+        format!("({trimmed})")
+    }
+}
+
+/// Lines a function body occupies, counted as the official checker counts
+/// them: the function's own braces are not part of its twenty-five.
+fn body_line_count(lines: &SourceLines, body: TextRange) -> u32 {
+    let opening = lines.line_number_at(body.start().get() as usize);
+    let closing = lines.line_number_at((body.end().get() as usize).saturating_sub(1));
+    closing.saturating_sub(opening).saturating_sub(1)
+}
+
+fn range_bounds(range: TextRange) -> std::ops::Range<usize> {
+    range.start().get() as usize..range.end().get() as usize
 }
 
 fn remove_redundant_else(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {

@@ -1614,6 +1614,121 @@ fn removing_an_unused_local_is_never_done_without_being_asked() {
 }
 
 #[test]
+fn a_control_body_starting_with_a_star_does_not_deadlock_two_rules() {
+    // `*out = a;` opens with what also spells multiplication, so joining it to
+    // the line above read the `)` of the header as an operand. The brace rule
+    // put the body back on its own line, the join rule pulled it up again, and
+    // the run gave up with every fix in the file lost. Assigning through a
+    // pointer inside an `if` is in every project that has pointers at all.
+    let source = concat!(
+        "int\tf(int a, int *out)\n",
+        "{\n",
+        "\tif (a > 0)\n",
+        "\t\t*out = a;\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\tif (a > 0)\n\t\t*out = a;\n"), "{fixed}");
+    assert_eq!(apply(&fixed, &[]), fixed);
+
+    // The join itself still has to work where it was always right.
+    let wrapped = concat!(
+        "int\tvalue(void)\n",
+        "{\n",
+        "\treturn (sum(first,\n",
+        "\t\tsecond));\n",
+        "}\n",
+    );
+    assert!(apply(wrapped, &[]).contains("return (sum(first, second));"));
+}
+
+#[test]
+fn a_ternary_becomes_the_branch_it_stood_for() {
+    // The Norm forbids `?:` outright, and both statement shapes it appears in
+    // have an exact equivalent: the condition still runs first, and still
+    // exactly one side runs after it.
+    let source = concat!(
+        "int\tlarger(int a, int b)\n",
+        "{\n",
+        "\tint\tr;\n",
+        "\n",
+        "\tr = a > b ? a : b;\n",
+        "\treturn (r);\n",
+        "}\n",
+        "\n",
+        "int\tsign(int n)\n",
+        "{\n",
+        "\treturn (n < 0 ? -1 : 1);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\tif (a > b)\n\t\tr = a;\n\telse\n\t\tr = b;\n"), "{fixed}");
+    // A return needs no `else`: the first branch already left the function.
+    assert!(fixed.contains("\tif (n < 0)\n\t\treturn (-1);\n\treturn (1);\n"), "{fixed}");
+    assert!(!fixed.contains('?'), "{fixed}");
+}
+
+#[test]
+fn a_ternary_under_an_unbraced_body_stays() {
+    // The new `else` would bind to the outer `if`.
+    let source = concat!(
+        "int\tf(int a, int b, int *out)\n",
+        "{\n",
+        "\tif (a > 0)\n",
+        "\t\t*out = a > b ? a : b;\n",
+        "\treturn (0);\n",
+        "}\n",
+    );
+    assert!(apply(source, &[]).contains("a > b ? a : b"));
+}
+
+#[test]
+fn a_ternary_whose_target_moves_stays() {
+    // The target is written into both branches, so it may not do anything
+    // that would then have to happen twice.
+    let source = concat!(
+        "int\tf(int *arr, int i, int a)\n",
+        "{\n",
+        "\tarr[i++] = a > 0 ? a : 0;\n",
+        "\treturn (i);\n",
+        "}\n",
+    );
+    assert!(apply(source, &[]).contains("a > 0 ? a : 0"));
+}
+
+#[test]
+fn a_nested_ternary_stays() {
+    // The inner one would land inside a branch, where the collector no longer
+    // looks — the run would claim a ternary gone with one still in the file.
+    let source = concat!(
+        "int\tf(int a, int b)\n",
+        "{\n",
+        "\tint\tr;\n",
+        "\n",
+        "\tr = a > b ? a : (b > 0 ? b : 0);\n",
+        "\treturn (r);\n",
+        "}\n",
+    );
+    assert!(apply(source, &[]).contains("(b > 0 ? b : 0)"));
+}
+
+#[test]
+fn a_ternary_stays_when_the_function_has_no_room_for_it() {
+    // One line becomes four. Spending a budget the function does not have
+    // would trade a ternary the student can rewrite in place for a structural
+    // error that forces them to carve the function up.
+    let body = (0..21).fold(String::new(), |mut text, index| {
+        use std::fmt::Write as _;
+        let _ = writeln!(text, "\tn += {index};");
+        text
+    });
+    let source =
+        format!("int\tf(int a, int b)\n{{\n\tint\tn;\n\tint\tr;\n\n{body}\tr = a > b ? a : b;\n\treturn (r + n);\n}}\n");
+    assert!(apply(&source, &[]).contains("a > b ? a : b"));
+}
+
+#[test]
 fn else_if_stays_on_one_line() {
     // `else if` is one construct written on one line. Treating the `if` as the
     // body of the `else` split it into an `else` holding a nested `if`: a line
