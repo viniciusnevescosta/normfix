@@ -98,6 +98,8 @@ you may already be using one of them.
 
 ```sh
 brew install viniciusnevescosta/normfix/normfix
+brew upgrade viniciusnevescosta/normfix/normfix  # later
+brew uninstall normfix                            # to remove it
 ```
 
 Installs the same verified binary rather than building it. macOS and Linuxbrew.
@@ -107,7 +109,13 @@ Installs the same verified binary rather than building it. macOS and Linuxbrew.
 ```powershell
 scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
 scoop install normfix
+scoop update normfix     # later, to upgrade
+scoop uninstall normfix  # to remove it
 ```
+
+Scoop owns that install, so `normfix upgrade` and `normfix uninstall` refuse
+and point you back at these — replacing the binary underneath would leave
+Scoop's manifest describing something that is no longer there.
 
 ### Downloading the archive yourself
 

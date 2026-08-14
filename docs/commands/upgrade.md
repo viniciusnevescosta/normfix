@@ -36,34 +36,12 @@ The channel boundary is deliberate: a stable installation is never moved to a
 beta or release candidate by `upgrade` or by the daily release notice. Opting
 into a pre-release remains an explicit install-time choice.
 
-## Reading it from a script
-
-```sh
-normfix --format json upgrade --check
-```
-
-```json
-{
-  "schema_version": 2,
-  "command": "upgrade",
-  "outcome": "success",
-  "result": {
-    "state": "available",
-    "current_version": "1.6.2",
-    "latest_version": "1.7.0",
-    "installed": false
-  }
-}
-```
-
-`state` is `current`, `available`, or `installed`. Branch on that rather than
-on the text, which is written for a person.
-
 ## When it refuses
 
 | Situation | What it says |
 |---|---|
 | Installed by Homebrew | Points you at `brew upgrade viniciusnevescosta/normfix/normfix` |
+| Installed by Scoop | Points you at `scoop update normfix` |
 | No write permission | Names the path and says to check ownership; it never asks for `sudo` |
 | Checksum mismatch | Prints both digests and installs nothing |
 | No `curl` or `wget` | Says which tool is missing |
@@ -99,3 +77,26 @@ export NORMFIX_NO_UPDATE_CHECK=1
 The check asks GitHub for public release metadata. It sends no path, no source,
 and no identifier of any kind.
 :::
+
+## Reading it from a script
+
+```sh
+normfix --format json upgrade --check
+```
+
+```json
+{
+  "schema_version": 2,
+  "command": "upgrade",
+  "outcome": "success",
+  "result": {
+    "state": "available",
+    "current_version": "1.6.2",
+    "latest_version": "1.7.0",
+    "installed": false
+  }
+}
+```
+
+`state` is `current`, `available`, or `installed`. Branch on that rather than
+on the text, which is written for a person.

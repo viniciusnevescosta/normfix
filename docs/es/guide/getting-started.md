@@ -100,6 +100,8 @@ porque quizá ya uses alguna.
 
 ```sh
 brew install viniciusnevescosta/normfix/normfix
+brew upgrade viniciusnevescosta/normfix/normfix  # después
+brew uninstall normfix                            # para quitarlo
 ```
 
 Instala el mismo programa ya verificado, en lugar de compilarlo. Para macOS y
@@ -110,7 +112,13 @@ Linuxbrew.
 ```powershell
 scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
 scoop install normfix
+scoop update normfix     # después, para actualizar
+scoop uninstall normfix  # para quitarlo
 ```
+
+Scoop es el dueño de esa instalación, así que `normfix upgrade` y `normfix uninstall`
+se niegan y te devuelven a estos — cambiar el binario por debajo dejaría el
+manifiesto de Scoop describiendo algo que ya no está.
 
 ### Descargando el paquete tú mismo
 

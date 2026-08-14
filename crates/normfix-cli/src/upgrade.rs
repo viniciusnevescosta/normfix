@@ -182,14 +182,26 @@ fn newest_tag(current_version: &str) -> Result<String, String> {
 
 /// Rejects an install another package manager owns.
 ///
-/// Replacing a Homebrew-managed binary leaves the formula describing something
-/// that is no longer on disk, and the next `brew upgrade` silently undoes the
-/// change.
+/// Replacing a binary a package manager installed leaves its manifest
+/// describing something that is no longer on disk, and the manager's next
+/// upgrade silently undoes the change. Scoop needs this as much as Homebrew
+/// does: it keeps the binary under its own `apps` tree and a shim pointing at
+/// it, so overwriting the target leaves the shim aimed at bytes Scoop did not
+/// put there.
 fn reject_managed_install(executable: &Path) -> Result<(), String> {
     let path = executable.to_string_lossy();
-    if path.contains("/Cellar/") || path.contains("/homebrew/") || path.contains("/linuxbrew/") {
+    // `linuxbrew/` without a leading slash on purpose: the install lives at
+    // `~/.linuxbrew/` or `/home/linuxbrew/.linuxbrew/`, and requiring the slash
+    // matched neither.
+    if path.contains("/Cellar/") || path.contains("/homebrew/") || path.contains("linuxbrew/") {
         return Err(format!(
             "{path} is managed by Homebrew; upgrade it with `brew upgrade viniciusnevescosta/normfix/normfix`"
+        ));
+    }
+    let lowered = path.to_lowercase().replace('\\', "/");
+    if lowered.contains("/scoop/apps/") || lowered.contains("/scoop/shims/") {
+        return Err(format!(
+            "{path} is managed by Scoop; upgrade it with `scoop update normfix`"
         ));
     }
     Ok(())
@@ -364,9 +376,53 @@ fn is_stale(state: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        UpdateChannel, newest_published_tag, release_metadata_url, stable_tag, staging_directory,
-        update_channel,
+        UpdateChannel, newest_published_tag, reject_managed_install, release_metadata_url,
+        stable_tag, staging_directory, update_channel,
     };
+
+    #[test]
+    fn a_binary_a_package_manager_owns_is_never_replaced() {
+        use std::path::Path;
+
+        // Overwriting one leaves the manager's manifest describing bytes that
+        // are no longer there, and its next upgrade silently undoes the change.
+        for (path, manager, command) in [
+            (
+                "/opt/homebrew/Cellar/normfix/1.6.2/bin/normfix",
+                "Homebrew",
+                "brew upgrade",
+            ),
+            (
+                "/home/me/.linuxbrew/bin/normfix",
+                "Homebrew",
+                "brew upgrade",
+            ),
+            (
+                "C:\\Users\\me\\scoop\\apps\\normfix\\current\\normfix.exe",
+                "Scoop",
+                "scoop update",
+            ),
+            (
+                "C:\\Users\\me\\scoop\\shims\\normfix.exe",
+                "Scoop",
+                "scoop update",
+            ),
+        ] {
+            let refusal = reject_managed_install(Path::new(path))
+                .expect_err("a managed install must be refused");
+            assert!(refusal.contains(manager), "{path}: {refusal}");
+            assert!(refusal.contains(command), "{path}: {refusal}");
+        }
+    }
+
+    #[test]
+    fn an_ordinary_install_is_left_alone() {
+        use std::path::Path;
+
+        for path in ["/home/me/.local/bin/normfix", "/usr/local/bin/normfix"] {
+            assert!(reject_managed_install(Path::new(path)).is_ok(), "{path}");
+        }
+    }
 
     #[test]
     fn stable_versions_stay_on_the_stable_channel() {
