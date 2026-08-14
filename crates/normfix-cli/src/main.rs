@@ -615,7 +615,13 @@ fn run_leaks(cli: &Cli, arguments: &LeaksArguments) -> ExitCode {
         if unlisted > 0 {
             println!(
                 "{}",
-                normfix_i18n::fill(messages.leaks_errors, &[("count", &unlisted.to_string())],)
+                normfix_i18n::fill_plural(
+                    cli_locale(cli),
+                    unlisted,
+                    messages.leaks_errors_one,
+                    messages.leaks_errors_other,
+                    &[("count", &unlisted.to_string())],
+                )
             );
         }
         println!("{}", messages.leaks_not_a_proof);
@@ -1178,8 +1184,11 @@ fn execution_scope(
     messages: &normfix_i18n::Messages,
 ) -> String {
     if git_scoped {
-        normfix_i18n::fill(
-            messages.scope_git,
+        normfix_i18n::fill_plural(
+            cli_locale(cli),
+            paths.len() as u64,
+            messages.scope_git_one,
+            messages.scope_git_other,
             &[
                 (
                     "kind",
@@ -1783,8 +1792,11 @@ fn confirm_undo(run: &UndoRun, cli: &Cli) -> Result<(), String> {
     }
     eprintln!(
         "{}",
-        normfix_i18n::fill(
-            messages.undo_question,
+        normfix_i18n::fill_plural(
+            cli_locale(cli),
+            run.files.len() as u64,
+            messages.undo_question_one,
+            messages.undo_question_other,
             &[
                 ("count", &run.files.len().to_string()),
                 ("run", &run.run_id),

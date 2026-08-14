@@ -183,7 +183,7 @@ normfix · iniciando
   modo             somente leitura
   escopo           /home/student/demo (recursivo)
 ...
-Resumo: 1 arquivo(s) | 1 proposto(s) | 0 gravado(s) | 1 correção(ões) | 0 pendente(s) | 0 informativo(s) | 0 com falha | 0 inesperado(s) | 0 em quarentena
+Resumo: arquivos: 1 | propostos: 1 | gravados: 0 | correções: 1 | pendentes: 0 | informativos: 0 | com falha: 0 | inesperados: 0 | 0 em quarentena
 Concluído em 219 ms.
 ```
 

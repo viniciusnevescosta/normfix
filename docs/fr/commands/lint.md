@@ -25,7 +25,7 @@ warning[TOO_MANY_WS]: 2 occurrences in 1 file
  = source: official Norminette 3.3.59 compatibility
  = explain: normfix explain TOO_MANY_WS
 
-Summary: 1 files | 0 proposed | 0 written | 0 fixes | 14 remaining | 0 info
+Summary: fichiers : 1 | proposés : 0 | écrits : 0 | corrections : 0 | restants : 14 | informatifs : 0
 ```
 
 Remarquez `0 proposed` : `lint` ne planifie jamais de modification. Le même

@@ -19,7 +19,7 @@ info[NORM_BUDGET]: 2 occurrences in 1 file
          also reported as warnings.
  = source: Norm v4.1 native rule
 
-Summary: 1 files | 0 proposed | 0 written | 0 fixes | 14 remaining | 2 info
+Summary: files: 1 | proposed: 0 | written: 0 | fixes: 0 | remaining: 14 | info: 2
 ```
 
 Budget rows are informational and never change the exit code on their own.

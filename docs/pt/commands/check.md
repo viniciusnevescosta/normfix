@@ -19,7 +19,7 @@ WOULD FIX     2          0     0  add.c
 REVIEW        3          1     0  demo.h
 WOULD FIX     6          0     0  main.c
 
-Summary: 4 files | 4 proposed | 0 written | 12 fixes | 2 remaining | 0 info | 0 failed | 0 unexpected | 0 quarantined
+Summary: arquivos: 4 | propostos: 4 | gravados: 0 | correções: 12 | pendentes: 2 | informativos: 0 | com falha: 0 | inesperados: 0 | em quarentena: 0
 Completed in 578 ms.
 ```
 

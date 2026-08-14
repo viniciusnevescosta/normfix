@@ -20,7 +20,7 @@ info[NORM_BUDGET]: 2 occurrences in 1 file
          also reported as warnings.
  = source: Norm v4.1 native rule
 
-Summary: 1 files | 0 proposed | 0 written | 0 fixes | 14 remaining | 2 info
+Summary: fichiers : 1 | proposés : 0 | écrits : 0 | corrections : 0 | restants : 14 | informatifs : 2
 ```
 
 Les lignes de budget sont informatives et ne changent jamais à elles seules le

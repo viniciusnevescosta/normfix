@@ -145,6 +145,31 @@ fn unpublished_advisory(requested: &str) -> String {
     )
 }
 
+/// Picks the wording a count needs, then fills it.
+///
+/// Writing `file(s)` avoids the question rather than answering it, and a
+/// sentence that reads "reported 1 memory errors" is simply wrong in every
+/// language here. Which form a number takes is a property of the language, so
+/// it belongs beside the language rather than in each call site.
+///
+/// French counts zero as singular; English, Portuguese, and Spanish do not.
+/// That is the whole difference between these four, and it is the reason this
+/// takes a locale rather than testing `count == 1` at the call site.
+#[must_use]
+pub fn fill_plural(
+    locale: Locale,
+    count: u64,
+    one: &str,
+    other: &str,
+    arguments: &[(&str, &str)],
+) -> String {
+    let singular = match locale {
+        Locale::French => count <= 1,
+        Locale::English | Locale::Portuguese | Locale::Spanish => count == 1,
+    };
+    fill(if singular { one } else { other }, arguments)
+}
+
 /// Replaces `{name}` placeholders in a catalogue entry.
 ///
 /// Translations are reviewed against the English entry's placeholder set, so a

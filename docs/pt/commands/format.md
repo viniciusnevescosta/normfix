@@ -23,7 +23,7 @@ Files
 STATUS      FIXES  REMAINING  INFO  FILE
 FIXED        17          0     0  math_utils.c
 
-Summary: 1 files | 1 proposed | 1 written | 17 fixes | 0 remaining | 0 info | 0 failed
+Summary: arquivos: 1 | propostos: 1 | gravados: 1 | correções: 17 | pendentes: 0 | informativos: 0 | com falha: 0
 Completed in 0.62 s.
 ```
 

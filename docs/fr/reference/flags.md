@@ -185,7 +185,7 @@ normfix · démarrage
   mode              lecture seule
   portée            /home/student/demo (récursif)
 ...
-Résumé : 1 fichier(s) | 1 proposé(s) | 0 écrit(s) | 1 correction(s) | 0 restant(s) | 0 informatif(s) | 0 en échec | 0 inattendu(s) | 0 en quarantaine
+Résumé : fichiers : 1 | proposés : 1 | écrits : 0 | corrections : 1 | restants : 0 | informatifs : 0 | en échec : 0 | inattendus : 0 | 0 en quarantaine
 Terminé en 219 ms.
 ```
 

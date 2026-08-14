@@ -182,7 +182,7 @@ normfix · iniciando
   modo              solo lectura
   alcance           /home/student/demo (recursivo)
 ...
-Resumen: 1 archivo(s) | 1 propuesto(s) | 0 escrito(s) | 1 corrección(es) | 0 pendiente(s) | 0 informativo(s) | 0 con fallo | 0 inesperado(s) | 0 en cuarentena
+Resumen: archivos: 1 | propuestos: 1 | escritos: 0 | correcciones: 1 | pendientes: 0 | informativos: 0 | con fallo: 0 | inesperados: 0 | 0 en cuarentena
 Completado en 219 ms.
 ```
 

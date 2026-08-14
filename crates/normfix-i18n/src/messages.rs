@@ -96,8 +96,10 @@ pub struct Messages {
     pub timeout_per_file: &'static str,
     /// Whole-directory scope. Placeholder: `{directory}`.
     pub scope_recursive: &'static str,
-    /// Git-derived scope. Placeholders: `{kind}`, `{directory}`, `{count}`.
-    pub scope_git: &'static str,
+    /// Git-derived scope, one file. Placeholders: `{kind}`, `{directory}`, `{count}`.
+    pub scope_git_one: &'static str,
+    /// Git-derived scope, several files. Same placeholders.
+    pub scope_git_other: &'static str,
     /// Git scope restricted to the index.
     pub scope_git_staged: &'static str,
     /// Git scope covering the working tree.
@@ -180,8 +182,10 @@ pub struct Messages {
     pub destructive_cancelled: &'static str,
     /// An undo outside an interactive terminal.
     pub undo_needs_confirmation: &'static str,
-    /// Undo question. Placeholders: `{count}`, `{run}`.
-    pub undo_question: &'static str,
+    /// Undo question, one file. Placeholders: `{count}`, `{run}`.
+    pub undo_question_one: &'static str,
+    /// Undo question, several files. Same placeholders.
+    pub undo_question_other: &'static str,
     /// Undo confirmation prompt. The `[y/N]` token stays literal.
     pub undo_prompt: &'static str,
     /// The person declined the undo confirmation.
@@ -232,8 +236,10 @@ pub struct Messages {
     pub leaks_error_help: &'static str,
     /// Said once when no site could be placed in a file.
     pub leaks_no_debug_info: &'static str,
-    /// Memory errors beyond leaks. Placeholder: `{count}`.
-    pub leaks_errors: &'static str,
+    /// Memory errors beyond leaks, one. Placeholder: `{count}`.
+    pub leaks_errors_one: &'static str,
+    /// Memory errors beyond leaks, several. Same placeholder.
+    pub leaks_errors_other: &'static str,
     /// The standing caveat printed with every leak result.
     pub leaks_not_a_proof: &'static str,
 
@@ -300,7 +306,8 @@ const ENGLISH: Messages = Messages {
     identity_unavailable: "unavailable (headers will be reported)",
     timeout_per_file: "{seconds}s per file",
     scope_recursive: "{directory} (recursive)",
-    scope_git: "Git {kind} in {directory} ({count} selected file(s))",
+    scope_git_one: "Git {kind} in {directory} ({count} selected file)",
+    scope_git_other: "Git {kind} in {directory} ({count} selected files)",
     scope_git_staged: "staged",
     scope_git_changed: "changed",
     scope_more_paths: "+{count} more",
@@ -324,7 +331,7 @@ const ENGLISH: Messages = Messages {
     report_expected_files: "Only .c, .h, Makefile, and README files are expected.",
     report_preview_kept_files: "Preview mode did not move these files.",
     report_summary_label: "Summary:",
-    report_summary_counts: "{files} files | {proposed} proposed | {written} written | {fixes} fixes | {remaining} remaining | {info} info | {failed} failed | {unexpected} unexpected | {quarantined} quarantined",
+    report_summary_counts: "files: {files} | proposed: {proposed} | written: {written} | fixes: {fixes} | remaining: {remaining} | info: {info} | failed: {failed} | unexpected: {unexpected} | quarantined: {quarantined}",
     report_completed_in: "Completed in {duration}.",
     report_estimate_label: "Pre-defense estimate:",
     report_estimate_value: "{verdict} | grade {grade} | {score}/100",
@@ -343,7 +350,8 @@ const ENGLISH: Messages = Messages {
     destructive_needs_confirmation: "destructive operations require an interactive y/N confirmation or --force",
     destructive_cancelled: "destructive operations were cancelled; no files were changed",
     undo_needs_confirmation: "undo requires an interactive y/N confirmation or --force",
-    undo_question: "Restore {count} file(s) from {run}? Later edits are protected and will cause refusal.",
+    undo_question_one: "Restore {count} file from {run}? Later edits are protected and will cause refusal.",
+    undo_question_other: "Restore {count} files from {run}? Later edits are protected and will cause refusal.",
     undo_prompt: "Continue? [y/N] ",
     undo_cancelled: "undo was cancelled; no files were changed",
     error_nothing_written: "No unvalidated changes were written.",
@@ -369,7 +377,8 @@ const ENGLISH: Messages = Messages {
     leaks_error_at: "{kind}, in {function}",
     leaks_error_help: "The program touched memory it does not own. This is a bug regardless of what the Norm says about the file.",
     leaks_no_debug_info: "No line could be named. Rebuild with -g so the checker can place each allocation in your source.",
-    leaks_errors: "The checker also reported {count} memory errors that are not leaks.",
+    leaks_errors_one: "The checker also reported {count} memory error that is not a leak.",
+    leaks_errors_other: "The checker also reported {count} memory errors that are not leaks.",
     leaks_not_a_proof: "This is what one run observed with the arguments it was given. It is not a proof that the program never leaks.",
 
     explain_why: "Why",
@@ -420,7 +429,8 @@ const PORTUGUESE: Messages = Messages {
     identity_unavailable: "indisponível (os cabeçalhos serão apenas reportados)",
     timeout_per_file: "{seconds}s por arquivo",
     scope_recursive: "{directory} (recursivo)",
-    scope_git: "Git {kind} em {directory} ({count} arquivo(s) selecionado(s))",
+    scope_git_one: "Git {kind} em {directory} ({count} arquivo selecionado)",
+    scope_git_other: "Git {kind} em {directory} ({count} arquivos selecionados)",
     scope_git_staged: "no índice",
     scope_git_changed: "modificados",
     scope_more_paths: "+{count} outros",
@@ -444,7 +454,7 @@ const PORTUGUESE: Messages = Messages {
     report_expected_files: "Só são esperados arquivos .c, .h, Makefile e README.",
     report_preview_kept_files: "O modo de pré-visualização não moveu estes arquivos.",
     report_summary_label: "Resumo:",
-    report_summary_counts: "{files} arquivo(s) | {proposed} proposto(s) | {written} gravado(s) | {fixes} correção(ões) | {remaining} pendente(s) | {info} informativo(s) | {failed} com falha | {unexpected} inesperado(s) | {quarantined} em quarentena",
+    report_summary_counts: "arquivos: {files} | propostos: {proposed} | gravados: {written} | correções: {fixes} | pendentes: {remaining} | informativos: {info} | com falha: {failed} | inesperados: {unexpected} | em quarentena: {quarantined}",
     report_completed_in: "Concluído em {duration}.",
     report_estimate_label: "Estimativa pré-defesa:",
     report_estimate_value: "{verdict} | nota {grade} | {score}/100",
@@ -463,7 +473,8 @@ const PORTUGUESE: Messages = Messages {
     destructive_needs_confirmation: "operações destrutivas exigem uma confirmação interativa y/N ou --force",
     destructive_cancelled: "as operações destrutivas foram canceladas; nenhum arquivo foi alterado",
     undo_needs_confirmation: "desfazer exige uma confirmação interativa y/N ou --force",
-    undo_question: "Restaurar {count} arquivo(s) de {run}? Edições posteriores são protegidas e causarão recusa.",
+    undo_question_one: "Restaurar {count} arquivo de {run}? Edições posteriores são protegidas e causarão recusa.",
+    undo_question_other: "Restaurar {count} arquivos de {run}? Edições posteriores são protegidas e causarão recusa.",
     undo_prompt: "Continuar? [y/N] ",
     undo_cancelled: "o desfazer foi cancelado; nenhum arquivo foi alterado",
     error_nothing_written: "Nenhuma alteração não validada foi gravada.",
@@ -489,7 +500,8 @@ const PORTUGUESE: Messages = Messages {
     leaks_error_at: "{kind}, em {function}",
     leaks_error_help: "O programa mexeu em memória que não é dele. Isso é um bug, independentemente do que a Norm diga sobre o arquivo.",
     leaks_no_debug_info: "Nenhuma linha pôde ser apontada. Recompile com -g para o verificador localizar cada alocação no seu código.",
-    leaks_errors: "O verificador também relatou {count} erros de memória que não são vazamentos.",
+    leaks_errors_one: "O verificador também relatou {count} erro de memória que não é um vazamento.",
+    leaks_errors_other: "O verificador também relatou {count} erros de memória que não são vazamentos.",
     leaks_not_a_proof: "Isto é o que uma execução observou com os argumentos que recebeu. Não é prova de que o programa nunca vaza.",
 
     explain_why: "Por quê",
@@ -540,7 +552,8 @@ const SPANISH: Messages = Messages {
     identity_unavailable: "no disponible (las cabeceras solo se informarán)",
     timeout_per_file: "{seconds}s por archivo",
     scope_recursive: "{directory} (recursivo)",
-    scope_git: "Git {kind} en {directory} ({count} archivo(s) seleccionado(s))",
+    scope_git_one: "Git {kind} en {directory} ({count} archivo seleccionado)",
+    scope_git_other: "Git {kind} en {directory} ({count} archivos seleccionados)",
     scope_git_staged: "en el índice",
     scope_git_changed: "modificados",
     scope_more_paths: "+{count} más",
@@ -564,7 +577,7 @@ const SPANISH: Messages = Messages {
     report_expected_files: "Solo se esperan archivos .c, .h, Makefile y README.",
     report_preview_kept_files: "El modo de vista previa no movió estos archivos.",
     report_summary_label: "Resumen:",
-    report_summary_counts: "{files} archivo(s) | {proposed} propuesto(s) | {written} escrito(s) | {fixes} corrección(es) | {remaining} pendiente(s) | {info} informativo(s) | {failed} con fallo | {unexpected} inesperado(s) | {quarantined} en cuarentena",
+    report_summary_counts: "archivos: {files} | propuestos: {proposed} | escritos: {written} | correcciones: {fixes} | pendientes: {remaining} | informativos: {info} | con fallo: {failed} | inesperados: {unexpected} | en cuarentena: {quarantined}",
     report_completed_in: "Completado en {duration}.",
     report_estimate_label: "Estimación previa a la defensa:",
     report_estimate_value: "{verdict} | nota {grade} | {score}/100",
@@ -583,7 +596,8 @@ const SPANISH: Messages = Messages {
     destructive_needs_confirmation: "las operaciones destructivas requieren una confirmación interactiva y/N o --force",
     destructive_cancelled: "las operaciones destructivas se cancelaron; no se modificó ningún archivo",
     undo_needs_confirmation: "deshacer requiere una confirmación interactiva y/N o --force",
-    undo_question: "¿Restaurar {count} archivo(s) de {run}? Las ediciones posteriores están protegidas y provocarán un rechazo.",
+    undo_question_one: "¿Restaurar {count} archivo de {run}? Las ediciones posteriores están protegidas y provocarán un rechazo.",
+    undo_question_other: "¿Restaurar {count} archivos de {run}? Las ediciones posteriores están protegidas y provocarán un rechazo.",
     undo_prompt: "¿Continuar? [y/N] ",
     undo_cancelled: "el deshacer se canceló; no se modificó ningún archivo",
     error_nothing_written: "No se escribió ningún cambio sin validar.",
@@ -609,7 +623,8 @@ const SPANISH: Messages = Messages {
     leaks_error_at: "{kind}, en {function}",
     leaks_error_help: "El programa tocó memoria que no es suya. Eso es un error, diga lo que diga la Norm sobre el archivo.",
     leaks_no_debug_info: "No se pudo señalar ninguna línea. Recompila con -g para que el verificador ubique cada reserva en tu código.",
-    leaks_errors: "El verificador también informó de {count} errores de memoria que no son fugas.",
+    leaks_errors_one: "El verificador también informó de {count} error de memoria que no es una fuga.",
+    leaks_errors_other: "El verificador también informó de {count} errores de memoria que no son fugas.",
     leaks_not_a_proof: "Esto es lo que observó una ejecución con los argumentos que recibió. No es una prueba de que el programa nunca tenga fugas.",
 
     explain_why: "Por qué",
@@ -660,7 +675,8 @@ const FRENCH: Messages = Messages {
     identity_unavailable: "indisponible (les en-têtes seront seulement signalés)",
     timeout_per_file: "{seconds}s par fichier",
     scope_recursive: "{directory} (récursif)",
-    scope_git: "Git {kind} dans {directory} ({count} fichier(s) sélectionné(s))",
+    scope_git_one: "Git {kind} dans {directory} ({count} fichier sélectionné)",
+    scope_git_other: "Git {kind} dans {directory} ({count} fichiers sélectionnés)",
     scope_git_staged: "indexés",
     scope_git_changed: "modifiés",
     scope_more_paths: "+{count} de plus",
@@ -684,7 +700,7 @@ const FRENCH: Messages = Messages {
     report_expected_files: "Seuls les fichiers .c, .h, Makefile et README sont attendus.",
     report_preview_kept_files: "Le mode aperçu n'a déplacé aucun de ces fichiers.",
     report_summary_label: "Résumé :",
-    report_summary_counts: "{files} fichier(s) | {proposed} proposé(s) | {written} écrit(s) | {fixes} correction(s) | {remaining} restant(s) | {info} informatif(s) | {failed} en échec | {unexpected} inattendu(s) | {quarantined} en quarantaine",
+    report_summary_counts: "fichiers : {files} | proposés : {proposed} | écrits : {written} | corrections : {fixes} | restants : {remaining} | informatifs : {info} | en échec : {failed} | inattendus : {unexpected} | en quarantaine : {quarantined}",
     report_completed_in: "Terminé en {duration}.",
     report_estimate_label: "Estimation avant soutenance :",
     report_estimate_value: "{verdict} | note {grade} | {score}/100",
@@ -703,7 +719,8 @@ const FRENCH: Messages = Messages {
     destructive_needs_confirmation: "les opérations destructives exigent une confirmation interactive y/N ou --force",
     destructive_cancelled: "les opérations destructives ont été annulées ; aucun fichier n'a été modifié",
     undo_needs_confirmation: "l'annulation exige une confirmation interactive y/N ou --force",
-    undo_question: "Restaurer {count} fichier(s) depuis {run} ? Les modifications ultérieures sont protégées et provoqueront un refus.",
+    undo_question_one: "Restaurer {count} fichier depuis {run} ? Les modifications ultérieures sont protégées et provoqueront un refus.",
+    undo_question_other: "Restaurer {count} fichiers depuis {run} ? Les modifications ultérieures sont protégées et provoqueront un refus.",
     undo_prompt: "Continuer ? [y/N] ",
     undo_cancelled: "l'annulation a été abandonnée ; aucun fichier n'a été modifié",
     error_nothing_written: "Aucune modification non validée n'a été écrite.",
@@ -729,7 +746,8 @@ const FRENCH: Messages = Messages {
     leaks_error_at: "{kind}, dans {function}",
     leaks_error_help: "Le programme a touché de la mémoire qui ne lui appartient pas. C’est un bug, quoi que la Norm dise du fichier.",
     leaks_no_debug_info: "Aucune ligne n’a pu être nommée. Recompilez avec -g pour que le vérificateur situe chaque allocation dans votre code.",
-    leaks_errors: "Le détecteur a aussi signalé {count} erreurs mémoire qui ne sont pas des fuites.",
+    leaks_errors_one: "Le détecteur a aussi signalé {count} erreur mémoire qui n’est pas une fuite.",
+    leaks_errors_other: "Le détecteur a aussi signalé {count} erreurs mémoire qui ne sont pas des fuites.",
     leaks_not_a_proof: "Voici ce qu’une exécution a observé avec les arguments reçus. Ce n’est pas une preuve que le programme ne fuit jamais.",
 
     explain_why: "Pourquoi",
@@ -791,7 +809,8 @@ mod tests {
             ("identity_unavailable", messages.identity_unavailable),
             ("timeout_per_file", messages.timeout_per_file),
             ("scope_recursive", messages.scope_recursive),
-            ("scope_git", messages.scope_git),
+            ("scope_git_one", messages.scope_git_one),
+            ("scope_git_other", messages.scope_git_other),
             ("scope_git_staged", messages.scope_git_staged),
             ("scope_git_changed", messages.scope_git_changed),
             ("scope_more_paths", messages.scope_more_paths),
@@ -875,7 +894,8 @@ mod tests {
             ),
             ("destructive_cancelled", messages.destructive_cancelled),
             ("undo_needs_confirmation", messages.undo_needs_confirmation),
-            ("undo_question", messages.undo_question),
+            ("undo_question_one", messages.undo_question_one),
+            ("undo_question_other", messages.undo_question_other),
             ("undo_prompt", messages.undo_prompt),
             ("undo_cancelled", messages.undo_cancelled),
             ("error_nothing_written", messages.error_nothing_written),
@@ -967,6 +987,48 @@ mod tests {
                 "{}: {identical} entries are still English",
                 locale.code()
             );
+        }
+    }
+
+    #[test]
+    fn a_counted_message_never_dodges_the_plural() {
+        // `file(s)` avoids the question instead of answering it, and it is the
+        // clearest sign that a sentence was translated rather than written.
+        for locale in PUBLISHED {
+            for (key, value) in entries(messages(*locale)) {
+                assert!(
+                    !value.contains("(s)") && !value.contains("(es)"),
+                    "{}: {key} dodges the plural: {value}",
+                    locale.code()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn one_and_many_are_worded_differently() {
+        // A build that returned the same sentence for both would compile and
+        // read as "1 memory errors" in every language.
+        for locale in PUBLISHED {
+            let m = messages(*locale);
+            for (one, other) in [
+                (m.scope_git_one, m.scope_git_other),
+                (m.undo_question_one, m.undo_question_other),
+                (m.leaks_errors_one, m.leaks_errors_other),
+            ] {
+                assert_ne!(one, other, "{}: one and many read alike", locale.code());
+            }
+        }
+    }
+
+    #[test]
+    fn french_counts_zero_as_singular_and_the_others_do_not() {
+        use crate::fill_plural;
+
+        let pick = |locale| fill_plural(locale, 0, "one", "many", &[]);
+        assert_eq!(pick(Locale::French), "one");
+        for locale in [Locale::English, Locale::Portuguese, Locale::Spanish] {
+            assert_eq!(pick(locale), "many", "{}", locale.code());
         }
     }
 }
