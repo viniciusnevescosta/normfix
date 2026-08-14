@@ -118,7 +118,16 @@ pub(super) fn official_diagnostics(
             rule_id: item.rule_id.clone(),
             path: path.clone(),
             range: diagnostic_range(source, item.line, item.column, ColumnUnit::Display),
-            severity: Severity::Warning,
+            // A `Notice:` is the checker asking the student to confirm a
+            // deliberate choice, not reporting a broken rule: a file whose only
+            // remark is a notice is one the official checker calls OK. Ranking
+            // it with the violations would inflate what is left to do and hide
+            // the difference the checker took care to draw.
+            severity: if item.advisory {
+                Severity::Info
+            } else {
+                Severity::Warning
+            },
             message: item.message.clone(),
             source: DiagnosticSource::NorminetteCompat(norminette_version.to_owned()),
             notes: Vec::new(),
@@ -190,9 +199,14 @@ pub(super) fn diagnostic_help(rule_id: &str) -> &'static str {
         "MISALIGNED_VAR_DECL" => {
             "Align this declarator with the complete simple declaration group."
         }
-        _ => {
-            "Review this location and apply the named Norm rule manually; no semantics-preserving automatic edit was proven."
-        }
+        // Everything else falls through to the shared rule catalogue, so a rule
+        // the native analysis can advise on is advised on identically when the
+        // official checker is the one that reported it. The arms above stay
+        // here because they name normfix's own flags and concepts, which the
+        // rule-level catalogue has no business knowing about.
+        other => normfix_c_actions::rule_guidance(other).unwrap_or(
+            "Review this location and apply the named Norm rule manually; no semantics-preserving automatic edit was proven.",
+        ),
     }
 }
 
@@ -443,6 +457,63 @@ pub(super) fn explain_constant_array_false_positives(
 
 #[cfg(test)]
 mod tests {
+    use normfix_core::Severity;
+    use normfix_oracle::NorminetteDiagnostic;
+
+    use super::{diagnostic_help, official_diagnostics};
+
+    fn remark(rule_id: &str, advisory: bool) -> NorminetteDiagnostic {
+        NorminetteDiagnostic {
+            rule_id: rule_id.to_owned(),
+            line: 1,
+            column: 1,
+            message: "…".to_owned(),
+            advisory,
+        }
+    }
+
+    #[test]
+    fn advice_written_for_a_rule_reaches_a_diagnostic_the_checker_reported() {
+        // The advice for these rules is written once, in the rule catalogue.
+        // Before it was shared, whether a student saw it depended on which
+        // analyzer happened to notice the violation — and for the rules the
+        // checker owns, which is most of them, nobody ever saw it.
+        assert_eq!(
+            diagnostic_help("TERNARY_FBIDDEN"),
+            "Replace the ternary with an explicit if/else."
+        );
+        assert_eq!(
+            diagnostic_help("GOTO_FBIDDEN"),
+            "Restructure the associated control flow without goto or labels."
+        );
+
+        // The engine keeps the arms that name normfix's own flags, because the
+        // rule catalogue has no business knowing they exist.
+        assert!(diagnostic_help("WRONG_SCOPE_COMMENT").contains("--remove-invalid-comments"));
+
+        // An identifier from no catalogue still answers something true.
+        assert!(diagnostic_help("NOT_A_RULE").contains("no semantics-preserving automatic edit"));
+    }
+
+    #[test]
+    fn a_notice_is_ranked_as_an_advisory_and_an_error_is_not() {
+        let path = camino::Utf8PathBuf::from("a.c");
+        let diagnostics = official_diagnostics(
+            &path,
+            "int\tg_counter;\n",
+            &[
+                remark("GLOBAL_VAR_DETECTED", true),
+                remark("GOTO_FBIDDEN", false),
+            ],
+            "3.3.59",
+        );
+
+        // The checker calls a notice-only file OK, so ranking the notice with
+        // the violations would report work that its own author says is done.
+        assert_eq!(diagnostics[0].severity, Severity::Info);
+        assert_eq!(diagnostics[1].severity, Severity::Warning);
+    }
+
     #[test]
     fn each_authority_column_convention_lands_on_the_same_character() {
         use super::{ColumnUnit, offset_for_line_column};

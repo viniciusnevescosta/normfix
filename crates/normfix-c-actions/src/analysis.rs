@@ -655,7 +655,22 @@ fn is_supported_action(code: &str) -> bool {
 }
 
 fn guidance(code: &str) -> &'static str {
-    match code {
+    rule_guidance(code).unwrap_or("Review this location and apply the named Norm rule manually.")
+}
+
+/// Returns the written advice for `code`, if this build has any.
+///
+/// What to do about a rule depends on the rule, not on which analyzer noticed
+/// it. Keeping the catalogue here and letting the engine reach it means a
+/// student sees the same sentence whether the violation came from a native
+/// check or from the official checker — and means there is one place to add a
+/// rule rather than two that drift apart.
+// One arm per rule: the catalogue is long by construction, and splitting it
+// would only make a rule that lost its advice harder to see.
+#[allow(clippy::too_many_lines)]
+#[must_use]
+pub fn rule_guidance(code: &str) -> Option<&'static str> {
+    Some(match code {
         "TOO_MANY_LINES" => "Extract one coherent responsibility into a well-named static helper.",
         "TOO_MANY_ARGS" => {
             "Reduce the contract to four parameters or group genuinely related state."
@@ -709,8 +724,91 @@ fn guidance(code: &str) -> &'static str {
         "HEADER_PROT_NAME" | "HEADER_PROT_ALL" | "HEADER_PROT_ALL_AF" => {
             "Review repeat-inclusion behavior and every project-wide macro reference first."
         }
-        _ => "Review this location and apply the named Norm rule manually.",
-    }
+        // A malformed literal is rejected by the compiler for the same reason
+        // the checker rejects it, so the advice is to correct the literal
+        // rather than to satisfy a style rule.
+        "EMPTY_CHAR" | "CHAR_AS_STRING" => {
+            "Put exactly one character between the quotes, or use a string literal."
+        }
+        "UNEXPECTED_EOL_CHR" | "UNEXPECTED_EOF_CHR" => {
+            "Close the character constant on the line that opens it."
+        }
+        "UNEXPECTED_EOF_STR" => "Close the string literal before the end of the file.",
+        "UNEXPECTED_EOF_MC" => "Close the comment with */ before the end of the file.",
+        "UNKNOWN_ESCAPE" => {
+            "Use a valid escape sequence, or double the backslash to write one literally."
+        }
+        "BAD_EXPONENT" | "MULTIPLE_DOTS" | "MULTIPLE_X" | "NO_HEX_DIGITS" => {
+            "Correct the numeric literal; as written it is not a number C accepts."
+        }
+        "INVALID_BIN_INT" | "INVALID_HEX_INT" | "INVALID_OCT_INT" => {
+            "Use digits the base allows, and check the 0b, 0x, or leading-zero prefix."
+        }
+        "INVALID_SUFFIX" | "BAD_FLOAT_SUFFIX" => {
+            "Use a suffix the type allows, such as U, L, UL, or F."
+        }
+        "MAXIMAL_MUNCH" => {
+            "Separate the operators so they cannot be read as one longer token."
+        }
+        "IMPLICIT_VAR_TYPE" => "Name the type; C does not supply a default one.",
+        "ARG_TYPE_UKN" => "Declare the type first, or include the header that declares it.",
+        "MISSING_IDENTIFIER" => {
+            "Give every parameter a type and a name, and write (void) when there are none."
+        }
+        "MISSING_TYPEDEF_ID" => "Give the typedef the name it is meant to define.",
+        "NEWLINE_IN_DECL" => "Keep one declaration on one line.",
+        "TOO_MANY_TAB_VAR" | "TOO_MANY_TABS_TD" => {
+            "Use a single tab between the type and the name."
+        }
+        "WRONG_SCOPE" => "Move the statement inside a function body.",
+        "WRONG_SCOPE_FCT" => {
+            "Declare the prototype at file scope, or in the header that publishes it."
+        }
+        "WRONG_SCOPE_VAR" => {
+            "Declare the variable in the initial declaration block of its function."
+        }
+        "TYPE_NOT_GLOBAL" => {
+            "Move the struct, enum, or union to global scope, normally into a header."
+        }
+        "PREPROC_BAD_IF" | "PREPROC_BAD_IFDEF" | "PREPROC_BAD_IFNDEF" => {
+            "Close the conditional with a matching #endif."
+        }
+        "PREPROC_BAD_ELIF" | "PREPROC_BAD_ELSE" | "PREPROC_BAD_ENDIF" => {
+            "Open the conditional with a matching #if, #ifdef, or #ifndef first."
+        }
+        "PREPROC_BAD_INDENT" => "Indent a nested directive with one space per level after the #.",
+        "PREPROC_START_LINE" => "Put the # in the first column of a line of its own.",
+        "PREPROC_NO_SPACE" => "Separate the directive from what follows it with a space.",
+        "PREPROC_EXPECTED_EOL" | "PREPROC_UKN_STATEMENT" => {
+            "End the directive at the end of its line, and check the directive name."
+        }
+        "PREPROC_CONSTANT" | "INCORRECT_DEFINE" | "TOO_MANY_VALS" => {
+            "Define one constant value; anything that computes belongs in a function."
+        }
+        "MACRO_FUNC_FORBIDDEN" | "NEWLINE_DEFINE" => {
+            "Write a function instead of a macro that takes arguments."
+        }
+        "INCLUDE_MISSING_SP" => "Put a space between #include and the filename.",
+        "HEADER_PROT_MULT" => "Keep one inclusion guard, wrapping the whole header.",
+        "HEADER_PROT_UPPER" => "Write the guard macro in uppercase.",
+        "TOO_MANY_INSTR" | "MULT_IN_SINGLE_INSTR" => "Write one instruction per line.",
+        "COMMA_START_LINE" => {
+            "End the previous line with the comma instead of opening this one with it."
+        }
+        "EOL_OPERATOR" => {
+            "Begin the continuation line with the operator rather than ending on it."
+        }
+        "ATTR_EOL" => "Move the function attribute to the end of the line.",
+        "EMPTY_LINE_FILE_START" | "EMPTY_LINE_EOF" => {
+            "Delete the blank line at the edge of the file."
+        }
+        "SPACE_EMPTY_LINE" | "SPC_BEFORE_NL" => "Delete the trailing whitespace.",
+        "TOO_MANY_WS" => "Use exactly one tab per indent level.",
+        "SPC_INSTEAD_TAB" | "EXP_TAB" => "Indent with tabs rather than spaces.",
+        "EXP_PARENTHESIS" => "Add the parenthesis the construct requires.",
+        "EXP_SEMI_COLON" => "End the instruction with a semicolon.",
+        _ => return None,
+    })
 }
 
 fn diagnostic(

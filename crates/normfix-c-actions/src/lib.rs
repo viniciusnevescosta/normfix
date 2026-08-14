@@ -25,6 +25,7 @@ use thiserror::Error;
 
 pub use analysis::{
     ExternalCallCandidate, FunctionBudget, analyze_budget, analyze_c, analyze_external_calls,
+    rule_guidance,
 };
 pub use edit::{Edit, EditError, apply_edits};
 pub use source::{HygieneResult, normalize_hygiene, visual_width};
