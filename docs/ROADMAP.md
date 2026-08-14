@@ -212,7 +212,66 @@ accessible in any language.
 The plain-text copy of every page ships in 1.6.3, alongside the JSON work,
 since both exist for the same reader.
 
-## 1.7 — Python projects
+## 1.7 — assume it is wrong until it proves otherwise
+
+A bug hunt across real projects, run on the assumption that everything is
+broken until measured. The method that found the last release's defects was
+never reading the code: it was running the same input through two paths and
+diffing the bytes, and running the tool on files a student would actually
+write.
+
+One is already confirmed. `else if` is split into an `else` holding a nested
+`if`, which is behaviour-preserving and worse — a line longer and a level
+deeper, in a Norm that counts both:
+
+```c
+else            // was: else if (n > 5)
+    if (n > 5)
+        return (2);
+```
+
+Performance is measured the same way. The benchmark caught a sevenfold
+regression during 1.6.1 that no test would have, and a run that gets slower
+without anyone noticing is a run nobody waits for.
+
+`clang-tidy` joins as an optional lens, on the same terms as every other
+external tool: located on `PATH`, verified by its own version, never required,
+and never able to authorize an edit. It answers questions the Norminette does
+not ask and the compiler asks only partially.
+
+### Leaks and the analyzer in preflight
+
+They answer different questions and neither replaces the other. The analyzer
+reads the code without running it, so it can point at a path no test exercises
+— and it guesses, so some of what it points at is not there. Valgrind runs the
+program, so what it reports actually happened, and it sees only the one path
+the arguments took.
+
+Running both is worth it. Running them the same way is not, and that is the
+constraint that decides the shape: `preflight` is the command that promises not
+to execute your program. The analyzer belongs inside it because reading a file
+cannot delete one. A leak check cannot be automatic there without breaking the
+one boundary the command is built on, so `preflight` should say what a leak
+check would add and how to run it — the way it already names the manual steps
+it does not take.
+
+## 1.8 — the playground as an editor
+
+Creating a file opens a dialog; an editor does not. Two buttons — one for a
+folder, one for a file — put the new entry straight into the list with its name
+waiting to be typed, and Enter commits it. Only the four supported kinds can be
+created, so nothing is named before it is known to be formattable.
+
+Files move between folders by dragging. Right-click renames and deletes. An
+imported folder keeps its shape on screen rather than only inside the download,
+and a file the playground cannot format disables the editor and says why, in
+place, instead of being silently skipped.
+
+The scope note added in 1.6.1 — naming the official checker and the compiler as
+the two checks the page cannot run — comes out. It was written to keep silence
+from reading as approval, and on every result it reads as an apology instead.
+
+## 1.9 — Python projects
 
 A separate Python pipeline on the same oracle model the Norminette uses, plus a
 Python-capable playground. The C/Norminette contract stays available and
@@ -227,7 +286,7 @@ has to be installed, is part of that comparison. The choice will be made by what
 each reports on real 42 Python projects, and whichever is chosen becomes the
 versioned oracle the way Norminette 3.3.59 is.
 
-## 1.8 — starting a project
+## 1.10 — starting a project
 
 Create a project from explicit choices: its name and allowed function list, then
 `main.c`, the header, the Makefile, a `README.md` carrying the student's login,
