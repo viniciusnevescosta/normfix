@@ -127,7 +127,7 @@ once per accepted batch to prove, where it used to read it twice per pass and
 discard the proving read — a clean file is 45% faster than in 1.5.0, and a test
 holds that budget by counting reads rather than timing them.
 
-### 1.6.1 — the edits and the surfaces around them
+### 1.6.2 — the edits and the surfaces around them
 
 Splitting a declaration from its assignment: `int teste = 10;` becomes
 `int teste;` and an assignment after the declaration block. The official checker

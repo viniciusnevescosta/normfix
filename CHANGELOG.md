@@ -10,6 +10,52 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.6.2] / 2026-08-14
+
+The JSON output is an interface, and the documentation is readable without a
+browser.
+
+### Changed
+
+- **Every command answers with one object.** `--format json` had been written
+  for the commands a person watches and left the rest speaking prose.
+  `upgrade --check` answered in English whatever the format, so nothing could
+  read whether an update existed. `uninstall --dry-run` wrote nothing at all to
+  standard output and described what it would remove on standard error, the
+  stream a caller is least likely to be parsing. `undo --list` answered with a
+  bare `[]`, carrying no envelope and no `schema_version`, so "no recovery
+  points" could not be told apart from "this build did not understand the
+  request".
+
+  All of them now answer with the same envelope — the schema, which command
+  answered, whether it succeeded, and a `result` of its own — on standard
+  output, always. A refusal uses it too, with `outcome: "failure"`, so a caller
+  reads `outcome` in one place instead of learning two shapes.
+
+- **A flag that asks for something is answered.** `--diff --format json`
+  reported `mode: diff` and carried no diff; each file's entry now has one. The
+  report still leaves diffs out by default, because they double its size for a
+  reader who did not ask, and the flag is the reader asking.
+
+- **The run describes itself, not only the files.** `granted_capabilities`
+  lists what the run was allowed to do, and `scope` names how it chose its
+  files — `git_changed`, `git_staged`, `explicit_paths`, `working_directory` —
+  with `respects_gitignore` beside it. Both are present and empty or plain on
+  an ordinary run, so their absence never has to be interpreted. Reading either
+  back from the flags was only possible for the caller that passed them.
+
+### Added
+
+- **Every documentation page is published as plain text**, at its own address
+  plus `.txt`, so an agent can fetch one page's instructions without parsing
+  the site around them. All 133 pages, translations included: the generator
+  walks every page, and filtering the translations out would have been the
+  extra work while serving a reader following Portuguese instructions worse.
+
+  The container syntax is the case worth naming. `::: warning` opens a callout
+  whose body is the sentence a page marks as most important, so the fence goes
+  and the body stays; a test fails if the body goes with it.
+
 ## [1.6.1] / 2026-08-13
 
 The edits themselves, and the surfaces around them.
@@ -1232,6 +1278,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.6.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.2
 [1.6.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.1
 [1.6.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.0
 [1.5.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.5.0
