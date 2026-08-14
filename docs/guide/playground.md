@@ -1,9 +1,13 @@
 # Browser playground
 
-The [playground](/) runs the safe `normfix` core in WebAssembly. It accepts C,
-header, Makefile, and Markdown project files and returns formatted source,
-native diagnostics, function budgets, and unified diffs without uploading the
-project.
+The [playground](/) is normfix running inside your browser tab. Paste or drop a
+project, press Run, and you get the formatted source, the findings it could
+prove, and the diff — with nothing leaving your machine.
+
+It is the same code the command line runs, so what it fixes here it fixes
+there. What it cannot do here is check your work against the official
+Norminette or a compiler, because neither of those exists in a browser. Every
+result says so.
 
 Desktop browsers use Monaco, with line numbers, search, multiple cursors,
 bracket matching, and syntax highlighting for every supported file type.
@@ -21,6 +25,22 @@ binary, `.git`, and editor settings are skipped rather than treated as errors,
 and the count of what was skipped is always shown — the import never discards
 anything quietly, and never refuses the whole drop because one file is not
 something normfix formats. **Choose files** does the same thing for a picker.
+
+The **+** button creates a file. Pick the kind — `.c`, `.h`, `Makefile`, or
+`.md` — rather than typing the extension and finding out later that it was not
+one of the four. A path such as `src/utils.c` creates the folder with it, and
+folders nest as deeply as you need. **Download all (.zip)** keeps that
+structure.
+
+## Findings, underlined where they are
+
+Errors and warnings are underlined in the editor the way your own editor
+underlines them, so you stop matching a line number in a list against a line in
+your file. Hovering one shows the rule and the explanation.
+
+A finding without a position — an invalid 42 header belongs to the file, not to
+a line — is left out of the underlines rather than drawn somewhere arbitrary.
+You will still find it in the diagnostics panel.
 
 ## Appearance
 

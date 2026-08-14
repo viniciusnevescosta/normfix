@@ -1,9 +1,14 @@
 # Playground no navegador
 
-O <a href="/pt/" target="_self">playground</a> executa o núcleo seguro do
-`normfix` em WebAssembly. Ele aceita arquivos `.c`, headers, Makefiles e
-Markdown do projeto e devolve o código formatado, os diagnósticos nativos, os
-orçamentos de função e os diffs unificados sem enviar o projeto a lugar nenhum.
+O <a href="/pt/" target="_self">playground</a> é o normfix rodando dentro da aba
+do seu navegador. Cole ou arraste um projeto, aperte Executar, e você recebe o
+código formatado, os achados que ele conseguiu provar e o diff — sem nada sair
+da sua máquina.
+
+É o mesmo código que a linha de comando roda, então o que ele conserta aqui, ele
+conserta lá. O que ele não consegue fazer aqui é conferir seu trabalho contra a
+Norminette oficial ou um compilador, porque nenhum dos dois existe num
+navegador. Todo resultado diz isso.
 
 Em navegadores de desktop, o editor é o Monaco, com números de linha, busca,
 múltiplos cursores, pares de colchetes e realce para todos os tipos de arquivo
@@ -21,6 +26,21 @@ compilado, o `.git` e configurações de editor são ignorados em vez de virarem
 erro, e a quantidade de ignorados é sempre exibida — a importação nunca descarta
 nada em silêncio, nem recusa o drop inteiro porque um arquivo não é algo que o
 normfix formata. **Escolher arquivos** faz o mesmo por um seletor.
+
+O botão **+** cria um arquivo. Escolha o tipo — `.c`, `.h`, `Makefile` ou `.md` —
+em vez de digitar a extensão e descobrir depois que não era uma das quatro. Um
+caminho como `src/utils.c` cria a pasta junto, e as pastas aninham quanto você
+precisar. O **Baixar tudo (.zip)** mantém essa estrutura.
+
+## Achados sublinhados onde eles estão
+
+Erros e avisos aparecem sublinhados no editor do mesmo jeito que o seu editor
+sublinha, para você parar de cruzar um número de linha numa lista com uma linha
+no arquivo. Passando o mouse, aparece a regra e a explicação.
+
+Um achado sem posição — um cabeçalho 42 inválido pertence ao arquivo, não a uma
+linha — fica de fora dos sublinhados em vez de ser desenhado em algum lugar
+qualquer. Ele continua no painel de diagnósticos.
 
 ## Aparência
 

@@ -1,9 +1,14 @@
 # Playground dans le navigateur
 
-Le <a href="/fr/" target="_self">playground</a> exécute le cœur sûr de `normfix`
-en WebAssembly. Il accepte les fichiers `.c`, headers, Makefiles et Markdown du
-projet et renvoie le code formaté, les diagnostics natifs, les budgets de
-fonction et les diffs unifiés sans envoyer le projet où que ce soit.
+Le <a href="/fr/" target="_self">playground</a>, c'est normfix qui tourne dans
+votre onglet. Collez ou déposez un projet, appuyez sur Exécuter, et vous obtenez
+le code formaté, les constats qu'il a pu prouver et le diff — sans que rien ne
+quitte votre machine.
+
+C'est le même code que celui de la ligne de commande : ce qu'il corrige ici, il
+le corrige là-bas. Ce qu'il ne peut pas faire ici, c'est confronter votre
+travail à la Norminette officielle ou à un compilateur, car aucun des deux
+n'existe dans un navigateur. Chaque résultat le dit.
 
 Sur les navigateurs de bureau, l’éditeur est Monaco, avec numéros de ligne,
 recherche, curseurs multiples, paires de crochets et coloration pour tous les
@@ -23,6 +28,23 @@ devenir une erreur, et le nombre d’éléments ignorés est toujours affiché :
 l’import n’écarte jamais rien en silence, et ne refuse pas tout le dépôt parce
 qu’un fichier n’est pas quelque chose que normfix formate. **Choisir des
 fichiers** fait la même chose avec un sélecteur.
+
+Le bouton **+** crée un fichier. Choisissez le type — `.c`, `.h`, `Makefile` ou
+`.md` — plutôt que de taper l'extension et de découvrir ensuite qu'elle n'était
+pas l'une des quatre. Un chemin comme `src/utils.c` crée le dossier avec lui, et
+les dossiers s'imbriquent autant que nécessaire. **Tout télécharger (.zip)**
+conserve cette structure.
+
+## Les constats soulignés là où ils sont
+
+Les erreurs et les avertissements sont soulignés dans l'éditeur comme votre
+propre éditeur les souligne, pour que vous cessiez de rapprocher un numéro de
+ligne d'une liste d'une ligne de votre fichier. Au survol, la règle et
+l'explication apparaissent.
+
+Un constat sans position — un en-tête 42 invalide appartient au fichier, pas à
+une ligne — reste hors des soulignements plutôt que d'être dessiné n'importe où.
+Vous le retrouvez dans le panneau des diagnostics.
 
 ## Apparence
 

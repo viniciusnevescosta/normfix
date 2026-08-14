@@ -1,10 +1,14 @@
 # Playground en el navegador
 
-El <a href="/es/" target="_self">playground</a> ejecuta el núcleo seguro de
-`normfix` en WebAssembly. Acepta archivos `.c`, headers, Makefiles y Markdown del
-proyecto y devuelve el código formateado, los diagnósticos nativos, los
-presupuestos de función y los diffs unificados sin subir el proyecto a ningún
-sitio.
+El <a href="/es/" target="_self">playground</a> es normfix funcionando dentro de
+la pestaña de tu navegador. Pega o arrastra un proyecto, pulsa Ejecutar, y
+obtienes el código formateado, los hallazgos que pudo demostrar y el diff — sin
+que nada salga de tu máquina.
+
+Es el mismo código que ejecuta la línea de comandos, así que lo que arregla aquí
+lo arregla allí. Lo que no puede hacer aquí es comprobar tu trabajo contra la
+Norminette oficial o un compilador, porque ninguno de los dos existe en un
+navegador. Cada resultado lo dice.
 
 En navegadores de escritorio el editor es Monaco, con números de línea,
 búsqueda, múltiples cursores, pares de corchetes y resaltado para todos los
@@ -22,8 +26,23 @@ Un directorio de proyecto real contiene más que código. Los archivos objeto, e
 binario compilado, `.git` y la configuración del editor se omiten en lugar de
 convertirse en un error, y siempre se muestra cuántos se omitieron: la
 importación nunca descarta nada en silencio, ni rechaza todo el drop porque un
-archivo no sea algo que normfix formatea. **Elegir archivos** hace lo mismo con
+archivo no sea algo que normfix formatea. El botón **+** crea un archivo. Elige el tipo — `.c`, `.h`, `Makefile` o `.md` —
+en lugar de escribir la extensión y descubrir después que no era una de las
+cuatro. Una ruta como `src/utils.c` crea la carpeta con él, y las carpetas se
+anidan cuanto necesites. **Descargar todo (.zip)** mantiene esa estructura.
+
+**Elegir archivos** hace lo mismo con
 un selector.
+
+## Hallazgos subrayados donde están
+
+Los errores y avisos aparecen subrayados en el editor igual que los subraya tu
+propio editor, para que dejes de cruzar un número de línea de una lista con una
+línea de tu archivo. Al pasar el ratón aparecen la regla y la explicación.
+
+Un hallazgo sin posición — una cabecera 42 inválida pertenece al archivo, no a
+una línea — queda fuera de los subrayados en lugar de dibujarse en cualquier
+sitio. Lo sigues encontrando en el panel de diagnósticos.
 
 ## Apariencia
 
