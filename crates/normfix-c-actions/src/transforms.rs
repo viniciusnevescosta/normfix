@@ -1552,7 +1552,13 @@ fn safe_continuation_boundary(
     let Some(operator) = leading_operator(right) else {
         return false;
     };
+    // The `)` that closes a control header ends the header, not an operand, so
+    // what follows is the body rather than more of the same expression. Reading
+    // it as an operand joins `if (a > 0)` to a body that starts with `*`, which
+    // the brace rule then puts back on its own line — the two rules undo each
+    // other for as long as the run is willing to keep trying.
     ends_like_operand(left)
+        && !is_control_header(left.trim_start())
         && !(matches!(operator, "*" | "&") && looks_like_declaration_prefix(left))
 }
 
