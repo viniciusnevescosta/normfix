@@ -76,7 +76,7 @@ A formatação acontece primeiro apenas em memória. Para cada ação de layout:
 - os intervalos de edição precisam ser válidos e não sobrepostos.
 
 Depois que o candidato completo é produzido, a Norminette roda de novo. Se
-qualquer contagem de regra aumentar em relação à linha de base validada, o lote
+qualquer contagem de regra subir em relação ao que foi medido antes, o lote
 de formatação nativa é revertido para aquele arquivo. Falhas operacionais nunca
 autorizam uma gravação parcial.
 

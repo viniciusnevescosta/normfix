@@ -21,7 +21,7 @@ normfix undo --run RUN_ID
 |---|---|---|
 | `format` | oui | Applique les modifications acceptées |
 | `lint` | non | Signale des diagnostics sur les octets d'origine ; ne propose ni mise en forme, ni en-tête, ni Makefile, ni remplacement Markdown |
-| `check` | non | Exécute mise en forme et lint dans un tampon fantôme |
+| `check` | non | Exécute mise en forme et lint sur une copie, sans toucher à vos fichiers |
 | `budget` | non | Une exécution de lint plus une ligne informative lignes/variables/paramètres par fonction analysée |
 | `preflight` | non | Une exécution orientée check avec la vérification stricte du compilateur activée ; elle n'exécute ni `make` ni le programme |
 | `explain` | non | Affiche l'explication intégrée en anglais d'un identifiant de règle stable, sans analyser un projet |

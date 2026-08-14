@@ -191,7 +191,7 @@ Antes de o primeiro alvo mudar, o escritor:
 - grava os backups externos;
 - prepara e sincroniza cada substituição.
 
-Os alvos são efetivados em ordem de caminho. Um erro no meio da efetivação
+Os alvos são efetivados na ordem dos caminhos. Um erro no meio da efetivação
 dispara um rollback de melhor esforço a partir dos bytes originais capturados; um
 rollback incompleto é reportado junto com o caminho do journal de recuperação.
 

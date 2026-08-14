@@ -101,7 +101,7 @@ The stable report currently uses `schema_version: 2`. Useful fields are:
 | `summary.failed` | A tool, discovery, I/O, or transaction operation failed |
 | `summary.unexpected_files` | Files outside the accepted project file set were found |
 | `files[].failure` | This file was not completed; do not describe it as fixed |
-| `files[].after` | Diagnostics against the final shadow buffer |
+| `files[].after` | Diagnostics against the proposed bytes |
 | `files[].fixes` | Proven edits proposed or written for that file |
 | `identity.available` | An official 42 header can be created or updated |
 | `evaluation.conclusive` | Always `false`; never present the estimate as an official grade |

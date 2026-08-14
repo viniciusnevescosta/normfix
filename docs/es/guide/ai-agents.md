@@ -111,7 +111,7 @@ El informe estable usa actualmente `schema_version: 2`. Campos útiles:
 | `summary.failed` | Falló una operación de herramienta, descubrimiento, E/S o transacción |
 | `summary.unexpected_files` | Se encontraron archivos fuera del conjunto aceptado de archivos de proyecto |
 | `files[].failure` | Este archivo no se completó; no lo describas como corregido |
-| `files[].after` | Diagnósticos contra el búfer sombra final |
+| `files[].after` | Diagnósticos sobre los bytes propuestos |
 | `files[].fixes` | Ediciones probadas propuestas o escritas para ese archivo |
 | `identity.available` | Se puede crear o actualizar una cabecera oficial de 42 |
 | `evaluation.conclusive` | Siempre `false`; nunca presentes la estimación como nota oficial |

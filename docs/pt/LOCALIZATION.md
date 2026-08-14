@@ -117,7 +117,7 @@ Para adicionar uma entrada:
 1. adicione o campo a `Messages` com um comentário de documentação nomeando seus
    placeholders;
 2. preencha-o nos quatro literais de idioma na mesma mudança;
-3. renderize através de `messages.<campo>` e `normfix_i18n::fill`, nunca como um
+3. renderize por `messages.<campo>` e `normfix_i18n::fill`, nunca como um
    literal no ponto de chamada.
 
 A seleção de idioma segue `--lang`, depois `NORMFIX_LANG`, `LC_ALL`,

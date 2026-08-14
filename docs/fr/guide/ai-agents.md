@@ -111,7 +111,7 @@ Le rapport stable utilise actuellement `schema_version: 2`. Champs utiles :
 | `summary.failed` | Une opération d'outil, de découverte, d'E/S ou de transaction a échoué |
 | `summary.unexpected_files` | Des fichiers hors de l'ensemble accepté de fichiers de projet ont été trouvés |
 | `files[].failure` | Ce fichier n'a pas été terminé ; ne le décrivez pas comme corrigé |
-| `files[].after` | Diagnostics sur le tampon fantôme final |
+| `files[].after` | Diagnostics sur les octets proposés |
 | `files[].fixes` | Modifications prouvées proposées ou écrites pour ce fichier |
 | `identity.available` | Un en-tête officiel 42 peut être créé ou mis à jour |
 | `evaluation.conclusive` | Toujours `false` ; ne présentez jamais l'estimation comme une note officielle |

@@ -20,7 +20,7 @@ normfix undo --run RUN_ID
 |---|---|---|
 | `format` | yes | Applies accepted edits |
 | `lint` | no | Reports diagnostics against the original bytes; proposes no formatting, header, Makefile, or Markdown replacement |
-| `check` | no | Runs formatting and linting in a shadow buffer |
+| `check` | no | Runs formatting and linting on a copy, so your files are never touched |
 | `budget` | no | A lint run plus one informational line/variable/parameter row per parsed function |
 | `preflight` | no | A check-oriented run with the strict compiler check enabled; it does not execute `make` or the program |
 | `explain` | no | Prints the bundled English explanation for one stable rule ID, without scanning a project |

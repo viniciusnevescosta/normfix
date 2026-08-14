@@ -37,7 +37,7 @@ O `undo` falha fechado. Ele não restaura quando:
   porque alguém o editou depois, e restaurar descartaria esse trabalho em
   silêncio;
 - um arquivo de backup está faltando ou seu hash não bate com o journal;
-- qualquer caminho no backup ou no projeto resolve através de um link
+- qualquer caminho no backup ou no projeto passa por um link
   simbólico;
 - o journal está ilegível ou seu schema é desconhecido.
 

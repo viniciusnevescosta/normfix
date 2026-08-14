@@ -109,7 +109,7 @@ O relatório estável usa atualmente `schema_version: 2`. Campos úteis são:
 | `summary.failed` | Uma operação de ferramenta, descoberta, E/S ou transação falhou |
 | `summary.unexpected_files` | Foram encontrados arquivos fora do conjunto aceito de arquivos de projeto |
 | `files[].failure` | Este arquivo não foi concluído; não o descreva como corrigido |
-| `files[].after` | Diagnósticos contra o buffer sombra final |
+| `files[].after` | Diagnósticos sobre os bytes propostos |
 | `files[].fixes` | Edições comprovadas propostas ou gravadas para aquele arquivo |
 | `identity.available` | Um cabeçalho oficial da 42 pode ser criado ou atualizado |
 | `evaluation.conclusive` | Sempre `false`; nunca apresente a estimativa como nota oficial |

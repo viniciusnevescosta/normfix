@@ -1,6 +1,6 @@
 # `normfix format`
 
-Aplica as edições que passaram por todas as provas e as grava através de uma
+Aplica as edições que passaram por todas as provas e as grava numa
 única transação recuperável.
 
 ```sh
@@ -96,5 +96,6 @@ $XDG_DATA_HOME/normfix/backups/<run-id>/
 ```
 
 `--no-backup` pula isso para a formatação comum. Ele **não** pula para uma
-remoção destrutiva, que sempre exige armazenamento recuperável e falha fechada
+remoção destrutiva, que sempre exige armazenamento recuperável e recusa em vez
+de continuar
 sem ele. Restaure com [`undo`](/pt/commands/undo).
