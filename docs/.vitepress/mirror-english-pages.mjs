@@ -23,6 +23,10 @@ const LOCALES = ["pt", "es", "fr"];
 /** Source page, and the localized route it is mirrored to. */
 const PAGES = [
   "ARCHITECTURE.md",
+  // A contributor contract for translating the tool. Whoever works on it is
+  // translating from English, so three copies of it serve no reader and give
+  // three more places for the guide to fall behind what it describes.
+  "LOCALIZATION.md",
   "RELEASING.md",
   "ROADMAP.md",
   "changelog.md",

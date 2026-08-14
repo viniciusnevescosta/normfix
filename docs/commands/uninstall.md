@@ -44,6 +44,30 @@ The default keeps your data. That is deliberate: the backup directory holds the
 only copy of anything a previous run replaced or moved, and uninstalling a
 formatter is not a statement about wanting to lose the work it saved for you.
 
+## Reading it from a script
+
+```sh
+normfix --format json uninstall --dry-run
+```
+
+```json
+{
+  "schema_version": 2,
+  "command": "uninstall",
+  "outcome": "planned",
+  "result": {
+    "dry_run": true,
+    "purge": false,
+    "removes_recovery_data": false,
+    "plan": "normfix uninstall\n  remove  …"
+  }
+}
+```
+
+`outcome` is `planned` for a dry run and `success` for one that removed
+anything. `removes_recovery_data` is the field worth checking before letting a
+script continue.
+
 ## `--purge`
 
 ```console

@@ -24,8 +24,11 @@ htmlcov/
 /docs/security.md
 # Generated mirrors of the English-only pages, one per locale.
 /docs/pt/ARCHITECTURE.md
+/docs/pt/LOCALIZATION.md
 /docs/es/ARCHITECTURE.md
+/docs/es/LOCALIZATION.md
 /docs/fr/ARCHITECTURE.md
+/docs/fr/LOCALIZATION.md
 /docs/pt/RELEASING.md
 /docs/es/RELEASING.md
 /docs/fr/RELEASING.md

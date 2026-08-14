@@ -36,6 +36,29 @@ The channel boundary is deliberate: a stable installation is never moved to a
 beta or release candidate by `upgrade` or by the daily release notice. Opting
 into a pre-release remains an explicit install-time choice.
 
+## Reading it from a script
+
+```sh
+normfix --format json upgrade --check
+```
+
+```json
+{
+  "schema_version": 2,
+  "command": "upgrade",
+  "outcome": "success",
+  "result": {
+    "state": "available",
+    "current_version": "1.6.2",
+    "latest_version": "1.7.0",
+    "installed": false
+  }
+}
+```
+
+`state` is `current`, `available`, or `installed`. Branch on that rather than
+on the text, which is written for a person.
+
 ## When it refuses
 
 | Situation | What it says |
