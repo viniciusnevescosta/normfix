@@ -47,3 +47,25 @@ name or a native `normfix` rule.
 
 An unknown identifier still gets a useful answer rather than an error. The
 bundled article set is a convenience, not the source of truth.
+
+## Reading it from a script
+
+```sh
+normfix --format json explain DECL_ASSIGN_LINE
+```
+
+```json
+{
+  "schema_version": 2,
+  "command": "explain",
+  "outcome": "success",
+  "result": {
+    "rule_id": "DECL_ASSIGN_LINE",
+    "explanation": "DECL_ASSIGN_LINE: Local declaration block is not canonical\n\nWhy\n  …"
+  }
+}
+```
+
+`rule_id` is the canonical name, which is not always the one you asked for: an
+alias resolves to the rule it names. A rule with no bundled article still
+answers, with an explanation saying so.

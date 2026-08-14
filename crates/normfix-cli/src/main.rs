@@ -583,8 +583,16 @@ fn run_leaks(cli: &Cli, arguments: &LeaksArguments) -> ExitCode {
     };
 
     if cli.format == OutputFormat::Json {
-        match serde_json::to_string_pretty(&report) {
-            Ok(json) => println!("{json}"),
+        match serde_json::to_value(&report) {
+            Ok(payload) => print_json_outcome(
+                "leaks",
+                if report.lost_anything() {
+                    "findings"
+                } else {
+                    "success"
+                },
+                &payload,
+            ),
             Err(error) => {
                 print_run_error(cli.format, messages, &error.to_string());
                 return ExitCode::from(2);
@@ -1618,17 +1626,14 @@ fn run_explain(
     };
     match format {
         OutputFormat::Human => print!("{explanation}"),
-        OutputFormat::Json => {
-            let value = serde_json::json!({
-                "schema_version": normfix_report::REPORT_SCHEMA_VERSION,
+        OutputFormat::Json => print_json_outcome(
+            "explain",
+            "success",
+            &serde_json::json!({
                 "rule_id": canonical,
                 "explanation": explanation,
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&value).expect("explanation JSON is serializable")
-            );
-        }
+            }),
+        ),
     }
     ExitCode::SUCCESS
 }

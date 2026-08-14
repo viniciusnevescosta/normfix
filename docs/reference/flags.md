@@ -468,3 +468,28 @@ normfix undo --help
 ```sh
 normfix --version
 ```
+
+## Where a flag shows up in the JSON
+
+Every flag on this page works with `--format json`, and the ones that change
+what a run covers or is allowed to do say so in the answer rather than leaving
+a caller to infer it from the flags it passed:
+
+| Flag | Field |
+|---|---|
+| `--check`, `--diff` | `mode` |
+| `--diff` | each file's `diff` |
+| `--changed`, `--staged` | `scope.selection` |
+| `--use-gitignore` | `scope.respects_gitignore` |
+| `--unsafe`, `--force`, `--remove-unused`, `--remove-unexpected`, `--remove-invalid-comments` | `granted_capabilities` |
+| `--preflight` | `evaluation` |
+
+The rest change how a run reaches its answer rather than what the answer covers
+— `--threads`, `--timeout`, `--no-cache`, `--norminette`, `--cc` — and leave no
+trace in the payload, because a caller reading a result should not have to care
+which of them was used to produce it.
+
+A refusal answers in the same envelope, with `outcome: "failure"` and an `error`
+object, so a flag combination the tool rejects is read the same way as any other
+outcome.
+

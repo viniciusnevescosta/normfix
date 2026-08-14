@@ -34,3 +34,36 @@ asks you to add a check.
 function boundary changes program structure, which is a decision that needs a
 name and an owner. See
 [`normfix explain TOO_MANY_LINES`](/commands/explain).
+
+## Reading it from a script
+
+```sh
+normfix --format json budget src
+```
+
+```json
+{
+  "schema_version": 2,
+  "tool_version": "1.6.2",
+  "mode": "budget",
+  "scope": { "selection": "explicit_paths", "respects_gitignore": false },
+  "granted_capabilities": [],
+  "files": [
+    {
+      "path": "main.c",
+      "changed": true,
+      "written": false,
+      "fixes": [],
+      "before": [],
+      "after": []
+    }
+  ],
+  "summary": { "files": 1, "changed": 1, "written": 0, "fixes": 1, "remaining": 0, "failed": 0 },
+  "duration_seconds": 0.31
+}
+```
+
+Branch on `schema_version` first. `scope` says how the files were chosen and
+`granted_capabilities` what the run was allowed to do; both are present and
+plain on an ordinary run, so their absence never has to be interpreted. The
+full field list is in [reporting](/reference/reporting).
