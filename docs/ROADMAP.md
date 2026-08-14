@@ -162,6 +162,18 @@ operational failure, a refused capability, a file that could not be parsed, a
 check that did not run — and it has to say which of those happened rather than
 leaving a consumer to infer it from an absent field.
 
+`--format json` also has to mean the same thing everywhere: every command, and
+every flag, rather than the subset that happens to have been written for a
+person watching a terminal. Three gaps are already known from trying it.
+
+The opening event names the action as `format` and the mode as `write` no
+matter which command runs, so an agent reading it is told the wrong thing by
+`explain`, `undo`, and `budget` alike. `undo --list` answers with a bare `[]`,
+carrying no envelope and no `schema_version`, which leaves no way to tell "no
+recovery points" apart from "this build did not understand the request". And
+the commands that speak in prose about what they refused — a capability not
+granted, a scope declined — have no field saying so.
+
 `schema_version` already exists and is honoured. What follows it is coverage:
 each command's payload documented as the contract it is, so nothing has to be
 learned by running the tool and reading what came back.
