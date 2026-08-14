@@ -87,8 +87,8 @@ wrong, and only measurement said so.
 
 - **The per-file subprocess.** Norminette accepts several files in one
   invocation, which would replace 44 process launches with one. Doing that
-  means the pipeline can no longer lint one shadow buffer at a time, which is
-  how the before/after proof is currently structured. It is the largest
+  means the pipeline can no longer check one file's proposed bytes at a time,
+  which is how the before/after proof is built today. It is the largest
   remaining win and the one with the most architectural cost.
 - **Very large single files.** Above a few thousand lines the cost is
   dominated by something other than the line index, and that has not been

@@ -42,7 +42,7 @@ C/cabeçalho. Implementações ausentes e corpos correspondentes só com
 trivialidades são relatados no nome do protótipo. A remoção insegura é limitada
 a implementações ausentes e exige o escopo completo do projeto, autorização
 delimitada, nenhum outro uso do identificador nem ambiguidade, validação de
-reanálise na sombra e uma verificação de hash, no momento da transação, de todas
+uma releitura limpa do resultado e uma verificação de hash, na hora de gravar, de todas
 as entradas da prova. Definições existentes só com trivialidades nunca são
 removidas: um no-op intencional pode ser válido.
 
@@ -99,7 +99,7 @@ letra apenas priorizam o trabalho restante; elas não são uma nota oficial.
 
 A evidência de reprovação é baseada nos diagnósticos originais em disco da
 Norminette e do Makefile, mais qualquer achado recém-exposto que permaneça na
-sombra. Uma edição segura proposta pelo modo check não faz os bytes entregues
+as edições propostas. Uma edição segura proposta pelo modo check não faz os bytes entregues
 passarem retroativamente.
 
 Quando o `normfix.toml` está ausente, o preflight emite

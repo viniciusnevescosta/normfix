@@ -87,7 +87,8 @@ equivocadas, y solo la medición lo dijo.
 
 - **El subproceso por archivo.** Norminette acepta varios archivos en una
   invocación, lo que sustituiría 44 arranques de proceso por uno. Hacerlo
-  significa que el pipeline ya no puede analizar un búfer sombra cada vez, que es
+  significa que el pipeline ya no puede revisar los bytes propuestos de un archivo
+  cada vez, que es
   como está estructurada hoy la prueba antes/después. Es la mayor ganancia
   restante y la de mayor coste arquitectónico.
 - **Archivos individuales muy grandes.** Por encima de unos miles de líneas el

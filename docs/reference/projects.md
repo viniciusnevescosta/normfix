@@ -36,12 +36,13 @@ recipes, `define` blocks, `.RECIPEPREFIX`, escaping paths, and uncertain
 filesystem results are left unchanged.
 
 Every filesystem-backed workflow compares non-static prototypes in project
-headers with a complete lossless C/header source snapshot. Missing
+headers against every C and header file in the project, all of which must have
+parsed cleanly. Missing
 implementations and matching trivia-only bodies are reported at the prototype
 name. Unsafe removal is limited to missing implementations and requires the
-complete project scope, scoped authorization, no other identifier use or
-ambiguity, shadow reparse validation, and a transaction-time hash check of
-every proof input. Existing trivia-only definitions are never removed: an
+complete project scope, scoped authorization, no other use of the identifier and no
+ambiguity, a clean re-parse of the result, and a hash check of every input at
+the moment of writing. Existing trivia-only definitions are never removed: an
 intentional no-op can be valid.
 
 The tool does not automatically add every `.c` file found on disk to a source
@@ -95,7 +96,7 @@ fail with exact source locations. The 0–100 score and letter band only
 prioritize the remaining work; they are not an official grade.
 
 The hard-fail evidence is based on the original on-disk Norminette and Makefile
-diagnostics, plus any newly exposed finding that remains in the shadow. A safe
+diagnostics, plus any new finding that would still be there after the proposed edits. A safe
 edit proposed by check mode does not retroactively pass the submitted bytes.
 
 When `normfix.toml` is absent, preflight emits

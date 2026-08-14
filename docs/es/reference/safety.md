@@ -92,7 +92,7 @@ cerrada autorizan llamadas entre unidades de traducción; las definiciones en el
 mismo archivo se tratan localmente, mientras que una definición `static` en otro
 archivo nunca autoriza la llamada.
 
-Las llamadas candidatas se recalculan contra el código sombra final, para que los
+Las llamadas candidatas se recalculan contra los bytes propuestos, para que los
 rangos informados sigan siendo correctos tras la inserción de la cabecera y el
 formateo. Los parámetros, las llamadas por puntero a función, la ambigüedad de
 macro o preprocesador y los identificadores en mayúsculas con aspecto de macro

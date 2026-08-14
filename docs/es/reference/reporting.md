@@ -93,7 +93,7 @@ El veredicto es `hard_fail` cuando el alcance evaluado contiene un archivo
 inesperado, un hallazgo corroborado por la Norminette oficial instalada o un
 diagnóstico de Makefile. Las evidencias de Norminette y de Makefile vienen de la
 instantánea original en disco, más cualquier fallo adicional expuesto en la
-sombra final. Por tanto, un problema corregible automáticamente sigue siendo un
+las ediciones propuestas revelarían. Por tanto, un problema corregible automáticamente sigue siendo un
 suspenso del preflight hasta que los bytes propuestos se escriban realmente y se
 comprueben otra vez.
 La nota numérica es una heurística acotada de priorización, no una nota de 42; no

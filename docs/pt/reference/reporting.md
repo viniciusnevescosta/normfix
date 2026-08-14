@@ -91,7 +91,7 @@ conclusiva: `score`, `grade`, `verdict` e `hard_failures` com localização exat
 O veredito é `hard_fail` quando o escopo avaliado contém um arquivo inesperado,
 um achado corroborado pela Norminette oficial instalada ou um diagnóstico de
 Makefile. As evidências de Norminette e de Makefile vêm do snapshot original em
-disco, mais qualquer falha adicional exposta na sombra final. Portanto, um
+disco, mais qualquer outra falha que as edições propostas revelariam. Portanto, um
 problema corrigível automaticamente continua sendo uma reprovação do preflight
 até que os bytes propostos sejam de fato gravados e verificados de novo.
 A nota numérica é uma heurística limitada de priorização, não uma nota da 42; ela

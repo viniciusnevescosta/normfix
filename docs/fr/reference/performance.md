@@ -88,7 +88,8 @@ fausses, et seule la mesure l'a dit.
 
 - **Le sous-processus par fichier.** Norminette accepte plusieurs fichiers en une
   invocation, ce qui remplacerait 44 lancements de processus par un seul. Le
-  faire signifie que le pipeline ne peut plus analyser un tampon fantôme à la
+  faire signifie que le pipeline ne peut plus vérifier les octets proposés d'un
+  fichier à la
   fois, ce qui est la structure actuelle de la preuve avant/après. C'est le plus
   grand gain restant et celui au coût architectural le plus élevé.
 - **Les très gros fichiers uniques.** Au-delà de quelques milliers de lignes, le

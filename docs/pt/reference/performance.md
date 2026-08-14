@@ -88,7 +88,8 @@ erradas, e só a medição disse isso.
 
 - **O subprocesso por arquivo.** A Norminette aceita vários arquivos em uma
   invocação, o que substituiria 44 inicializações de processo por uma. Fazer
-  isso significa que o pipeline não pode mais analisar um buffer sombra por vez,
+  isso significa que o pipeline não pode mais verificar os bytes propostos de um
+  arquivo por vez,
   que é como a prova antes/depois está estruturada hoje. É o maior ganho
   restante e o de maior custo arquitetural.
 - **Arquivos únicos muito grandes.** Acima de alguns milhares de linhas o custo

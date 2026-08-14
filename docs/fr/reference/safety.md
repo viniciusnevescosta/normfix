@@ -92,7 +92,7 @@ fermé autorisent les appels entre unités de traduction ; les définitions du m
 fichier sont traitées localement, tandis qu’une définition `static` dans un autre
 fichier n’autorise jamais l’appel.
 
-Les appels candidats sont recalculés contre la source fantôme finale, afin que
+Les appels candidats sont recalculés contre les octets proposés, afin que
 les plages signalées restent correctes après l’insertion de l’en-tête et le
 formatage. Les paramètres, les appels par pointeur de fonction, l’ambiguïté de
 macro ou de préprocesseur et les identifiants en majuscules ressemblant à des

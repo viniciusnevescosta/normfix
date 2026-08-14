@@ -140,7 +140,7 @@ fetched without parsing the site around them.
 `hard_fail` when the evaluated scope contains an unexpected file, a finding
 corroborated by the installed official Norminette, or a Makefile diagnostic.
 Norminette and Makefile evidence comes from the original on-disk snapshot, plus
-any additional failure exposed in the final shadow. Therefore an auto-fixable
+any further failure the proposed edits would expose. Therefore an auto-fixable
 problem remains a preflight hard fail until the proposed bytes are actually
 written and checked again.
 The numeric score is a bounded prioritization heuristic, not a 42 grade; it

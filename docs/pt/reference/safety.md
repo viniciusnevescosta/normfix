@@ -91,7 +91,7 @@ fechado autorizam chamadas entre unidades de tradução; definições no mesmo
 arquivo são tratadas localmente, enquanto uma definição `static` em outro arquivo
 nunca autoriza a chamada.
 
-As chamadas candidatas são recalculadas contra o código-sombra final, para que as
+As chamadas candidatas são recalculadas contra os bytes propostos, para que as
 faixas reportadas continuem corretas depois da inserção do cabeçalho e da
 formatação. Parâmetros, chamadas por ponteiro de função, ambiguidade de
 macro/pré-processador e identificadores em maiúsculas com cara de macro falham

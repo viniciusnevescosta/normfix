@@ -43,7 +43,7 @@ fuentes C/cabecera. Las implementaciones ausentes y los cuerpos correspondientes
 con solo trivialidades se informan en el nombre del prototipo. La eliminación
 insegura se limita a implementaciones ausentes y exige el alcance completo del
 proyecto, autorización acotada, ningún otro uso del identificador ni ambigüedad,
-validación de reanálisis en la sombra y una comprobación de hash, en el momento
+una relectura limpia del resultado y una comprobación de hash, en el momento
 de la transacción, de todas las entradas de la prueba. Las definiciones
 existentes con solo trivialidades nunca se eliminan: un no-op intencionado puede
 ser válido.
@@ -103,7 +103,7 @@ oficial.
 
 La evidencia de suspenso se basa en los diagnósticos originales en disco de
 Norminette y del Makefile, más cualquier hallazgo recién expuesto que permanezca
-en la sombra. Una edición segura propuesta por el modo check no hace que los
+tras las ediciones propuestas. Una edición segura propuesta por el modo check no hace que los
 bytes entregados aprueben retroactivamente.
 
 Cuando falta `normfix.toml`, preflight emite `FUNCTION_POLICY_NOT_CONFIGURED` en
