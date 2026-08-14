@@ -1650,6 +1650,37 @@ fn a_control_body_starting_with_a_star_does_not_deadlock_two_rules() {
 }
 
 #[test]
+fn a_second_instruction_on_a_line_gets_its_own() {
+    let source = concat!(
+        "int\tf(void)\n",
+        "{\n",
+        "\tint\ta;\n",
+        "\tint\tb;\n",
+        "\n",
+        "\ta = 1; b = 2; a = b;\n",
+        "\treturn (a);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\ta = 1;\n\tb = 2;\n\ta = b;\n"), "{fixed}");
+    assert_eq!(apply(&fixed, &[]), fixed);
+
+    // A comment between the two would have to pick a line, and picking one
+    // for the reader says something they did not.
+    let annotated = concat!(
+        "int\tf(void)\n",
+        "{\n",
+        "\tint\ta;\n",
+        "\tint\tb;\n",
+        "\n",
+        "\ta = 1; /* x */ b = 2;\n",
+        "\treturn (a + b);\n",
+        "}\n",
+    );
+    assert!(apply(annotated, &[]).contains("a = 1; /* x */ b = 2;"));
+}
+
+#[test]
 fn a_for_becomes_the_while_it_stood_for() {
     // The Norm forbids `for`. The pieces map across exactly: the initializer
     // runs once above the loop, the condition is the condition, and the step

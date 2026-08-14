@@ -61,6 +61,7 @@ pub(crate) enum Phase {
     CompactContinuations,
     BlankLines,
     BracesAndControls,
+    CrowdedStatements,
     SingleStatementBlocks,
     RedundantElse,
     ForLoops,
@@ -94,6 +95,7 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
         Phase::CompactContinuations,
         Phase::BlankLines,
         Phase::BracesAndControls,
+        Phase::CrowdedStatements,
         Phase::SingleStatementBlocks,
         Phase::RedundantElse,
         Phase::ForLoops,
@@ -123,6 +125,9 @@ impl Phase {
         )
     }
 
+    // One arm per phase: the dispatch is a table, and splitting it would hide
+    // the order the phases run in, which is what makes them compose.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn plan(
         self,
         context: &ParsedContext,
@@ -164,6 +169,10 @@ impl Phase {
             Self::BracesAndControls => Ok(ActionBatch::layout(
                 "BRACE_CONTROL_LAYOUT",
                 fix_braces_and_controls(context, diagnostics)?,
+            )),
+            Self::CrowdedStatements => Ok(ActionBatch::layout(
+                "ONE_INSTRUCTION_PER_LINE",
+                separate_crowded_statements(context)?,
             )),
             Self::SingleStatementBlocks => Ok(ActionBatch::semantic(
                 "REMOVE_SINGLE_STATEMENT_BRACES",
@@ -1359,6 +1368,36 @@ fn split_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError
 
 /// The Norm's limit on a function body, which a rewrite that adds lines spends.
 const FUNCTION_LINES: u32 = 25;
+
+/// Gives a second instruction sharing a line its own line.
+///
+/// The Norm allows one instruction or control structure per line. Nothing here
+/// moves a token or changes one: the whitespace between two statements becomes
+/// a newline and the indentation the first one already had, which is why this
+/// keeps the layout fingerprint rather than needing a semantic proof.
+fn separate_crowded_statements(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    for gap in &context.facts().crowded_statements {
+        let start = gap.start().get() as usize;
+        let end = gap.end().get() as usize;
+        let line_number = lines.line_number_at(start);
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let text = lines.text(line);
+        let indent = &text[..leading_whitespace(text)];
+        edits.push(Edit::new(
+            start,
+            end,
+            format!("\n{indent}"),
+            "ONE_INSTRUCTION_PER_LINE",
+            "gave a second instruction on the line its own line",
+            Some(line_number),
+        )?);
+    }
+    Ok(edits)
+}
 
 /// Replaces a forbidden `for` with the `while` that says the same loop.
 ///

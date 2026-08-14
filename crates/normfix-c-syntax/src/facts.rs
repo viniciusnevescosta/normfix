@@ -64,6 +64,8 @@ pub struct SyntaxFacts {
     pub ternary_statements: Vec<TernaryFact>,
     /// Forbidden `for` loops that a `while` can say exactly.
     pub for_loops: Vec<ForLoopFact>,
+    /// Gaps where a second instruction begins on a line already holding one.
+    pub crowded_statements: Vec<TextRange>,
 }
 
 /// A `for` loop the Norm forbids, and the three pieces a `while` needs.
@@ -445,6 +447,7 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
                 facts
                     .compound_bodies
                     .push(node_range(node.start_byte(), node.end_byte())?);
+                collect_crowded_statements(node, &mut facts)?;
             }
             "expression_statement" if is_stray_semicolon(node) => {
                 facts
@@ -1501,6 +1504,41 @@ fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, Par
         condition_parenthesized: condition.kind() == "parenthesized_expression",
         function_body_range: node_range(body.start_byte(), body.end_byte())?,
     }))
+}
+
+/// The gaps between instructions that share a physical line.
+///
+/// The Norm allows one instruction or control structure per line, and the fix
+/// is a newline in a gap that holds none — no token moves, none is added, and
+/// none is taken away.
+///
+/// The gap is recorded rather than the statement, because what has to change is
+/// exactly what sits between the two: a directive there belongs to a build
+/// configuration this parse cannot see, and a comment there would have to
+/// choose a line, so both leave the pair alone.
+fn collect_crowded_statements(
+    node: Node<'_>,
+    facts: &mut SyntaxFacts,
+) -> Result<(), ParseFailure> {
+    let mut cursor = node.walk();
+    let mut previous: Option<Node<'_>> = None;
+    for child in node.named_children(&mut cursor) {
+        let Some(last) = previous.replace(child) else {
+            continue;
+        };
+        if child.kind() == "comment"
+            || last.kind() == "comment"
+            || child.kind().starts_with("preproc_")
+            || last.kind().starts_with("preproc_")
+            || last.end_position().row != child.start_position().row
+        {
+            continue;
+        }
+        facts
+            .crowded_statements
+            .push(node_range(last.end_byte(), child.start_byte())?);
+    }
+    Ok(())
 }
 
 /// A `for` loop a `while` can say exactly.
