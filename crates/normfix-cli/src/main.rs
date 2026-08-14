@@ -1313,6 +1313,7 @@ fn render_report(cli: &Cli, report: &RunReport) -> Result<(), String> {
                 attach_unified_diffs(&mut value, report);
             }
             attach_granted_capabilities(&mut value, cli);
+            attach_scope(&mut value, cli);
             let json = serde_json::to_string_pretty(&value)
                 .map_err(|error| format!("Could not serialize the run report: {error}"))?;
             println!("{json}");
@@ -1340,6 +1341,34 @@ fn attach_unified_diffs(value: &mut serde_json::Value, report: &RunReport) {
             }),
         );
     }
+}
+
+/// Names how the run chose the files it worked on.
+///
+/// The file list alone does not say whether Git selected it or a directory
+/// walk did, and the two mean different things to a caller deciding what a
+/// clean result covers. The human banner has always said this; the JSON is
+/// where a caller reads it.
+fn attach_scope(value: &mut serde_json::Value, cli: &Cli) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    let selection = if cli.staged {
+        "git_staged"
+    } else if cli.changed {
+        "git_changed"
+    } else if cli.paths.is_empty() && cli.command.is_none() {
+        "working_directory"
+    } else {
+        "explicit_paths"
+    };
+    object.insert(
+        "scope".to_owned(),
+        serde_json::json!({
+            "selection": selection,
+            "respects_gitignore": cli.use_gitignore,
+        }),
+    );
 }
 
 /// Names the destructive capabilities this run was granted.

@@ -119,7 +119,11 @@ A refusal answers in the same envelope, with `outcome: "failure"` and an
 `error` object naming the code and the message, so `outcome` is read in one
 place rather than two shapes being learned.
 
-Two fields describe the run rather than the files. `granted_capabilities` lists
+Three fields describe the run rather than the files. `scope` names how the
+files were chosen — `git_changed`, `git_staged`, `explicit_paths`, or
+`working_directory` — with `respects_gitignore` beside it, because a file list
+alone does not say whether Git selected it or a directory walk did, and the two
+mean different things to a caller deciding what a clean result covers. `granted_capabilities` lists
 what this run was allowed to do — `unsafe`, `force`, `remove_unused`,
 `remove_unexpected`, `remove_invalid_comments` — and is present and empty for
 an ordinary run, so its absence never has to be interpreted. And `--diff` puts
