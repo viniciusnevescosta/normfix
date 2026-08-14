@@ -15,11 +15,31 @@ asks first:
 $ normfix leaks ./push_swap
 normfix is about to run ./push_swap under the leak checker. This executes your program. Continue? [y/N] y
 Lost 1024 bytes outright, and 96 more reachable only through them.
-Allocated at:
-  1024 bytes in create_stack (stack.c:23)
-  96 bytes in push_node (node.c:41)
+
+error[LEAK_DEFINITELY_LOST]: 1024 bytes allocated here were never freed
+ --> stack.c:23:2
+   |
+23 |     stack = malloc(sizeof(int) * size);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: This is where the memory was allocated, not where it should have been freed. Follow it to the path that loses the pointer.
+
+error[MEMORY_ERROR]: Invalid read of size 4, in sort_stack
+ --> sort.c:41:2
+   |
+41 |     return (stack[size]);
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: The program touched memory it does not own. This is a bug regardless of what the Norm says about the file.
+
 This is what one run observed with the arguments it was given. It is not a proof that the program never leaks.
 ```
+
+Two kinds of finding appear here, and they answer different questions. A
+`LEAK_` finding points at where memory was allocated and then lost — the line
+that allocated it, which is the part the checker can see, not the place it
+should have been freed. A `MEMORY_ERROR` points at the line that read, wrote,
+or freed something the program had no right to; that one is the bug itself.
 
 Arguments after `--` go to your program, not to the checker, so you can exercise
 the path that matters:
@@ -28,9 +48,8 @@ the path that matters:
 normfix leaks ./push_swap -- 5 2 9 1
 ```
 
-The line is where the memory was allocated, not where it should have been
-freed — that is the part the checker can see. A binary built without `-g`
-carries no line numbers, so the report names the function alone and says why.
+A binary built without `-g` carries no line numbers, so the report names the
+function alone and says why.
 
 ## What it does not do
 

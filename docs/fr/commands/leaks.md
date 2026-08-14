@@ -15,11 +15,31 @@ donc d’abord.
 $ normfix leaks ./push_swap
 normfix va exécuter ./push_swap sous le détecteur de fuites. Cela exécute votre programme. Continuer ? [y/N] y
 Perdus 1024 octets définitivement, et 96 de plus accessibles uniquement par eux.
-Alloués à :
-  1024 octets dans create_stack (stack.c:23)
-  96 octets dans push_node (node.c:41)
+
+error[LEAK_DEFINITELY_LOST]: 1024 octets alloués ici n'ont jamais été libérés
+ --> stack.c:23:2
+   |
+23 |     stack = malloc(sizeof(int) * size);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: C'est là que la mémoire a été allouée, pas là où elle aurait dû être libérée. Suivez ce point jusqu'au chemin qui perd le pointeur.
+
+error[MEMORY_ERROR]: Invalid read of size 4, dans sort_stack
+ --> sort.c:41:2
+   |
+41 |     return (stack[size]);
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: Le programme a touché de la mémoire qui ne lui appartient pas. C'est un bug, quoi que la Norm dise du fichier.
 Voici ce qu’une exécution a observé avec les arguments reçus. Ce n’est pas une preuve que le programme ne fuit jamais.
 ```
+
+Deux sortes de constat apparaissent ici, et elles répondent à des questions
+différentes. Un constat `LEAK_` désigne l'endroit où la mémoire a été allouée
+puis perdue — la ligne qui l'a allouée, ce que le vérificateur peut voir, et non
+l'endroit où elle aurait dû être libérée. Un `MEMORY_ERROR` désigne la ligne qui
+a lu, écrit ou libéré quelque chose que le programme n'avait pas le droit de
+toucher ; celle-là, c'est le bug lui-même.
 
 Les arguments après `--` vont à votre programme, pas au détecteur : vous pouvez
 donc exercer le chemin qui compte.
@@ -28,10 +48,8 @@ donc exercer le chemin qui compte.
 normfix leaks ./push_swap -- 5 2 9 1
 ```
 
-La ligne est celle où la mémoire a été allouée, pas celle où elle aurait dû
-être libérée — c'est ce que le vérificateur peut voir. Un binaire compilé sans
-`-g` ne porte pas de numéros de ligne : le rapport nomme alors la fonction seule
-et dit pourquoi.
+Un binaire compilé sans `-g` ne porte pas de numéros de ligne : le rapport nomme
+alors la fonction seule et dit pourquoi.
 ## Ce qu’elle ne fait pas
 
 `normfix` ne compile jamais votre programme. Compiler signifie exécuter les

@@ -15,11 +15,30 @@ pregunta antes:
 $ normfix leaks ./push_swap
 normfix va a ejecutar ./push_swap bajo el verificador de fugas. Esto ejecuta tu programa. ¿Continuar? [y/N] y
 Se perdieron 1024 bytes del todo, y 96 más alcanzables solo a través de ellos.
-Reservados en:
-  1024 bytes en create_stack (stack.c:23)
-  96 bytes en push_node (node.c:41)
+
+error[LEAK_DEFINITELY_LOST]: 1024 bytes reservados aquí nunca se liberaron
+ --> stack.c:23:2
+   |
+23 |     stack = malloc(sizeof(int) * size);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: Aquí es donde se reservó la memoria, no donde debería haberse liberado. Sigue desde aquí hasta el camino que pierde el puntero.
+
+error[MEMORY_ERROR]: Invalid read of size 4, en sort_stack
+ --> sort.c:41:2
+   |
+41 |     return (stack[size]);
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: El programa tocó memoria que no es suya. Eso es un error, diga lo que diga la Norm sobre el archivo.
 Esto es lo que observó una ejecución con los argumentos que recibió. No es una prueba de que el programa nunca tenga fugas.
 ```
+
+Aquí aparecen dos tipos de hallazgo, y responden preguntas distintas. Un
+hallazgo `LEAK_` señala dónde se reservó la memoria y luego se perdió — la línea
+que la reservó, que es lo que el verificador puede ver, no el lugar donde
+debería haberse liberado. Un `MEMORY_ERROR` señala la línea que leyó, escribió o
+liberó algo que el programa no tenía derecho a tocar; ese es el error en sí.
 
 Los argumentos después de `--` van a tu programa, no al verificador, así que
 puedes ejercitar el camino que importa:
@@ -28,10 +47,8 @@ puedes ejercitar el camino que importa:
 normfix leaks ./push_swap -- 5 2 9 1
 ```
 
-La línea es donde se reservó la memoria, no donde debería haberse liberado —
-esa es la parte que el verificador puede ver. Un binario compilado sin `-g` no
-lleva números de línea, así que el informe nombra solo la función y explica por
-qué.
+Un binario compilado sin `-g` no lleva números de línea: en ese caso el informe
+nombra solo la función y explica por qué.
 ## Lo que no hace
 
 `normfix` nunca compila tu programa. Compilar significa ejecutar las recetas de
