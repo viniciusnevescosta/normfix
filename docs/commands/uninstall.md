@@ -97,27 +97,6 @@ that reported the failure is still on disk to retry.
 On Unix, unlinking the running executable is safe: the kernel keeps the file
 alive until the process exits, so the command finishes and prints its result
 normally. What is removed is the name in the filesystem.
-
 ## Reading it from a script
 
-```sh
-normfix --format json uninstall --dry-run
-```
-
-```json
-{
-  "schema_version": 2,
-  "command": "uninstall",
-  "outcome": "planned",
-  "result": {
-    "dry_run": true,
-    "purge": false,
-    "removes_recovery_data": false,
-    "plan": "normfix uninstall\n  remove  …"
-  }
-}
-```
-
-`outcome` is `planned` for a dry run and `success` for one that removed
-anything. `removes_recovery_data` is the field worth checking before letting a
-script continue.
+Every field this command returns is documented in [the JSON API](/reference/api).

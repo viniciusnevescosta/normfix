@@ -102,37 +102,6 @@ normfix leaks --force ./libft_test
 normfix locates `valgrind` on `PATH` and verifies it by its own `--version`, so
 any working build satisfies it. When none is found, it says so and names the
 route for the system you are on.
-
 ## Reading it from a script
 
-```sh
-normfix --format json leaks --force ./push_swap
-```
-
-```json
-{
-  "schema_version": 2,
-  "command": "leaks",
-  "outcome": "findings",
-  "result": {
-    "program_exit_code": 0,
-    "definitely_lost_bytes": 1024,
-    "indirectly_lost_bytes": 96,
-    "still_reachable_bytes": 0,
-    "error_count": 2,
-    "sites": [
-      { "bytes": 1024, "indirect": false, "function": "create_stack",
-        "location": { "file": "stack.c", "line": 23 } }
-    ],
-    "errors": [
-      { "kind": "Invalid read of size 4", "function": "sort_stack",
-        "location": { "file": "sort.c", "line": 41 } }
-    ]
-  }
-}
-```
-
-`outcome` is `findings` when anything was lost and `success` when nothing was,
-so a script never has to compare byte counts to decide. `location` is absent
-when the binary carries no debug information. Output the checker produced that
-could not be read as a leak summary is a `failure`, never a clean result.
+Every field this command returns is documented in [the JSON API](/reference/api).

@@ -73,36 +73,6 @@ normfix check --format json > report.json || exit 1
 
 Exit code `1` here means "there is work to do", which is exactly what a
 pre-merge check wants.
-
 ## Reading it from a script
 
-```sh
-normfix --format json check
-```
-
-```json
-{
-  "schema_version": 2,
-  "tool_version": "1.6.2",
-  "mode": "check",
-  "scope": { "selection": "explicit_paths", "respects_gitignore": false },
-  "granted_capabilities": [],
-  "files": [
-    {
-      "path": "main.c",
-      "changed": true,
-      "written": false,
-      "fixes": [],
-      "before": [],
-      "after": []
-    }
-  ],
-  "summary": { "files": 1, "changed": 1, "written": 0, "fixes": 1, "remaining": 0, "failed": 0 },
-  "duration_seconds": 0.31
-}
-```
-
-Branch on `schema_version` first. `scope` says how the files were chosen and
-`granted_capabilities` what the run was allowed to do; both are present and
-plain on an ordinary run, so their absence never has to be interpreted. The
-full field list is in [reporting](/reference/reporting).
+Every field this command returns is documented in [the JSON API](/reference/api).

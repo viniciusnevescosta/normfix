@@ -48,25 +48,6 @@ that guesses is worse than one that stops.
 backups. Destructive operations always keep recovery storage regardless, so a
 quarantined file or a removed comment can be recovered even when `--no-backup`
 was passed.
-
 ## Reading it from a script
 
-```sh
-normfix --format json undo --list
-```
-
-```json
-{
-  "schema_version": 2,
-  "command": "undo",
-  "outcome": "success",
-  "result": {
-    "count": 2,
-    "recovery_points": []
-  }
-}
-```
-
-`count` of zero means there is nothing to restore. That is a different answer
-from a failure, which arrives with `outcome: "failure"` and an `error` object,
-and the two need opposite responses from whatever is calling.
+Every field this command returns is documented in [the JSON API](/reference/api).

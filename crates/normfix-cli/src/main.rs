@@ -441,14 +441,14 @@ fn run(cli: &Cli) -> ExitCode {
         return run_interactive(cli, &paths, &options);
     }
 
-    finish_run(cli, &paths, &options)
+    finish_run(cli, &paths, &options, workflow)
 }
 
 /// Runs the pipeline and renders its report.
-fn finish_run(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCode {
+fn finish_run(cli: &Cli, paths: &[PathBuf], options: &FixOptions, workflow: Workflow) -> ExitCode {
     match run_fixes(paths, options) {
         Ok(report) => {
-            if let Err(message) = render_report(cli, &report) {
+            if let Err(message) = render_report(cli, &report, workflow) {
                 print_run_error(cli.format, cli_messages(cli), &message);
                 return ExitCode::from(2);
             }
@@ -714,6 +714,7 @@ fn print_leak_findings(
         let files = sources
             .into_iter()
             .map(|(path, source)| normfix_report::FileReport {
+                budget: Vec::new(),
                 after: diagnostics
                     .iter()
                     .filter(|(owner, _)| *owner == path)
@@ -1301,7 +1302,7 @@ const fn report_mode_name(mode: ReportMode, messages: &normfix_i18n::Messages) -
     }
 }
 
-fn render_report(cli: &Cli, report: &RunReport) -> Result<(), String> {
+fn render_report(cli: &Cli, report: &RunReport, workflow: Workflow) -> Result<(), String> {
     match cli.format {
         OutputFormat::Human => {
             let color =
@@ -1329,6 +1330,7 @@ fn render_report(cli: &Cli, report: &RunReport) -> Result<(), String> {
             if cli.diff {
                 attach_unified_diffs(&mut value, report);
             }
+            attach_command(&mut value, cli, workflow);
             attach_granted_capabilities(&mut value, cli);
             attach_scope(&mut value, cli);
             let json = serde_json::to_string_pretty(&value)
@@ -1356,6 +1358,20 @@ fn attach_unified_diffs(value: &mut serde_json::Value, report: &RunReport) {
             normfix_report::unified_diff(file).map_or(serde_json::Value::Null, |diff| {
                 serde_json::Value::String(diff)
             }),
+        );
+    }
+}
+
+/// Names which command produced this answer.
+///
+/// `mode` says whether a run wrote, checked, or diffed; it does not say whether
+/// `budget` or `lint` asked. A caller holding a payload should be able to tell
+/// what produced it without having kept the command line that did.
+fn attach_command(value: &mut serde_json::Value, cli: &Cli, workflow: Workflow) {
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "command".to_owned(),
+            serde_json::Value::String(workflow_name(cli, workflow).to_owned()),
         );
     }
 }
@@ -1483,7 +1499,7 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
             return ExitCode::from(2);
         }
     };
-    if let Err(message) = render_report(cli, &preview) {
+    if let Err(message) = render_report(cli, &preview, Workflow::Check) {
         print_run_error(cli.format, cli_messages(cli), &message);
         return ExitCode::from(2);
     }
@@ -1515,7 +1531,7 @@ fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCo
             return ExitCode::from(2);
         }
     };
-    if let Err(message) = render_report(cli, &report) {
+    if let Err(message) = render_report(cli, &report, Workflow::Default) {
         print_run_error(cli.format, cli_messages(cli), &message);
         return ExitCode::from(2);
     }

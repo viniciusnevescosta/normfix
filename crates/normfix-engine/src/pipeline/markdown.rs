@@ -85,6 +85,7 @@ pub(super) fn process_markdown(
     FileWork {
         absolute_path: file.path.clone(),
         report: FileReport {
+            budget: Vec::new(),
             path,
             changed,
             written: false,

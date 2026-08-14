@@ -1242,6 +1242,7 @@ pub(super) fn failed_file(file: &DiscoveredFile, path: Utf8PathBuf, failure: Str
     FileWork {
         absolute_path: file.path.clone(),
         report: FileReport {
+            budget: Vec::new(),
             path,
             changed: false,
             written: false,
@@ -1336,9 +1337,12 @@ fn process_c(
         after.extend(semantic_advisories);
         after.extend(policy_diagnostics.unwrap_or_default().iter().cloned());
         after.extend(untested_norminette_diagnostic(oracle, file, &path));
-        if options.emit_budget {
+        let budget = if options.emit_budget {
             after.extend(budget_diagnostics(&path, &original));
-        }
+            function_budgets(&path, &original)
+        } else {
+            Vec::new()
+        };
         if file.kind == ProjectFileKind::CSource {
             after.extend(run_compiler_preflight(
                 oracle, options, file, &path, &original, &original,
@@ -1349,6 +1353,7 @@ fn process_c(
         return FileWork {
             absolute_path: file.path.clone(),
             report: FileReport {
+                budget,
                 path,
                 changed: false,
                 written: false,
@@ -1659,6 +1664,7 @@ fn process_c(
     FileWork {
         absolute_path: file.path.clone(),
         report: FileReport {
+            budget: Vec::new(),
             path,
             changed,
             written: false,
@@ -1783,6 +1789,7 @@ fn failed_source_with_report(
     FileWork {
         absolute_path: file.path.clone(),
         report: FileReport {
+            budget: Vec::new(),
             path,
             changed,
             written: false,
@@ -1798,6 +1805,32 @@ fn failed_source_with_report(
         plan: None,
         read_preconditions: Vec::new(),
     }
+}
+
+/// The same numbers the budget sentence carries, as fields.
+///
+/// A caller reading JSON should not have to take apart "lines 4/25 (21 left)"
+/// to learn that a function has 21 lines of room. The sentence stays for a
+/// person; this is the same run's answer for everything else.
+fn function_budgets(path: &Utf8PathBuf, source: &str) -> Vec<normfix_report::FunctionBudget> {
+    analyze_budget(path.as_path(), source).map_or_else(
+        |_| Vec::new(),
+        |budgets| {
+            budgets
+                .into_iter()
+                .map(|budget| normfix_report::FunctionBudget {
+                    function: budget.function,
+                    line: budget.line,
+                    lines: budget.lines,
+                    line_limit: budget.line_limit,
+                    variables: budget.variables,
+                    variable_limit: budget.variable_limit,
+                    parameters: budget.parameters,
+                    parameter_limit: budget.parameter_limit,
+                })
+                .collect()
+        },
+    )
 }
 
 fn budget_diagnostics(path: &Utf8PathBuf, source: &str) -> Vec<Diagnostic> {

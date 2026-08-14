@@ -27,6 +27,10 @@ const PAGES = [
   // translating from English, so three copies of it serve no reader and give
   // three more places for the guide to fall behind what it describes.
   "LOCALIZATION.md",
+  // The field tables are identifiers, which do not translate, and the page
+  // gains a field every time the output does. A stale copy of an interface
+  // contract is worse than one the reader has to read in English.
+  "reference/api.md",
   "RELEASING.md",
   "ROADMAP.md",
   "changelog.md",

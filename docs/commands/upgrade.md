@@ -77,26 +77,6 @@ export NORMFIX_NO_UPDATE_CHECK=1
 The check asks GitHub for public release metadata. It sends no path, no source,
 and no identifier of any kind.
 :::
-
 ## Reading it from a script
 
-```sh
-normfix --format json upgrade --check
-```
-
-```json
-{
-  "schema_version": 2,
-  "command": "upgrade",
-  "outcome": "success",
-  "result": {
-    "state": "available",
-    "current_version": "1.6.2",
-    "latest_version": "1.7.0",
-    "installed": false
-  }
-}
-```
-
-`state` is `current`, `available`, or `installed`. Branch on that rather than
-on the text, which is written for a person.
+Every field this command returns is documented in [the JSON API](/reference/api).

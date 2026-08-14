@@ -55,6 +55,31 @@ pub struct ReportIdentity {
     pub available: bool,
 }
 
+/// One function's headroom against the Norm's limits.
+///
+/// The same numbers appear in the `NORM_BUDGET` sentence a person reads. A
+/// caller should not have to parse that sentence to get them back, which is the
+/// whole reason this exists beside it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct FunctionBudget {
+    /// Function identifier.
+    pub function: String,
+    /// One-based line carrying the identifier.
+    pub line: u32,
+    /// Physical lines between the function braces.
+    pub lines: u32,
+    /// The Norm's limit for those lines.
+    pub line_limit: u32,
+    /// Locals in the initial declaration block.
+    pub variables: u32,
+    /// The Norm's limit for those locals.
+    pub variable_limit: u32,
+    /// Declared parameters.
+    pub parameters: u32,
+    /// The Norm's limit for those parameters.
+    pub parameter_limit: u32,
+}
+
 /// Complete outcome for one processable file.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FileReport {
@@ -74,6 +99,9 @@ pub struct FileReport {
     pub before: Vec<Diagnostic>,
     /// Diagnostics after transformation.
     pub after: Vec<Diagnostic>,
+    /// Per-function headroom, when the run was asked for it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub budget: Vec<FunctionBudget>,
     /// Original UTF-8 source, omitted from JSON.
     #[serde(skip)]
     pub original: Option<Arc<str>>,
@@ -1484,6 +1512,7 @@ mod tests {
     fn file() -> FileReport {
         let source: Arc<str> = Arc::from("int\tmain(void)\n{\n\treturn (0);\n}\n");
         FileReport {
+            budget: Vec::new(),
             path: Utf8PathBuf::from("src/main.c"),
             changed: true,
             written: false,
@@ -1901,6 +1930,7 @@ mod tests {
         let source: Arc<str> = Arc::from("NAME = app\nSRCS = missing.c\n");
         let start = source.find("missing.c").expect("token");
         let makefile = FileReport {
+            budget: Vec::new(),
             path: Utf8PathBuf::from("Makefile"),
             changed: false,
             written: false,
