@@ -1388,37 +1388,33 @@ fn direct_named_children(node: Node<'_>) -> impl Iterator<Item = Node<'_>> {
 /// where this collector no longer looks, and the run would report a ternary
 /// removed while the file still had one.
 fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, ParseFailure> {
-    if node.parent().is_none_or(|parent| parent.kind() != "compound_statement")
-        || contains_kind(node, "comment")
-    {
+    // Ordered cheapest first. This runs for every statement in the file, and
+    // almost none of them hold a `?:`, so nothing that walks a subtree may
+    // happen before the field lookups that rule the statement out.
+    if node.parent().is_none_or(|parent| parent.kind() != "compound_statement") {
         return Ok(None);
     }
     let Some(value) = node.named_child(0) else {
         return Ok(None);
     };
-    let (form, conditional) = if node.kind() == "return_statement" {
-        (TernaryForm::Return, unwrap_parentheses(value))
-    } else {
-        let (Some(target), Some(operator), Some(right)) = (
-            value.child_by_field_name("left"),
-            value.child_by_field_name("operator"),
-            value.child_by_field_name("right"),
-        ) else {
-            return Ok(None);
-        };
-        if value.kind() != "assignment_expression"
-            || ["call_expression", "update_expression", "assignment_expression"]
-                .iter()
-                .any(|kind| contains_kind(target, kind))
-        {
-            return Ok(None);
+    let assignment = (node.kind() == "expression_statement").then_some(value);
+    let conditional = match assignment {
+        None => unwrap_parentheses(value),
+        Some(assignment) => {
+            if assignment.kind() != "assignment_expression" {
+                return Ok(None);
+            }
+            let Some(right) = assignment.child_by_field_name("right") else {
+                return Ok(None);
+            };
+            unwrap_parentheses(right)
         }
-        let form = TernaryForm::Assignment {
-            target: node_text(source, target)?.to_owned(),
-            operator: node_text(source, operator)?.to_owned(),
-        };
-        (form, unwrap_parentheses(right))
     };
+    // The node kind settles it for almost every statement in the file, and
+    // costs one comparison; naming a field costs a scan of the children.
+    if conditional.kind() != "conditional_expression" {
+        return Ok(None);
+    }
     let (Some(condition), Some(consequence), Some(alternative)) = (
         conditional.child_by_field_name("condition"),
         conditional.child_by_field_name("consequence"),
@@ -1426,13 +1422,36 @@ fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, Par
     ) else {
         return Ok(None);
     };
-    if conditional.kind() != "conditional_expression"
+    // Everything below walks subtrees or allocates, and from here on the
+    // statement is known to hold a ternary.
+    if contains_kind(node, "comment")
         || [condition, consequence, alternative]
             .iter()
             .any(|part| contains_kind(*part, "conditional_expression"))
     {
         return Ok(None);
     }
+    let form = match assignment {
+        None => TernaryForm::Return,
+        Some(assignment) => {
+            let (Some(target), Some(operator)) = (
+                assignment.child_by_field_name("left"),
+                assignment.child_by_field_name("operator"),
+            ) else {
+                return Ok(None);
+            };
+            if ["call_expression", "update_expression", "assignment_expression"]
+                .iter()
+                .any(|kind| contains_kind(target, kind))
+            {
+                return Ok(None);
+            }
+            TernaryForm::Assignment {
+                target: node_text(source, target)?.to_owned(),
+                operator: node_text(source, operator)?.to_owned(),
+            }
+        }
+    };
     let mut owner = node;
     while owner.kind() != "function_definition" {
         let Some(parent) = owner.parent() else {
