@@ -1,6 +1,6 @@
 {
   "name": "normfix-site",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "private": true,
   "type": "module",
   "description": "The normfix browser playground and its documentation, built together.",

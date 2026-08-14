@@ -10,6 +10,79 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.6.3] / 2026-08-14
+
+Saying it in a language people can read, in the documentation and in the tool
+itself.
+
+### Changed
+
+- **The documentation is rewritten to teach rather than to catalogue.** The
+  pages a reader passes through opened with what the tool is built from —
+  "immutable shadow buffers", "the installed Norminette is the oracle" — which
+  is true and tells a student nothing. They now open with what the reader is
+  doing and what they get. Getting started follows the order of the work:
+  install, check it landed, then the Norminette, which is needed to *run* and
+  not to install, so it comes after.
+
+  The translations were literal: carried across word by word, so each sentence
+  was grammatical and said nothing. One was worse than awkward — "release
+  archives contain a native binary" became "os arquivos de release", where an
+  archive is a compressed package and an *arquivo* is a file. Each language is
+  now written as someone would say it there.
+
+  Jargon nobody outside the project knows is gone from every page a reader
+  passes through: a shadow buffer is "the proposed bytes", a losslessly parsed
+  file "parsed cleanly", an idempotent second run one that "leaves it exactly as
+  it was". The architecture record keeps the terms it defines.
+
+- **Every command's JSON lives on one page.** [`/reference/api`](/reference/api)
+  documents both shapes, every field, which flag shows up where, the failure
+  envelope, and the exit codes. The command pages point at it instead of each
+  carrying a copy that can drift.
+
+### Fixed
+
+- **Eighteen links sent a translated page's reader to English.**
+  `/ARCHITECTURE`, `/COMPATIBILITY`, `/LOCALIZATION`, and `/changelog` all
+  pointed at the English copies, so following one dropped the reader out of the
+  language they had chosen. One of them was not a sentence in any language.
+
+- **The terminal printed "1 files" and "arquivo(s)".** Counted messages now
+  carry a singular and a plural, chosen by the locale, because French counts
+  zero as singular and the other three do not. The run summary took the other
+  route: a count line is a table, so its labels lead and the number follows,
+  which is right for every count in every language. Three tests hold it, and
+  the first one found the summary line.
+
+- **The playground showed the reader how it is built.** The status chip said
+  "WASM ready" and the privacy note said the address "is sent to WebAssembly in
+  this tab". The failure case was worse: it told a student whose browser had
+  blocked something to build the playground module and read `web/README.md`.
+
+- **`normfix upgrade` would overwrite a Scoop install.** It refuses a
+  Homebrew-managed binary because replacing it leaves the formula describing
+  bytes that are no longer there; Scoop has exactly that shape and had no
+  guard. Writing the test found an older defect beside it — the Homebrew check
+  matched `/linuxbrew/`, and a Linuxbrew install lives at `~/.linuxbrew/`, so
+  it matched neither.
+
+- **A page contradicted itself.** "What is fixed" listed declaration/assignment
+  separation among the diagnostics that stay manual, twenty lines below the
+  entry saying 1.6.1 automated it.
+
+### Added
+
+- **`budget` returns its numbers as fields.** They existed only inside the
+  sentence a person reads — "lines 4/25 (21 left)" — so a caller had to take
+  prose apart to get them. Each file now carries a `budget` array with the
+  function, its counts, and the Norm's limits.
+
+- **The run report names its command.** `mode` says whether a run wrote,
+  checked, or diffed; it cannot tell `budget` from `lint`. `explain` and
+  `leaks` also moved into the envelope the other commands gained in 1.6.2, so
+  there is one shape rather than three.
+
 ## [1.6.2] / 2026-08-14
 
 The JSON output is an interface, and the documentation is readable without a
@@ -1278,6 +1351,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.6.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.3
 [1.6.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.2
 [1.6.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.1
 [1.6.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.0

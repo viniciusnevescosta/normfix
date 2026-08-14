@@ -127,7 +127,7 @@ once per accepted batch to prove, where it used to read it twice per pass and
 discard the proving read — a clean file is 45% faster than in 1.5.0, and a test
 holds that budget by counting reads rather than timing them.
 
-### 1.6.2 — the edits and the surfaces around them
+### 1.6.3 — the edits and the surfaces around them
 
 Splitting a declaration from its assignment: `int teste = 10;` becomes
 `int teste;` and an assignment after the declaration block. The official checker
@@ -152,7 +152,7 @@ Diagnostics are shown inline, the way an editor underlines them.
 None of it at the cost of what 1.6 measured: the parse budget, the differential
 proof, and the parity between the two runs all still hold.
 
-### 1.6.2 — the JSON output is an API
+### 1.6.3 — the JSON output is an API
 
 Every command that emits JSON is read primarily by something that is not a
 person: a script in CI, or an agent deciding what to do next. That makes the
@@ -209,7 +209,7 @@ someone would actually say it there, rather than translated. The point of
 translating was accessibility, and a sentence a reader has to decode is not
 accessible in any language.
 
-The plain-text copy of every page ships in 1.6.2, alongside the JSON work,
+The plain-text copy of every page ships in 1.6.3, alongside the JSON work,
 since both exist for the same reader.
 
 ## 1.7 — Python projects

@@ -27,7 +27,7 @@ normfix --format json check src
 ```json
 {
   "schema_version": 2,
-  "tool_version": "1.6.2",
+  "tool_version": "1.6.3",
   "command": "check",
   "mode": "check",
   "scope": { "selection": "explicit_paths", "respects_gitignore": false },
@@ -157,7 +157,7 @@ normfix --format json upgrade --check
   "outcome": "success",
   "result": {
     "state": "available",
-    "current_version": "1.6.2",
+    "current_version": "1.6.3",
     "latest_version": "1.7.0",
     "installed": false
   }
