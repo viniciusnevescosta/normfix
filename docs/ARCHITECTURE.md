@@ -40,7 +40,7 @@ single parser/formatter pass.
 | Tree-sitter behind an adapter | `tree-sitter-c` provides resilient C structure | Fast parsing and useful ranges without coupling every crate to one backend | Tree-sitter is not a compiler and can recover around valid macro-heavy C |
 | Lossless token tape | Every byte is classified as token, trivia, or unknown | Structural parsing must not discard whitespace/comments required by the Norm | A second lexical representation must be maintained |
 | Targeted source edits | Rules replace narrow UTF-8 byte ranges | Preserves untouched source and keeps diffs reviewable | Cannot normalize every construct as aggressively as a whole-file printer |
-| Fixed-point action scheduler | Apply one validated batch, reparse, then continue | Later actions see current ranges and convergence is testable | Repeated parsing costs more than a single unchecked rewrite |
+| Fixed-point action scheduler | Apply one validated batch, read the result back, then continue | Later actions see current ranges and convergence is testable | Reading the file once per accepted batch costs more than a single unchecked rewrite |
 | Official checker as oracle | Require and verify Norminette 3.3.59 | Compatibility output, not an approximation, decides evaluator-facing regressions | The run depends on an external Python tool |
 | Native diagnostics beside official diagnostics | Structural limits and explanations use a shared schema | Better English guidance without pretending native rules replace the oracle | Similar facts may come from more than one producer and need deduplication |
 | Conservative semantic facts | Resolve only provable enum/integer bounds | Correctly explains known `VLA_FORBIDDEN` false positives | It is intentionally not full C constant evaluation |
@@ -681,22 +681,31 @@ proofs appropriate to that class.
 The native C action order is:
 
 1. preprocessor spacing;
-2. optional exact-location invalid-comment removal;
-3. continuation compaction;
-4. blank-line layout;
-5. braces and controls;
-6. conservative single-statement block removal;
-7. narrow redundant-`else` removal;
-8. function layout;
-9. indentation;
-10. initial-declaration layout;
-11. token spacing;
-12. declaration/prototype alignment;
-13. proven pointer-zero return conversion to `NULL`;
-14. explicitly requested compact `NULL` comparisons;
-15. return parentheses;
-16. `(void)` for empty definitions;
-17. long-line wrapping.
+2. include order;
+3. optional exact-location invalid-comment removal;
+4. optional removal of a local nothing reads;
+5. removal of a statement that is only a `;`;
+6. continuation compaction;
+7. blank-line layout;
+8. braces and controls;
+9. conservative single-statement block removal;
+10. narrow redundant-`else` removal;
+11. separation of a declaration from its initializer;
+12. function layout;
+13. indentation;
+14. initial-declaration layout;
+15. token spacing;
+16. declaration/prototype alignment;
+17. proven pointer-zero return conversion to `NULL`;
+18. explicitly requested compact `NULL` comparisons;
+19. return parentheses;
+20. `(void)` for empty definitions;
+21. long-line wrapping.
+
+The two removals sit near the front on purpose. Deleting a declaration before
+anything reformats it means the later phases never spend a pass laying out
+something that is about to disappear, and a stray `;` removed early cannot be
+mistaken by the brace rules for a statement that needs its own line.
 
 The order reduces conflicts. For example, indentation should see braces on
 their final lines, and line wrapping should see final token spacing.
@@ -715,10 +724,16 @@ Instead:
 1. plan one phase against the current immutable buffer;
 2. validate non-overlapping ranges;
 3. apply in reverse range order;
-4. reparse;
+4. read the result back;
 5. compare the required fingerprint;
-6. accept one new shadow buffer;
+6. accept it as the buffer the next pass plans against;
 7. repeat.
+
+Steps 4 and 6 used to be separate reads. The pass that accepted a batch read
+the result to prove it, discarded that read, and the next pass read the same
+bytes again to plan against them. Carrying the proving read forward halves the
+reads a run performs, and the more a file needs fixing the more passes it takes,
+so the saving grows exactly where the cost is.
 
 A BLAKE3 set detects formatting cycles. A bounded pass count prevents a buggy
 rule from running forever. Reaching the bound with remaining work is an error,
@@ -1091,7 +1106,11 @@ avoid leaking whole projects or producing enormous automation payloads.
 
 The model includes before/after diagnostics, accepted fixes, backup paths,
 quarantine outcomes, identity provenance, summary counts, optional preflight
-evaluation, and `duration_seconds`. The preflight estimate is always marked
+evaluation, and `duration_seconds`. Two fields describe the run rather than any
+file: `granted_capabilities`, which lists what it was allowed to do, and
+`scope`, which names how it chose its files. Both are present and empty or
+plain on an ordinary run, so their absence never has to be interpreted. `--diff`
+adds each file's unified diff; the buffers themselves stay out either way. The preflight estimate is always marked
 non-conclusive and carries exact hard-fail evidence separately from its
 heuristic score. JSON retains individual diagnostics rather than copying the
 human grouping presentation into the machine contract.
