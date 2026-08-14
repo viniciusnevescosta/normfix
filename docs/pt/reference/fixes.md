@@ -100,7 +100,7 @@ próximo passo concreto para trabalhos como:
 - linhas com mais de 80 colunas sem uma quebra segura em operador/vírgula;
 - estruturas de controle proibidas, ternários, `goto`, rótulos e atribuições em
   condições;
-- separação entre declaração e atribuição, e declarações após instruções;
+- declarações que aparecem depois de uma instrução;
 - identificadores públicos ou globais que precisam de renomeação no projeto
   inteiro;
 - movimentação de tipos/includes e mudanças de estrutura do projeto;

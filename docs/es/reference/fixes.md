@@ -98,8 +98,7 @@ origen y un siguiente paso concreto para trabajos como:
 - líneas de más de 80 columnas sin una ruptura segura en operador/coma;
 - estructuras de control prohibidas, ternarios, `goto`, etiquetas y asignaciones
   en condiciones;
-- separación entre declaración y asignación, y declaraciones después de
-  instrucciones;
+- las declaraciones que aparecen después de una sentencia;
 - identificadores públicos o globales que necesitan renombrado en todo el
   proyecto;
 - movimiento de tipos/includes y cambios de estructura del proyecto;

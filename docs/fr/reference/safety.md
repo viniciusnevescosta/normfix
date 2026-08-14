@@ -112,6 +112,15 @@ commentaire trouvé exactement à la ligne et à la colonne d’affichage signal
 par le vérificateur officiel. Il ne retire jamais l’en-tête officiel, et
 l’empreinte des jetons de code restants doit rester inchangée.
 
+`--unsafe` supprime aussi une variable locale que rien ne lit, et la preuve
+n'est délibérément pas celle du compilateur. `-Wunused-variable` se déclenche
+pour `int n = g();` exactement comme pour `int n;`, et supprimer la première
+supprime un appel — une déclaration contenant un `malloc` verrait sa fuite
+réparée par accident, dans un programme que vous n'avez pas écrit. Celles-là
+sont conservées et signalées. Un nom est éligible quand il apparaît exactement
+une fois dans tout le fichier, compté dans le texte brut, car un corps de macro
+qui le mentionne est du texte qu'aucun arbre d'analyse ne montre.
+
 `--remove-unused` et `--remove-unexpected` demandent des capacités destructives
 plus fortes :
 

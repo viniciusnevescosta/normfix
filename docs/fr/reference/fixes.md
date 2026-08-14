@@ -101,7 +101,7 @@ et une étape suivante concrète pour des travaux comme :
 - des lignes de plus de 80 colonnes sans coupure sûre sur opérateur/virgule ;
 - des structures de contrôle interdites, des ternaires, `goto`, des étiquettes et
   des affectations dans les conditions ;
-- la séparation déclaration/affectation et les déclarations après instructions ;
+- les déclarations qui apparaissent après une instruction ;
 - des identifiants publics ou globaux à renommer dans tout le projet ;
 - des déplacements de types/includes et des changements de structure du projet ;
 - des déclarations ambiguës, des pointeurs de fonction, des attributs, des champs

@@ -90,7 +90,7 @@ next step for work such as:
 - lines over 80 columns with no safe operator/comma break;
 - forbidden control structures, ternaries, `goto`, labels, and assignments in
   conditions;
-- declaration/assignment separation and declarations after statements;
+- declarations that appear after a statement;
 - public or global identifiers that need project-wide renaming;
 - type/include movement and project structure changes;
 - ambiguous declarations, function pointers, attributes, bit-fields, and

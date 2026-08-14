@@ -110,6 +110,15 @@ comentário encontrado exatamente na linha e na coluna de exibição reportadas 
 verificador oficial. Ele nunca remove o cabeçalho oficial, e a impressão digital
 dos tokens de código restantes precisa continuar inalterada.
 
+O `--unsafe` também apaga uma variável local que nada lê, e a prova
+deliberadamente não é a do compilador. O `-Wunused-variable` dispara para
+`int n = g();` exatamente como dispara para `int n;`, e apagar o primeiro apaga
+uma chamada — uma declaração com um `malloc` teria o vazamento consertado por
+acidente, virando um programa que você não escreveu. Esses ficam e são
+reportados. Um nome qualifica quando aparece exatamente uma vez no arquivo
+inteiro, contado no texto cru, porque um corpo de macro que cita o nome é texto
+que nenhuma árvore de análise mostra.
+
 O `--remove-unused` e o `--remove-unexpected` pedem capacidades destrutivas mais
 fortes:
 

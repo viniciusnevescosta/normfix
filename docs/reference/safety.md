@@ -105,6 +105,14 @@ exact line and display column reported by the official checker. It never
 removes the official header, and the remaining code-token fingerprint must be
 unchanged.
 
+`--unsafe` also deletes a local variable nothing reads, and the proof is
+deliberately not the compiler's. `-Wunused-variable` fires for `int n = g();`
+exactly as it does for `int n;`, and deleting the first deletes a call — a
+declaration holding a `malloc` would have its leak repaired by accident, into a
+program you did not write. Those are kept and reported. A name qualifies when
+it appears exactly once in the whole file, counted in the raw text, because a
+macro body mentioning it is text no parse tree shows.
+
 `--remove-unused` and `--remove-unexpected` request stronger destructive
 capabilities:
 

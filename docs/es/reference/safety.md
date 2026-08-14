@@ -111,6 +111,15 @@ comentario encontrado exactamente en la línea y la columna de visualización qu
 informa el verificador oficial. Nunca elimina la cabecera oficial, y la huella de
 los tokens de código restantes debe permanecer inalterada.
 
+`--unsafe` también borra una variable local que nada lee, y la demostración
+deliberadamente no es la del compilador. `-Wunused-variable` salta con
+`int n = g();` igual que con `int n;`, y borrar la primera borra una llamada —
+una declaración con un `malloc` vería su fuga reparada por accidente,
+convirtiéndose en un programa que tú no escribiste. Esas se conservan y se
+informan. Un nombre califica cuando aparece exactamente una vez en todo el
+archivo, contado en el texto crudo, porque un cuerpo de macro que lo menciona es
+texto que ningún árbol de análisis muestra.
+
 `--remove-unused` y `--remove-unexpected` piden capacidades destructivas más
 fuertes:
 
