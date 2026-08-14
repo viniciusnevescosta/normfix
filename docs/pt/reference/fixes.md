@@ -23,6 +23,12 @@ O formatador nativo de C atualmente trata casos comprovados nestas áreas:
   declaradores de função;
 - alinhamento de grupo para variáveis simples de uma linha e protótipos de
   função, incluindo declaradores de ponteiro quando o grupo é inequívoco;
+- a declaração separada do valor que ela recebeu: `int teste = 10;` vira
+  `int teste;` mais uma atribuição depois do bloco de declarações, que é o que a
+  regra oficial `DECL_ASSIGN_LINE` pede;
+- remoção de uma instrução que é só um `;`, quando ela está dentro de um bloco
+  ou no escopo do arquivo e não vem logo depois de uma diretiva de
+  pré-processador;
 - `return value;` para `return (value);`;
 - listas de parâmetros vazias em definições de função para `(void)`;
 - `return (0);` de retorno-ponteiro para `return (NULL);` quando o tipo de

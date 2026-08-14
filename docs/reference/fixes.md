@@ -19,6 +19,11 @@ The native C formatter currently handles proven cases in these areas:
   declarators;
 - group alignment for simple one-line variables and function prototypes,
   including pointer declarators when the group is unambiguous;
+- a declaration separated from the value it was given: `int teste = 10;`
+  becomes `int teste;` and an assignment below the declaration block, which is
+  what the official `DECL_ASSIGN_LINE` asks for;
+- deletion of a statement that is only a `;`, when it sits in a block or at
+  file scope and no preprocessor directive precedes it;
 - `return value;` to `return (value);`;
 - empty parameter lists in function definitions to `(void)`;
 - pointer-return `return (0);` to `return (NULL);` when the return type and a

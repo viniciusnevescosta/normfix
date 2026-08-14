@@ -69,8 +69,8 @@ interrompe a execução em vez de usar silenciosamente o relógio do sistema.
 
 Cabeçalhos válidos existentes mantêm os campos `By` e `Created`. O nome do
 arquivo e a linha `Updated` mudam apenas quando o arquivo tem outra edição
-aceita ou quando o nome de arquivo do cabeçalho está desatualizado, tornando uma
-segunda execução limpa idempotente.
+aceita, ou quando o nome no cabeçalho não bate mais com o do arquivo — então
+rodar de novo num arquivo limpo deixa ele exatamente como estava.
 
 ### Guardas de cabeçalho
 

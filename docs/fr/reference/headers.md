@@ -71,8 +71,8 @@ l'exécution au lieu d'utiliser silencieusement l'horloge du système.
 
 Les en-têtes valides existants conservent les champs `By` et `Created`. Le nom de
 fichier et la ligne `Updated` ne changent que lorsque le fichier reçoit une autre
-modification acceptée ou que le nom de fichier de son en-tête est périmé, ce qui
-rend idempotente une seconde exécution propre.
+modification acceptée, ou que le nom porté par l'en-tête ne correspond plus au
+fichier — relancer sur un fichier propre le laisse donc exactement tel quel.
 
 ### Gardes d'en-tête
 

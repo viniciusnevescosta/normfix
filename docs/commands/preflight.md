@@ -100,8 +100,8 @@ above, and the estimate still failed on them, because a repair you have not
 written is not part of what an evaluator will open.
 
 Every filesystem-backed workflow, including the default check, compares
-non-static prototypes in project headers with every losslessly parsed project
-C/header file. A missing implementation or a matching definition whose body is
+non-static prototypes in project headers with every project C or header file
+that parsed cleanly. A missing implementation or a matching definition whose body is
 only braces, whitespace, and comments is highlighted at the prototype name.
 Generated sources and external libraries remain ambiguous. Explicitly
 authorized `--unsafe` mode removes only a missing prototype when the complete
@@ -126,7 +126,7 @@ message. An operational Makefile failure names the file without inventing a
 source coordinate.
 Official Norm and Makefile findings are evaluated against the original bytes on
 disk; a proposed read-only fix does not turn the current submission into a pass.
-New findings that remain in the final shadow are included too.
+Findings that would still be there after the proposed edits count too.
 README absence is not a hard fail. When a README is present, an informational
 advisory asks you to compare it with the current subject/evaluation sheet.
 If no regular Makefile is selected or found at the project root,

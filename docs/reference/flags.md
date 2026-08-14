@@ -136,7 +136,7 @@ normfix --no-backup
 ```
 
 It does **not** skip recovery for a destructive removal. Those always require
-external storage and fail closed without it. Skipping backups means
+external storage, and refuse to run without it. Skipping backups means
 [`undo`](/commands/undo) has nothing to restore for that run.
 
 ### `--backup-dir PATH`
@@ -250,9 +250,10 @@ Disable the external analysis cache.
 normfix --no-cache
 ```
 
-The cache stores official checker results outside the project, keyed by the
-source bytes and the verified checker fingerprint. Disable it to force a full
-re-run; a cache failure already fails open as a miss.
+The cache stores official checker results outside the project, filed under the
+source bytes and the checker version it verified. Disable it to force a full
+re-run; if the cache itself fails, the run treats it as a miss and checks
+again.
 
 ### `--norminette PATH`
 

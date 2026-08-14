@@ -23,6 +23,12 @@ Le formateur C natif traite actuellement des cas prouvés dans ces domaines :
 - alignement de groupe pour les variables simples sur une ligne et les prototypes
   de fonction, y compris les déclarateurs de pointeur quand le groupe est sans
   ambiguïté ;
+- la déclaration séparée de la valeur qu'elle a reçue : `int teste = 10;`
+  devient `int teste;` plus une affectation après le bloc de déclarations, ce
+  que demande la règle officielle `DECL_ASSIGN_LINE` ;
+- suppression d'une instruction qui n'est qu'un `;`, lorsqu'elle se trouve dans
+  un bloc ou à la portée du fichier et qu'aucune directive de préprocesseur ne
+  la précède ;
 - `return value;` en `return (value);` ;
 - listes de paramètres vides dans les définitions de fonction en `(void)` ;
 - `return (0);` de retour-pointeur en `return (NULL);` quand le type de retour et

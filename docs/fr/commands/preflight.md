@@ -103,7 +103,7 @@ qu'ouvrira un évaluateur.
 
 Tout flux adossé au système de fichiers, y compris la vérification par défaut,
 compare les prototypes non statiques des en-têtes du projet à chaque fichier
-C/en-tête du projet analysé sans perte. Une implémentation absente, ou une
+C ou en-tête du projet qui a pu être lu sans erreur. Une implémentation absente, ou une
 définition correspondante dont le corps n'est qu'accolades, espaces et
 commentaires, est signalée sur le nom du prototype. Les sources générées et les
 bibliothèques externes restent ambiguës. Le mode `--unsafe` explicitement

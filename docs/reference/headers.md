@@ -66,8 +66,9 @@ a reproducible UTC timestamp; an invalid value stops the run instead of
 silently using the wall clock.
 
 Valid existing headers retain the `By` and `Created` fields. The filename and
-`Updated` line change only when the file has another accepted edit or its header
-filename is stale, making a second clean run idempotent.
+`Updated` line change only when the file has another accepted edit, or when the
+name in the header no longer matches the file — so running it again on a clean
+file leaves it exactly as it was.
 
 ### Header guards
 

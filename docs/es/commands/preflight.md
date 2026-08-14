@@ -102,7 +102,7 @@ evaluador.
 
 Todo flujo respaldado por el sistema de archivos, incluida la comprobación por
 defecto, compara prototipos no estáticos de las cabeceras del proyecto con cada
-archivo C/cabecera del proyecto analizado sin pérdidas. Una implementación
+archivo C o cabecera del proyecto que se pudo leer sin error. Una implementación
 ausente, o una definición correspondiente cuyo cuerpo son solo llaves, espacios y
 comentarios, se resalta en el nombre del prototipo. Las fuentes generadas y las
 bibliotecas externas siguen siendo ambiguas. El modo `--unsafe` explícitamente

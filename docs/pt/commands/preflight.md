@@ -100,8 +100,8 @@ acima, e a estimativa mesmo assim reprovou por causa deles, porque um conserto
 que você não gravou não faz parte do que um avaliador vai abrir.
 
 Todo fluxo apoiado no sistema de arquivos, inclusive o check padrão, compara
-protótipos não estáticos dos cabeçalhos do projeto com cada arquivo C/cabeçalho
-do projeto analisado sem perdas. Uma implementação ausente, ou uma definição
+protótipos não estáticos dos cabeçalhos do projeto com cada arquivo C ou header
+do projeto que foi lido sem erro. Uma implementação ausente, ou uma definição
 correspondente cujo corpo é só chaves, espaços e comentários, é destacada no
 nome do protótipo. Fontes geradas e bibliotecas externas continuam ambíguas. O
 modo `--unsafe` explicitamente autorizado remove apenas um protótipo sem
@@ -128,7 +128,7 @@ regra e a mensagem. Uma falha operacional de Makefile nomeia o arquivo sem
 inventar uma coordenada de fonte.
 Achados oficiais de Norm e de Makefile são avaliados contra os bytes originais em
 disco; uma correção proposta somente leitura não transforma a entrega atual em
-aprovação. Achados novos que permanecem na sombra final também são incluídos.
+aprovação. Achados que continuariam existindo depois das edições propostas também contam.
 A ausência de README não é uma reprovação. Quando um README está presente, um
 aviso informativo pede que você o compare com a ficha de assunto/avaliação
 atual.

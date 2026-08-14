@@ -69,8 +69,8 @@ válido detiene la ejecución en lugar de usar en silencio el reloj del sistema.
 
 Las cabeceras válidas existentes conservan los campos `By` y `Created`. El nombre
 del archivo y la línea `Updated` solo cambian cuando el archivo tiene otra
-edición aceptada o cuando el nombre de archivo de su cabecera está obsoleto, lo
-que hace idempotente una segunda ejecución limpia.
+edición aceptada, o cuando el nombre de la cabecera ya no coincide con el del
+archivo — así que volver a ejecutarlo sobre un archivo limpio lo deja tal cual.
 
 ### Guardas de cabecera
 
