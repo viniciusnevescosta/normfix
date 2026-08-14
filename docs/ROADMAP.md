@@ -152,7 +152,21 @@ Diagnostics are shown inline, the way an editor underlines them.
 None of it at the cost of what 1.6 measured: the parse budget, the differential
 proof, and the parity between the two runs all still hold.
 
-### 1.6.2 — say it in language people actually understand
+### 1.6.2 — the JSON output is an API
+
+Every command that emits JSON is read primarily by something that is not a
+person: a script in CI, or an agent deciding what to do next. That makes the
+JSON an interface with the obligations of one. It has to describe every
+scenario, not only the ones a human would have read the prose for — an
+operational failure, a refused capability, a file that could not be parsed, a
+check that did not run — and it has to say which of those happened rather than
+leaving a consumer to infer it from an absent field.
+
+`schema_version` already exists and is honoured. What follows it is coverage:
+each command's payload documented as the contract it is, so nothing has to be
+learned by running the tool and reading what came back.
+
+### 1.6.3 — say it in language people actually understand
 
 A translation and documentation pass across the whole project, English
 included. The root problem is that the translations are literal: each sentence

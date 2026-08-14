@@ -10,6 +10,84 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.6.1] / 2026-08-13
+
+The edits themselves, and the surfaces around them.
+
+### Added
+
+- **A declaration is separated from the value it was given.** `int teste = 10;`
+  becomes `int teste;` and an assignment at the top of the instructions. The
+  official checker has always called the single-line form `DECL_ASSIGN_LINE`,
+  and normfix has only ever reported it.
+
+  Four shapes are refused, each because the split would be a different program,
+  and the grammar is what tells them apart rather than a guess from the text.
+  `const` cannot be assigned after its declaration at all. An aggregate
+  initializer is initialization syntax and not an expression, and an array
+  cannot be assigned to. `static` is initialized once where an assignment would
+  run on every call. And a declaration naming two variables cannot have its
+  initializers told apart from one range.
+
+  The assignments keep declaration order, so `int b = a + 1;` following
+  `int a = 1;` still reads what was just assigned.
+
+- **`normfix leaks` shows every finding under the line that caused it.**
+  Valgrind reports two kinds of record and normfix read the totals of one and
+  the count of the other. A loss record says where memory was allocated; an
+  error record says where the program read, wrote, or freed something it had no
+  right to — and that one names the exact line of the bug.
+
+  Both are findings now, and both go through the renderer every other
+  diagnostic goes through, so a leak gets the same caret under the same line as
+  a Norm error. The frame reported is the first one inside the program, so an
+  invalid free points at the caller rather than at the checker's replacement
+  `free`. A binary built without `-g` has no line to name; the function is
+  still reported and the reason is said once.
+
+- **A local nothing reads can be deleted, under `--unsafe`.** The proof is
+  native and deliberately not the compiler's. `-Wunused-variable` fires for
+  `int n = g();` exactly as it does for `int n;`, and deleting the first
+  deletes a call — a declaration holding a `malloc` would have its leak
+  repaired by accident, into a program the reader did not write. Those are kept
+  and reported. A name qualifies when it appears exactly once in the whole
+  file, counted in the raw text, because a macro body mentioning it is text no
+  parse tree shows.
+
+- **The playground picks a file kind, links the release, and marks findings in
+  place.** Creating a file offered a text box holding `new_file.c`, though the
+  page formats headers, Makefiles, and Markdown just as readily. A kind is now
+  picked, and picking one keeps any folder already typed. Findings are
+  underlined where they are, so a reader stops matching a line number against a
+  list by eye; a finding with no position belongs to the file rather than to a
+  line and is left out of the marks instead of being drawn somewhere arbitrary.
+
+### Fixed
+
+- **The playground says which checks did not run, next to the ones that did.**
+  It named the official checker and the compiler only when a file came back
+  with nothing to report. A file that came back with three findings showed the
+  three and stopped, and a list reads as the complete list — while the two
+  checks the page cannot run are the two a 42 evaluation actually uses.
+
+- **Release notes no longer call Homebrew and Scoop conveniences.** It read as
+  dismissing the way many people will actually install the tool. They install
+  the same release; the one-line installer is the one that works everywhere.
+
+### Security
+
+A high-severity advisory against `nanoid` below `3.3.18`, reached through
+VitePress and PostCSS, is resolved by taking the fixed version. It affects
+the documentation build rather than anything a release archive contains, and
+the release gate refuses to publish while any advisory of that level stands.
+
+### Performance
+
+Unchanged, and checked rather than assumed. The first version of the unused
+local rule counted per candidate, re-reading the whole file each time, and took
+an 800-line source from 42 ms to 293 ms. One pass over the text answers every
+candidate.
+
 ## [1.6.0] / 2026-08-13
 
 Bug fixes across the project, found by running the same files through both
@@ -1154,6 +1232,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.6.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.1
 [1.6.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.0
 [1.5.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.5.0
 [1.4.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.4.0

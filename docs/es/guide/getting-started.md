@@ -51,7 +51,7 @@ release actual siga siendo instalable.
 Dos variables de entorno cambian lo que hace:
 
 ```sh
-NORMFIX_VERSION=v1.6.0 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+NORMFIX_VERSION=v1.6.1 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
 
@@ -89,10 +89,10 @@ verifícalo contra `SHA256SUMS` y coloca `normfix` en el `PATH`.
 | Windows ARM64 | `normfix-aarch64-windows.zip` |
 | FreeBSD x86-64 | `normfix-x86_64-freebsd.tar.gz` |
 
-Por ejemplo, en Apple Silicon con la release `1.6.0`:
+Por ejemplo, en Apple Silicon con la release `1.6.1`:
 
 ```sh
-version=1.6.0
+version=1.6.1
 archive="normfix-aarch64-macos.tar.gz"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/${archive}"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/SHA256SUMS"
