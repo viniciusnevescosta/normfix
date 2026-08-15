@@ -354,7 +354,13 @@ jobs:
             source_file="$2"
             target="$3"
             work=$(mktemp -d)
-            if ! gh repo clone "$repository" "$work" -- --depth 1 >/dev/null 2>&1; then
+            # The token is carried in the remote URL rather than left to a
+            # credential helper: `gh` authenticates `gh`, and the `git push`
+            # below is git's own, which would otherwise have no credential at
+            # all and fail after everything else had succeeded.
+            if ! git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${repository}.git" "$work" \
+              >/dev/null 2>&1; then
               echo "::warning::could not clone $repository; $target was not updated."
               return 0
             fi
