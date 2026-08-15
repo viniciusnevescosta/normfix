@@ -922,15 +922,6 @@ dialog input {
   font-weight: 600;
 }
 
-.diagnostic-scope {
-  margin: 12px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
-}
-
 .fixes-section h3,
 .budget-section h3 {
   margin: 0 0 6px;
