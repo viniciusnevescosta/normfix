@@ -1187,3 +1187,32 @@ dialog input {
     padding: 6px 0;
   }
 }
+
+/* A row being named looks like the rows around it, because it is about to be
+   one — the only difference is that its name is still being typed. */
+.file-draft {
+  cursor: text;
+}
+
+.file-draft input.file-name {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  min-width: 0;
+  outline: none;
+  padding: 0;
+  width: 100%;
+}
+
+.file-draft-error {
+  color: var(--danger, #f66);
+  font-size: 0.75rem;
+  margin-left: auto;
+  padding-left: 0.5rem;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 0.25rem;
+}

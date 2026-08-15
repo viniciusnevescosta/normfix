@@ -149,13 +149,22 @@
               <span class="section-label" data-i18n="project">Project</span>
               <strong data-i18n="sourceFiles">Project files</strong>
             </div>
-            <button
-              class="icon-button"
-              id="add-file"
-              type="button"
-              data-i18n-title="addFile"
-              aria-label="Add a project file"
-            >+</button>
+            <div class="panel-actions">
+              <button
+                class="icon-button"
+                id="add-folder"
+                type="button"
+                data-i18n-title="addFolder"
+                aria-label="New folder"
+              >&#128193;</button>
+              <button
+                class="icon-button"
+                id="add-file"
+                type="button"
+                data-i18n-title="addFile"
+                aria-label="New file"
+              >+</button>
+            </div>
           </div>
           <div class="file-list" id="file-list" role="listbox" aria-label="Loaded project files" data-i18n-aria="loadedFiles"></div>
 

@@ -169,6 +169,7 @@ const elements = {
   filePicker: requiredElement<HTMLInputElement>("#file-picker"),
   dropOverlay: requiredElement<HTMLElement>("#drop-overlay"),
   addFile: requiredElement<HTMLButtonElement>("#add-file"),
+  addFolder: requiredElement<HTMLButtonElement>("#add-folder"),
   removeFile: requiredElement<HTMLButtonElement>("#remove-file"),
   editorContainer: requiredElement<HTMLElement>("#monaco-editor"),
   fallbackEditor: requiredElement<HTMLTextAreaElement>("#fallback-editor"),
@@ -329,6 +330,7 @@ function applyTranslations(): void {
   }
   elements.language.setAttribute("aria-label", t("language"));
   elements.addFile.setAttribute("aria-label", t("addFile"));
+  elements.addFolder.setAttribute("aria-label", t("addFolder"));
   const route = state.locale === "en" ? "/" : `/${state.locale}/`;
   if (window.location.pathname !== route) {
     window.history.replaceState(
@@ -479,6 +481,77 @@ function selectFile(path: string, syncCurrent = true): void {
   elements.editorTitle.textContent = path;
   updateEditorMeta();
   renderFileList();
+}
+
+/**
+ * Opens a row in the list with its name waiting to be typed.
+ *
+ * An editor does not ask for a filename in a modal; it puts the entry where it
+ * will live and lets you type over it. Enter commits, Escape and clicking away
+ * abandon it, and a name the project cannot accept says so in place rather than
+ * discarding what was typed — which is the whole reason the row stays open on a
+ * bad name instead of closing and losing it.
+ *
+ * A folder is a prefix here, because a path is what this project stores. The
+ * folder row asks for the prefix and then opens a file row inside it, so a
+ * folder never exists holding nothing — there would be nothing to store.
+ */
+function openDraftRow(kind: "file" | "folder", prefix = ""): void {
+  if (state.importing) return;
+  const row = document.createElement("div");
+  row.className = "file-item file-draft";
+  const dot = document.createElement("span");
+  dot.className = "file-dot";
+  dot.setAttribute("aria-hidden", "true");
+  const input = document.createElement("input");
+  input.className = "file-name";
+  input.setAttribute("aria-label", t(kind === "file" ? "addFile" : "addFolder"));
+  input.placeholder = kind === "file" ? "new_file.c" : "src";
+  const error = document.createElement("span");
+  error.className = "file-draft-error";
+  row.append(dot, input, error);
+  elements.fileList.append(row);
+  input.focus();
+
+  let settled = false;
+  const close = (): void => {
+    if (settled) return;
+    settled = true;
+    row.remove();
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      close();
+      state.editor?.focus();
+      return;
+    }
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const typed = input.value.trim();
+    if (typed.length === 0) {
+      close();
+      return;
+    }
+    if (kind === "folder") {
+      close();
+      // The prefix only becomes real once a file is created inside it.
+      openDraftRow("file", `${prefix}${typed.replace(/\/+$/, "")}/`);
+      return;
+    }
+    try {
+      addSource(`${prefix}${typed}`, "");
+      close();
+      state.editor?.focus();
+    } catch (failure) {
+      error.textContent = failure instanceof Error ? failure.message : String(failure);
+      input.select();
+    }
+  });
+  input.addEventListener("blur", () => {
+    // Losing focus abandons the row, but not while it is showing why a name was
+    // refused: the reader is reading it.
+    if (error.textContent === "") close();
+  });
 }
 
 function renderFileList(): void {
@@ -686,6 +759,7 @@ async function loadFiles(incoming: readonly DroppedFile[], skipped = 0): Promise
 function setImportControls(disabled: boolean): void {
   elements.filePicker.disabled = disabled;
   elements.addFile.disabled = disabled;
+  elements.addFolder.disabled = disabled;
   elements.removeFile.disabled = disabled;
 }
 
@@ -1199,14 +1273,8 @@ elements.fileKinds.addEventListener("change", (event) => {
   elements.newFileName.focus();
 });
 
-elements.addFile.addEventListener("click", () => {
-  elements.newFileError.textContent = "";
-  elements.newFileName.value = "new_file.c";
-  const first = elements.fileKinds.querySelector<HTMLInputElement>("input[value='c']");
-  if (first) first.checked = true;
-  elements.dialog.showModal();
-  elements.newFileName.select();
-});
+elements.addFile.addEventListener("click", () => openDraftRow("file"));
+elements.addFolder.addEventListener("click", () => openDraftRow("folder"));
 elements.newFileForm.addEventListener("submit", (event) => {
   if (!(event instanceof SubmitEvent)) return;
   if (!(event.submitter instanceof HTMLButtonElement) || event.submitter.value !== "create") {
