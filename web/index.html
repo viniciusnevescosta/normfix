@@ -172,30 +172,7 @@
           </div>
           <div class="file-list" id="file-list" role="listbox" aria-label="Loaded project files" data-i18n-aria="loadedFiles"></div>
 
-          <section class="identity-panel" aria-labelledby="identity-title">
-            <strong id="identity-title" data-i18n="identity">42 identity</strong>
-            <label for="identity-email" data-i18n="email">Student email</label>
-            <input
-              id="identity-email"
-              type="email"
-              inputmode="email"
-              autocomplete="email"
-              placeholder="login@student.42.fr"
-              data-i18n-placeholder="emailPlaceholder"
-            >
-            <label class="remember-option">
-              <input id="remember-identity" type="checkbox">
-              <span data-i18n="rememberIdentity">Remember on this device</span>
-            </label>
-            <div class="identity-actions">
-              <button class="button secondary" id="save-identity" type="button" data-i18n="saveIdentity">Save</button>
-              <button class="text-button" id="forget-identity" type="button" data-i18n="forgetIdentity">Forget</button>
-            </div>
-            <p class="identity-status" id="identity-status" role="status"></p>
-            <p class="identity-privacy" data-i18n="identityPrivacy">
-              Stored only in this browser. It is sent to WebAssembly in this tab, never to a server.
-            </p>
-          </section>
+          <div id="identity-panel"></div>
 
           <div class="file-actions">
             <label class="button secondary file-picker">

@@ -34,7 +34,8 @@ import { collectDroppedFiles, type DroppedFile } from "./project/drop";
 import { mount } from "svelte";
 
 import FileTree from "./components/FileTree.svelte";
-import { treeState } from "./tree-state.svelte";
+import IdentityPanel from "./components/IdentityPanel.svelte";
+import { identityState, treeState } from "./tree-state.svelte";
 import { openDraftRow } from "./project/draft-row";
 import { deserializeProject, isSameProject, serializeProject } from "./project/persistence";
 import { movedPath, renamedPath, rewritePrefix, wouldContainItself } from "./project/tree";
@@ -189,6 +190,7 @@ const elements = {
   fallbackEditor: requiredElement<HTMLTextAreaElement>("#fallback-editor"),
   editorTitle: requiredElement<HTMLElement>("#editor-title"),
   editorMeta: requiredElement<HTMLElement>("#editor-meta"),
+  identityPanel: requiredElement<HTMLElement>("#identity-panel"),
   editorDisabled: requiredElement<HTMLElement>("#editor-disabled"),
   editorDisabledTitle: requiredElement<HTMLElement>("#editor-disabled-title"),
   editorDisabledText: requiredElement<HTMLElement>("#editor-disabled-text"),
@@ -214,12 +216,6 @@ const elements = {
   diagnosticTemplate: requiredElement<HTMLTemplateElement>("#diagnostic-template"),
   language: requiredElement<HTMLSelectElement>("#language"),
   theme: requiredElement<HTMLSelectElement>("#theme"),
-  identityEmail: requiredElement<HTMLInputElement>("#identity-email"),
-  rememberIdentity: requiredElement<HTMLInputElement>("#remember-identity"),
-  rememberOption: requiredElement<HTMLElement>(".remember-option"),
-  saveIdentity: requiredElement<HTMLButtonElement>("#save-identity"),
-  forgetIdentity: requiredElement<HTMLButtonElement>("#forget-identity"),
-  identityStatus: requiredElement<HTMLElement>("#identity-status"),
   starCount: requiredElement<HTMLElement>("#star-count"),
   offlineStatus: requiredElement<HTMLElement>("#offline-status"),
   offlineLabel: requiredElement<HTMLElement>("#offline-label"),
@@ -270,7 +266,6 @@ function loadIdentity(): void {
     const canonical = stored ? canonicalIdentityEmail(stored) : null;
     if (canonical) {
       state.identityEmail = canonical;
-      elements.identityEmail.value = canonical;
     } else if (stored) {
       localStorage.removeItem(IDENTITY_STORAGE_KEY);
     }
@@ -281,18 +276,14 @@ function loadIdentity(): void {
 }
 
 /**
- * Shows whether an identity is stored on this device.
+ * Pushes the identity panel what it draws.
  *
- * When one is, the checkbox has nothing left to ask — it would offer a choice
- * already made — and the pair of buttons collapses to the one that undoes it.
- * The panel then says what it is rather than what it could do.
+ * The panel derives the box and the buttons from `stored`, so there is no
+ * combination where it offers to remember something already remembered.
  */
 function renderIdentityControls(): void {
-  const stored = readStoredIdentity() !== null;
-  elements.rememberOption.hidden = stored;
-  elements.rememberIdentity.checked = stored;
-  elements.saveIdentity.hidden = stored;
-  elements.forgetIdentity.hidden = !stored;
+  identityState.stored = readStoredIdentity() !== null;
+  identityState.email = state.identityEmail ?? "";
 }
 
 function readStoredIdentity(): string | null {
@@ -303,50 +294,50 @@ function readStoredIdentity(): string | null {
   }
 }
 
-function saveIdentity(): void {
-  const canonical = canonicalIdentityEmail(elements.identityEmail.value);
+function setIdentityStatus(key: MessageKey, invalid = false): void {
+  identityState.status = t(key);
+  identityState.invalid = invalid;
+}
+
+function saveIdentity(typed: string, remember: boolean): void {
+  const canonical = canonicalIdentityEmail(typed);
   if (!canonical) {
-    setStateMessage(elements.identityStatus, "invalidIdentity");
-    elements.identityEmail.setAttribute("aria-invalid", "true");
+    setIdentityStatus("invalidIdentity", true);
     return;
   }
-  elements.identityEmail.removeAttribute("aria-invalid");
   state.identityEmail = canonical;
   state.revision += 1;
   invalidateResults();
-  elements.identityEmail.value = canonical;
-  if (!elements.rememberIdentity.checked) {
+  renderIdentityControls();
+  if (!remember) {
     try {
       localStorage.removeItem(IDENTITY_STORAGE_KEY);
     } catch {
       // The value still remains usable for the current tab.
     }
-    setStateMessage(elements.identityStatus, "identitySession");
+    setIdentityStatus("identitySession");
     return;
   }
   try {
     localStorage.setItem(IDENTITY_STORAGE_KEY, canonical);
-    setStateMessage(elements.identityStatus, "identitySaved");
-    renderIdentityControls();
+    setIdentityStatus("identitySaved");
   } catch {
-    setStateMessage(elements.identityStatus, "storageUnavailable");
+    setIdentityStatus("storageUnavailable");
   }
+  renderIdentityControls();
 }
 
 function forgetIdentity(): void {
   state.identityEmail = null;
   state.revision += 1;
   invalidateResults();
-  elements.identityEmail.value = "";
-  elements.identityEmail.removeAttribute("aria-invalid");
   try {
     localStorage.removeItem(IDENTITY_STORAGE_KEY);
   } catch {
     // The in-memory value has still been cleared.
   }
-  setStateMessage(elements.identityStatus, "identityForgotten");
+  setIdentityStatus("identityForgotten");
   renderIdentityControls();
-  elements.identityEmail.focus();
 }
 
 function applyTranslations(): void {
@@ -472,11 +463,6 @@ function renderOfflineStatus(): void {
   elements.offlineUpdate.hidden = !updateReady;
   elements.offlineLabel.textContent = updateReady ? t("offlineUpdate") : t("offlineActive");
   elements.offlineStatus.title = updateReady ? "" : t("offlineActiveTitle");
-}
-
-function setStateMessage(element: HTMLElement, key: MessageKey): void {
-  element.dataset.i18nState = key;
-  element.textContent = t(key);
 }
 
 async function loadFormatter(): Promise<void> {
@@ -641,8 +627,8 @@ function showEmptyProject(): void {
 }
 
 function reportProjectError(failure: unknown): void {
-  elements.identityStatus.textContent =
-    failure instanceof Error ? failure.message : String(failure);
+  identityState.status = failure instanceof Error ? failure.message : String(failure);
+  identityState.invalid = false;
 }
 
 let treeMounted = false;
@@ -1592,13 +1578,25 @@ elements.language.addEventListener("change", () => {
 elements.offlineUpdate.addEventListener("click", () => {
   state.offlineSupport?.applyUpdate();
 });
-elements.saveIdentity.addEventListener("click", saveIdentity);
-elements.forgetIdentity.addEventListener("click", forgetIdentity);
-elements.identityEmail.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    saveIdentity();
-  }
+mount(IdentityPanel, {
+  target: elements.identityPanel,
+  props: {
+    get email() {
+      return identityState.email;
+    },
+    get stored() {
+      return identityState.stored;
+    },
+    get status() {
+      return identityState.status;
+    },
+    get invalid() {
+      return identityState.invalid;
+    },
+    translate: (key: string) => t(key as MessageKey),
+    onSave: saveIdentity,
+    onForget: forgetIdentity,
+  },
 });
 
 async function initialize(): Promise<void> {

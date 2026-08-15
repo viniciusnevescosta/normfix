@@ -6,6 +6,13 @@
 // object to update instead of a list to rebuild, and nothing that breaks by
 // being forgotten — a stale field shows a stale row, not a panel describing a
 // project that no longer exists.
+export const identityState = $state({
+  email: "",
+  stored: false,
+  status: "",
+  invalid: false,
+});
+
 export const treeState = $state({
   files: [] as string[],
   unsupported: new Set<string>(),
