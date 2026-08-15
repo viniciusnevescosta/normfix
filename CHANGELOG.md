@@ -10,6 +10,82 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.8.0] / 2026-08-15
+
+The playground stops being a form and becomes an editor.
+
+### Added
+
+- **A project shows the folders it actually has.** A dropped folder was
+  flattened into a list of full paths: the shape the student organised their
+  work into was in the paths and nowhere on screen. The tree is derived from
+  those paths, so nothing new is stored and an archive still writes what it
+  always wrote. Clicking a folder opens and closes it, and the icon is the
+  state.
+
+- **Creating a file names it where it will live.** The modal is gone. Two
+  buttons open a row in the list with its name waiting to be typed; Enter
+  commits, Escape and clicking away abandon it. A name the project cannot
+  accept says so on the row and keeps what was typed, rather than closing and
+  losing it. A folder asks for its prefix and then opens a file row inside it,
+  so a folder never exists holding nothing.
+
+- **Entries move by dragging and are renamed or deleted by right-clicking.**
+  Dropping on a folder moves into it, dropping clear of every folder returns to
+  the top, and dropping on a file means dropping beside it. A move is all or
+  nothing: one that would collide, or produce a path the project cannot store,
+  leaves the project as it was. Renaming a folder rewrites the prefix of
+  everything beneath it and of nothing that merely starts the same way. A
+  closed folder still accepts a drop, since putting something away is exactly
+  when a folder is closed.
+
+- **Deleting asks first, and a project can be emptied.** This tab has no undo,
+  and a folder is one row on screen that can be a dozen files, so the
+  confirmation names the count. The last file is no longer protected: the
+  editor turns off and invites creating or importing instead of refusing
+  without saying why.
+
+- **A file normfix cannot format is shown rather than dropped.** It used to
+  vanish on import, counted but not named, so a reader went looking for
+  something the page had quietly discarded. It now appears in the tree, marked,
+  and selecting it turns the editor off with a notice naming what is formatted:
+  .c, .h, .md, and Makefile.
+
+- **The project survives a reload.** It is written to this browser as it
+  changes and comes back with the file that was open — never silently. This
+  page is built for shared campus machines, so a notice says the work was
+  restored and offers to discard it, which is also the only way to clear what
+  is stored. Nothing leaves the browser.
+
+- **The identity panel says whether an identity is stored.** With one saved,
+  the "remember on this device" box has nothing left to ask and goes, along
+  with Save, leaving Forget. Clicking it brings all three back.
+
+### Fixed
+
+- **A file that will not parse now shows where.** `#include <unistd.h` with no
+  closing bracket answered with a sentence about `ERROR` and `MISSING` bytes
+  and no line to look at. The reason is said in the reader's language and the
+  finding follows it, which puts the location on screen and gives the editor a
+  range to underline.
+
+- **`[hidden]` is honoured everywhere.** Any `display` rule outranks the
+  browser's own `[hidden] { display: none }`, and the failure is silent: the
+  attribute is set, the element stays on screen, and a script asking
+  `element.hidden` is told what it wants to hear. It caught this page twice.
+
+- **The scope note after every result is gone.** It existed so a clean result
+  would not read as approval, and on every result it read as an apology
+  instead. The page already says what it is, and the download card already says
+  the full tool runs the official checker and the compiler.
+
+### Changed
+
+- **The site is tested and linted rather than only type-checked.** Vitest runs
+  the existing suite unchanged and adds a DOM where the DOM is the subject, so
+  the interactions above are held by tests instead of by opening a browser.
+  oxlint and oxfmt run on every push; they are Rust, and cost milliseconds.
+
 ## [1.7.0] / 2026-08-15
 
 Hunting bugs on the assumption that everything is wrong until proven otherwise,
@@ -1434,6 +1510,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.8.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.8.0
 [1.7.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.7.0
 [1.6.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.3
 [1.6.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.2

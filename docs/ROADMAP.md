@@ -12,22 +12,6 @@ What shipped, and why each change was made, lives in the
 This page is only what is still ahead, so a reader never has to work out which
 half they are looking at.
 
-## 1.8 — the playground as an editor
-
-Creating a file opens a dialog; an editor does not. Two buttons — one for a
-folder, one for a file — put the new entry straight into the list with its name
-waiting to be typed, and Enter commits it. Only the four supported kinds can be
-created, so nothing is named before it is known to be formattable.
-
-Files move between folders by dragging. Right-click renames and deletes. An
-imported folder keeps its shape on screen rather than only inside the download,
-and a file the playground cannot format disables the editor and says why, in
-place, instead of being silently skipped.
-
-The scope note added in 1.6.1 — naming the official checker and the compiler as
-the two checks the page cannot run — comes out. It was written to keep silence
-from reading as approval, and on every result it reads as an apology instead.
-
 ## 1.9 — Python projects
 
 A separate Python pipeline on the same oracle model the Norminette uses, plus a
