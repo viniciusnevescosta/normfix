@@ -214,6 +214,7 @@ const elements = {
   theme: requiredElement<HTMLSelectElement>("#theme"),
   identityEmail: requiredElement<HTMLInputElement>("#identity-email"),
   rememberIdentity: requiredElement<HTMLInputElement>("#remember-identity"),
+  rememberOption: requiredElement<HTMLElement>(".remember-option"),
   saveIdentity: requiredElement<HTMLButtonElement>("#save-identity"),
   forgetIdentity: requiredElement<HTMLButtonElement>("#forget-identity"),
   identityStatus: requiredElement<HTMLElement>("#identity-status"),
@@ -274,6 +275,30 @@ function loadIdentity(): void {
   } catch {
     // Identity remains session-only when browser storage is unavailable.
   }
+  renderIdentityControls();
+}
+
+/**
+ * Shows whether an identity is stored on this device.
+ *
+ * When one is, the checkbox has nothing left to ask — it would offer a choice
+ * already made — and the pair of buttons collapses to the one that undoes it.
+ * The panel then says what it is rather than what it could do.
+ */
+function renderIdentityControls(): void {
+  const stored = readStoredIdentity() !== null;
+  elements.rememberOption.hidden = stored;
+  elements.rememberIdentity.checked = stored;
+  elements.saveIdentity.hidden = stored;
+  elements.forgetIdentity.hidden = !stored;
+}
+
+function readStoredIdentity(): string | null {
+  try {
+    return localStorage.getItem(IDENTITY_STORAGE_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function saveIdentity(): void {
@@ -300,6 +325,7 @@ function saveIdentity(): void {
   try {
     localStorage.setItem(IDENTITY_STORAGE_KEY, canonical);
     setStateMessage(elements.identityStatus, "identitySaved");
+    renderIdentityControls();
   } catch {
     setStateMessage(elements.identityStatus, "storageUnavailable");
   }
@@ -317,6 +343,7 @@ function forgetIdentity(): void {
     // The in-memory value has still been cleared.
   }
   setStateMessage(elements.identityStatus, "identityForgotten");
+  renderIdentityControls();
   elements.identityEmail.focus();
 }
 

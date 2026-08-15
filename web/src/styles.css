@@ -1,3 +1,12 @@
+/* Any `display` rule outranks the browser's own `[hidden] { display: none }`,
+   and the failure is silent: the attribute is set, the element stays on
+   screen, and a script asking `element.hidden` is told what it wants to hear.
+   This page was caught by it twice — the unsupported-file notice and the
+   identity controls — so it is settled once, here. */
+[hidden] {
+  display: none !important;
+}
+
 :root {
   color-scheme: dark;
   --bg: #111311;
@@ -1296,12 +1305,6 @@ dialog input {
   position: absolute;
   text-align: center;
   z-index: 5;
-}
-
-/* `display: flex` above outranks the browser's own `[hidden] { display: none }`,
-   so the notice has to say it again or it never hides. */
-.editor-disabled[hidden] {
-  display: none;
 }
 
 .file-unsupported .file-name {
