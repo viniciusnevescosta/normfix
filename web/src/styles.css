@@ -1281,3 +1281,34 @@ dialog input {
   outline: 1px solid currentColor;
   outline-offset: 1px;
 }
+
+/* A file normfix cannot format still shows in the tree, and says so where the
+   editor would have been: an empty text box with nothing explaining it reads
+   as the page being broken. */
+.editor-disabled {
+  align-items: center;
+  background: var(--surface, #1a1d1a);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+  text-align: center;
+  z-index: 5;
+}
+
+/* `display: flex` above outranks the browser's own `[hidden] { display: none }`,
+   so the notice has to say it again or it never hides. */
+.editor-disabled[hidden] {
+  display: none;
+}
+
+.file-unsupported .file-name {
+  opacity: 0.65;
+}
+
+.file-unsupported .file-kind {
+  font-style: italic;
+  opacity: 0.65;
+}

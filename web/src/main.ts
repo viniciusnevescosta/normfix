@@ -148,6 +148,8 @@ interface AppState {
   appearance: Appearance;
   /** Folders the reader has closed, by prefix. */
   collapsed: Set<string>;
+  /** Paths the project holds but normfix does not format. */
+  unsupported: Set<string>;
 }
 
 function requiredElement<T extends Element>(selector: string): T {
@@ -173,6 +175,7 @@ const state: AppState = {
   theme: readStoredThemePreference(),
   appearance: "dark",
   collapsed: new Set<string>(),
+  unsupported: new Set<string>(),
 };
 
 const elements = {
@@ -188,6 +191,11 @@ const elements = {
   fallbackEditor: requiredElement<HTMLTextAreaElement>("#fallback-editor"),
   editorTitle: requiredElement<HTMLElement>("#editor-title"),
   editorMeta: requiredElement<HTMLElement>("#editor-meta"),
+  editorDisabled: requiredElement<HTMLElement>("#editor-disabled"),
+  confirmDelete: requiredElement<HTMLDialogElement>("#confirm-delete"),
+  confirmDeleteText: requiredElement<HTMLElement>("#confirm-delete-text"),
+  confirmDeleteAction: requiredElement<HTMLButtonElement>("#confirm-delete-action"),
+  confirmDeleteCancel: requiredElement<HTMLButtonElement>("#confirm-delete-cancel"),
   run: requiredElement<HTMLButtonElement>("#run"),
   results: requiredElement<HTMLElement>("#results"),
   summary: requiredElement<HTMLElement>("#summary"),
@@ -483,6 +491,7 @@ function syncEditor(): void {
 
 function selectFile(path: string, syncCurrent = true): void {
   if (syncCurrent) syncEditor();
+  enableEditor();
   const source = state.files.get(path);
   if (source === undefined) return;
   state.selected = path;
@@ -596,7 +605,7 @@ function entryOf(target: EventTarget | null): HTMLElement | null {
 function renderFileList(): void {
   elements.fileList.replaceChildren();
   closeContextMenu();
-  appendTreeLevel(elements.fileList, buildTree(state.files.keys()), 0);
+  appendTreeLevel(elements.fileList, buildTree([...state.files.keys(), ...state.unsupported]), 0);
   // The panel itself is the project root, so a file dragged clear of every
   // folder comes back out to the top rather than having nowhere to land.
   elements.fileList.dataset.path = "";
@@ -617,9 +626,17 @@ function appendTreeLevel(container: Element, nodes: TreeNode[], depth: number): 
       row.setAttribute("role", "option");
       row.setAttribute("aria-selected", String(node.path === state.selected));
       if (state.results.get(node.path)?.changed) row.classList.add("changed");
-      row.addEventListener("click", () => selectFile(node.path));
+      row.addEventListener("click", () => {
+        if (unsupported) showUnsupported(node.path);
+        else selectFile(node.path);
+      });
     }
 
+    const unsupported = node.kind === "file" && state.unsupported.has(node.path);
+    if (unsupported) {
+      row.classList.add("file-unsupported");
+      row.title = t("unsupportedFile");
+    }
     const collapsed = node.kind === "folder" && state.collapsed.has(node.path);
     if (node.kind === "folder") {
       // The arrow is its own button so it can be reached from the keyboard and
@@ -648,7 +665,7 @@ function appendTreeLevel(container: Element, nodes: TreeNode[], depth: number): 
     if (node.kind === "file") {
       const kind = document.createElement("span");
       kind.className = "file-kind";
-      kind.textContent = fileKind(node.path);
+      kind.textContent = unsupported ? t("unsupportedKind") : fileKind(node.path);
       row.append(kind);
     }
     container.append(row);
@@ -658,6 +675,60 @@ function appendTreeLevel(container: Element, nodes: TreeNode[], depth: number): 
       appendTreeLevel(container, node.children, depth + 1);
     }
   }
+}
+
+/**
+ * Shows a file the project holds but normfix cannot format.
+ *
+ * The editor is turned off rather than opened empty or opened read-only with
+ * no explanation: a text box that will not do anything, with nothing saying
+ * why, reads as the page being broken.
+ */
+function showUnsupported(path: string): void {
+  syncEditor();
+  state.selected = null;
+  elements.editorTitle.textContent = path;
+  elements.editorMeta.textContent = "";
+  elements.editorDisabled.hidden = false;
+  elements.run.disabled = true;
+  renderFileList();
+}
+
+/** Turns the editor back on for a file normfix does format. */
+function enableEditor(): void {
+  elements.editorDisabled.hidden = true;
+  elements.run.disabled = state.formatter === null || state.running;
+}
+
+/**
+ * Asks before deleting, because there is no undo in this tab.
+ *
+ * A folder names how many files go with it: `src` is one row on screen and can
+ * be a dozen files, and the count is the part the reader cannot see.
+ */
+function confirmDelete(path: string, isFolder: boolean): void {
+  const count = isFolder
+    ? [...state.files.keys()].filter((loaded) => loaded.startsWith(`${path}/`)).length
+    : 1;
+  elements.confirmDeleteText.textContent = isFolder
+    ? t("deleteFolderText", { path, count: String(count) })
+    : t("deleteFileText", { path });
+  // The confirm button is wired directly rather than through the dialog's
+  // `close` event and its return value: that pair is one indirection more than
+  // this needs, and a delete that quietly does nothing is worse than no
+  // confirmation at all.
+  const confirm = elements.confirmDeleteAction;
+  const accept = (): void => {
+    elements.confirmDelete.close();
+    deleteEntry(path, isFolder);
+  };
+  confirm.addEventListener("click", accept, { once: true });
+  elements.confirmDeleteCancel.addEventListener(
+    "click",
+    () => confirm.removeEventListener("click", accept),
+    { once: true },
+  );
+  elements.confirmDelete.showModal();
 }
 
 /** Opens or closes one folder, keeping whatever is selected selected. */
@@ -764,8 +835,15 @@ function removeSelected(): void {
  * Nothing is skipped quietly: the count is always shown, and when nothing at
  * all could be imported the first rejected path explains exactly why.
  */
-async function loadFiles(incoming: readonly DroppedFile[], skipped = 0): Promise<void> {
-  if (incoming.length === 0 && skipped === 0) return;
+async function loadFiles(
+  incoming: readonly DroppedFile[],
+  unsupported: readonly string[] = [],
+): Promise<void> {
+  if (incoming.length === 0 && unsupported.length === 0) return;
+  // A file normfix cannot format is still part of the project the reader
+  // dropped in. It is kept by name so the tree can show it and say why it is
+  // not open, rather than leaving them to wonder where it went.
+  for (const path of unsupported) state.unsupported.add(path);
   if (state.importing) throw new Error(t("importRunning"));
   syncEditor();
   const startingRevision = state.revision;
@@ -773,12 +851,13 @@ async function loadFiles(incoming: readonly DroppedFile[], skipped = 0): Promise
   setImportControls(true);
   try {
     const candidates = new Map<string, readonly [string, File]>();
-    let ignored = skipped;
+    let ignored = unsupported.length;
     let firstRejected: string | null = null;
     for (const { path: rawPath, file } of incoming) {
       if (sourcePathProblem(rawPath) !== null) {
         ignored += 1;
         firstRejected ??= rawPath;
+        state.unsupported.add(rawPath);
         continue;
       }
       const path = normalizeSourcePath(rawPath);
@@ -1307,7 +1386,7 @@ async function importDrop(transfer: DataTransfer | null): Promise<void> {
     return;
   }
   const selection = await collectDroppedFiles(entries);
-  await loadFiles(selection.files, selection.skipped);
+  await loadFiles(selection.files, selection.unsupported);
 }
 
 elements.filePicker.addEventListener("change", () => {
@@ -1416,7 +1495,7 @@ function openContextMenu(entry: HTMLElement, x: number, y: number): void {
   };
 
   action(t("renameEntry"), () => startRename(entry, path, isFolder));
-  action(t("deleteEntry"), () => deleteEntry(path, isFolder));
+  action(t("deleteEntry"), () => confirmDelete(path, isFolder));
   document.body.append(menu);
   contextMenu = menu;
   menu.querySelector("button")?.focus();

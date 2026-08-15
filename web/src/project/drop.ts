@@ -16,8 +16,13 @@ export interface DroppedFile {
 
 export interface DropSelection {
   files: DroppedFile[];
-  /** How many entries were passed over because normfix does not format them. */
-  skipped: number;
+  /**
+   * Entries normfix does not format, by path.
+   *
+   * They are named rather than counted: a project shows what it contains, and
+   * a file that vanished on import is one the reader goes looking for.
+   */
+  unsupported: string[];
 }
 
 /**
@@ -91,7 +96,7 @@ export async function collectDroppedFiles(
   entries: readonly FileSystemEntryLike[],
 ): Promise<DropSelection> {
   const files: DroppedFile[] = [];
-  let skipped = 0;
+  const unsupported: string[] = [];
   let scanned = 0;
 
   const walk = async (entry: FileSystemEntryLike, depth: number): Promise<void> => {
@@ -102,7 +107,7 @@ export async function collectDroppedFiles(
     if (entry.isFile) {
       const path = normalizeDropPath(entry.fullPath);
       if (!isImportablePath(path)) {
-        skipped += 1;
+        unsupported.push(path);
         return;
       }
       files.push({ path, file: await readFile(entry as FileEntryLike) });
@@ -115,7 +120,7 @@ export async function collectDroppedFiles(
   };
 
   for (const entry of entries) await walk(entry, 0);
-  return { files, skipped };
+  return { files, unsupported };
 }
 
 function readFile(entry: FileEntryLike): Promise<File> {
