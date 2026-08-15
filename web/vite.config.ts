@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import tailwindcss from "@tailwindcss/vite";
 import { build, defineConfig, type Plugin } from "vite";
 
 import { offlineShell, type Bundle } from "./src/offline/precache";
@@ -224,7 +226,13 @@ function offlineServiceWorker(): Plugin {
 
 export default defineConfig({
   base: "/",
-  plugins: [criticalPathHints(), localizedPlaygroundPages(), offlineServiceWorker()],
+  plugins: [
+    svelte(),
+    tailwindcss(),
+    criticalPathHints(),
+    localizedPlaygroundPages(),
+    offlineServiceWorker(),
+  ],
   build: {
     assetsInlineLimit: 0,
     // Monaco is a desktop-only dynamic import; its two core chunks are large

@@ -31,21 +31,16 @@ import {
 import { ZipArchiveError, buildZip } from "./project/archive";
 import { markersFor } from "./project/markers";
 import { collectDroppedFiles, type DroppedFile } from "./project/drop";
+import { mount } from "svelte";
+
+import FileTree from "./components/FileTree.svelte";
+import { treeState } from "./tree-state.svelte";
 import { openDraftRow } from "./project/draft-row";
 import { deserializeProject, isSameProject, serializeProject } from "./project/persistence";
-import {
-  buildTree,
-  movedPath,
-  renamedPath,
-  rewritePrefix,
-  wouldContainItself,
-  type TreeNode,
-} from "./project/tree";
+import { movedPath, renamedPath, rewritePrefix, wouldContainItself } from "./project/tree";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
-const FOLDER_SHUT = "\u{1F4C1}";
-const FOLDER_OPEN = "\u{1F4C2}";
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
 const PROJECT_STORAGE_KEY = "normfix.project.v1";
 const LOCALE_STORAGE_KEY = "normfix.locale.v1";
@@ -650,85 +645,50 @@ function reportProjectError(failure: unknown): void {
     failure instanceof Error ? failure.message : String(failure);
 }
 
-/** The entry the pointer is over, whichever part of the row it landed on. */
-function entryOf(target: EventTarget | null): HTMLElement | null {
-  return target instanceof Element ? target.closest<HTMLElement>("[data-path]") : null;
-}
+let treeMounted = false;
 
+/**
+ * Hands the panel what to draw.
+ *
+ * This used to rebuild the list by hand, and every change had to remember to
+ * call it. What it now updates is state the panel reads, so a field left stale
+ * shows a stale row rather than a panel describing a project that is gone.
+ */
 function renderFileList(): void {
-  elements.fileList.replaceChildren();
-  closeContextMenu();
-  appendTreeLevel(elements.fileList, buildTree([...state.files.keys(), ...state.unsupported]), 0);
-  // The panel itself is the project root, so a file dragged clear of every
-  // folder comes back out to the top rather than having nowhere to land.
-  elements.fileList.dataset.path = "";
-  elements.fileList.dataset.kind = "folder";
-}
-
-function appendTreeLevel(container: Element, nodes: TreeNode[], depth: number): void {
-  for (const node of nodes) {
-    const row = document.createElement(node.kind === "file" ? "button" : "div");
-    row.className = `file-item file-${node.kind}`;
-    row.dataset.path = node.path;
-    row.dataset.kind = node.kind;
-    row.style.paddingLeft = `${0.5 + depth * 0.85}rem`;
-    row.title = node.path;
-    row.draggable = true;
-    if (row instanceof HTMLButtonElement) {
-      row.type = "button";
-      row.setAttribute("role", "option");
-      row.setAttribute("aria-selected", String(node.path === state.selected));
-      if (state.results.get(node.path)?.changed) row.classList.add("changed");
-      row.addEventListener("click", () => {
-        if (unsupported) showUnsupported(node.path);
-        else selectFile(node.path);
-      });
-    }
-
-    const unsupported = node.kind === "file" && state.unsupported.has(node.path);
-    if (unsupported) {
-      row.classList.add("file-unsupported");
-      row.title = t("unsupportedFile");
-    }
-    const collapsed = node.kind === "folder" && state.collapsed.has(node.path);
-    if (node.kind === "folder") {
-      // The whole row opens and closes the folder. A folder has nothing else
-      // to be clicked for — it holds no text to edit — so asking the reader to
-      // hit a small arrow was asking them to aim at nothing.
-      row.setAttribute("role", "button");
-      row.tabIndex = 0;
-      row.setAttribute("aria-expanded", String(!collapsed));
-      row.addEventListener("click", () => toggleFolder(node.path));
-      row.addEventListener("keydown", (event) => {
-        const pressed = (event as KeyboardEvent).key;
-        if (pressed !== "Enter" && pressed !== " ") return;
-        event.preventDefault();
-        toggleFolder(node.path);
-      });
-    }
-
-    const mark = document.createElement("span");
-    mark.className = node.kind === "file" ? "file-dot" : "folder-mark";
-    mark.setAttribute("aria-hidden", "true");
-    // The icon is the state: an open folder is open, a closed one is closed.
-    if (node.kind === "folder") mark.textContent = collapsed ? FOLDER_SHUT : FOLDER_OPEN;
-    const name = document.createElement("span");
-    name.className = "file-name";
-    name.textContent = node.name;
-    row.append(mark, name);
-    if (node.kind === "file") {
-      const kind = document.createElement("span");
-      kind.className = "file-kind";
-      kind.textContent = unsupported ? t("unsupportedKind") : fileKind(node.path);
-      row.append(kind);
-    }
-    container.append(row);
-    // A closed folder still accepts a drop: the row is there, and dropping on
-    // it is how something gets put away without opening it first.
-    if (node.kind === "folder" && !collapsed) {
-      appendTreeLevel(container, node.children, depth + 1);
-    }
-  }
+  treeState.files = [...state.files.keys(), ...state.unsupported];
+  treeState.unsupported = new Set(state.unsupported);
+  treeState.changed = new Set(
+    [...state.results.entries()].filter(([, result]) => result.changed).map(([path]) => path),
+  );
+  treeState.selected = state.selected;
+  if (treeMounted) return;
+  treeMounted = true;
+  mount(FileTree, {
+    target: elements.fileList,
+    props: {
+      get files() {
+        return treeState.files;
+      },
+      get unsupported() {
+        return treeState.unsupported;
+      },
+      get changed() {
+        return treeState.changed;
+      },
+      get selected() {
+        return treeState.selected;
+      },
+      translate: (key: string) => t(key as MessageKey),
+      kindOf: fileKind,
+      onSelect: (path: string) => {
+        if (state.unsupported.has(path)) showUnsupported(path);
+        else selectFile(path);
+      },
+      onMove: moveEntry,
+      onRename: startRename,
+      onDelete: confirmDelete,
+    },
+  });
 }
 
 /**
@@ -785,13 +745,6 @@ function confirmDelete(path: string, isFolder: boolean): void {
     { once: true },
   );
   elements.confirmDelete.showModal();
-}
-
-/** Opens or closes one folder, keeping whatever is selected selected. */
-function toggleFolder(path: string): void {
-  if (state.collapsed.has(path)) state.collapsed.delete(path);
-  else state.collapsed.add(path);
-  renderFileList();
 }
 
 function updateEditorMeta(): void {
@@ -1467,111 +1420,11 @@ elements.filePicker.addEventListener("change", () => {
   });
 });
 elements.removeFile.addEventListener("click", removeSelected);
-/// The name a kind starts from, keeping any folder the reader already typed.
-///
-/// `.c` is not the only thing this page formats, and typing the extension by
-/// hand is how a reader discovers that only by getting it wrong. Picking a kind
-/// rewrites the name, and keeping the folder means choosing a kind after typing
-/// `src/utils.c` does not throw the folder away.
-
-// Dragging an entry onto a folder, and the menu that renames or deletes one.
-//
-// The panel itself carries the root prefix, so an entry dragged clear of every
-// folder lands at the top of the project rather than nowhere. A drop is read
-// from the row under the pointer, never from the row the drag started on.
-let contextMenu: HTMLElement | null = null;
-
-function closeContextMenu(): void {
-  contextMenu?.remove();
-  contextMenu = null;
-}
-
-function dropTargetOf(target: EventTarget | null): { path: string; kind: string } | null {
-  const entry = entryOf(target);
-  if (!entry) return null;
-  // Dropping on a file means dropping into the folder that holds it, which is
-  // what the pointer looks like it is doing.
-  const path = entry.dataset.path ?? "";
-  if (entry.dataset.kind === "folder") return { path, kind: "folder" };
-  const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-  return { path: parent, kind: "folder" };
-}
-
-elements.fileList.addEventListener("dragstart", (event) => {
-  const entry = entryOf(event.target);
-  if (!entry?.dataset.path) return;
-  event.dataTransfer?.setData("text/normfix-entry", `${entry.dataset.kind}:${entry.dataset.path}`);
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-});
-
-elements.fileList.addEventListener("dragover", (event) => {
-  if (!event.dataTransfer?.types.includes("text/normfix-entry")) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = "move";
-  const entry = entryOf(event.target);
-  for (const row of elements.fileList.querySelectorAll(".drop-into")) {
-    row.classList.remove("drop-into");
-  }
-  if (entry?.dataset.kind === "folder") entry.classList.add("drop-into");
-});
-
-elements.fileList.addEventListener("dragleave", (event) => {
-  entryOf(event.target)?.classList.remove("drop-into");
-});
-
-elements.fileList.addEventListener("drop", (event) => {
-  const payload = event.dataTransfer?.getData("text/normfix-entry");
-  if (!payload) return;
-  event.preventDefault();
-  for (const row of elements.fileList.querySelectorAll(".drop-into")) {
-    row.classList.remove("drop-into");
-  }
-  const separator = payload.indexOf(":");
-  const kind = payload.slice(0, separator);
-  const path = payload.slice(separator + 1);
-  const destination = dropTargetOf(event.target);
-  if (destination) moveEntry(path, kind === "folder", destination.path);
-});
-
-elements.fileList.addEventListener("contextmenu", (event) => {
-  const entry = entryOf(event.target);
-  if (!entry?.dataset.path) return;
-  event.preventDefault();
-  openContextMenu(entry, event.clientX, event.clientY);
-});
-
-function openContextMenu(entry: HTMLElement, x: number, y: number): void {
-  closeContextMenu();
-  const path = entry.dataset.path ?? "";
-  const isFolder = entry.dataset.kind === "folder";
-  const menu = document.createElement("div");
-  menu.className = "context-menu";
-  menu.setAttribute("role", "menu");
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-
-  const action = (label: string, run: () => void): void => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.setAttribute("role", "menuitem");
-    button.textContent = label;
-    button.addEventListener("click", () => {
-      closeContextMenu();
-      run();
-    });
-    menu.append(button);
-  };
-
-  action(t("renameEntry"), () => startRename(entry, path, isFolder));
-  action(t("deleteEntry"), () => confirmDelete(path, isFolder));
-  document.body.append(menu);
-  contextMenu = menu;
-  menu.querySelector("button")?.focus();
-}
-
-/** Turns a row into its own name field, the way the draft row already reads. */
-function startRename(entry: HTMLElement, path: string, isFolder: boolean): void {
-  const label = entry.querySelector<HTMLElement>(".file-name");
+function startRename(path: string, isFolder: boolean): void {
+  // The row belongs to the panel now, and is found by the path it carries
+  // rather than passed in by whoever opened the menu.
+  const entry = elements.fileList.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`);
+  const label = entry?.querySelector<HTMLElement>("span:nth-child(2)");
   if (!label) return;
   const current = label.textContent ?? "";
   const input = document.createElement("input");
@@ -1603,13 +1456,6 @@ function startRename(entry: HTMLElement, path: string, isFolder: boolean): void 
   });
   input.addEventListener("blur", restore);
 }
-
-document.addEventListener("click", (event) => {
-  if (contextMenu && !contextMenu.contains(event.target as Node)) closeContextMenu();
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeContextMenu();
-});
 
 /**
  * Writes the project to this browser, so closing the tab does not cost it.

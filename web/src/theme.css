@@ -1,0 +1,35 @@
+/* The design tokens, as Tailwind's theme.
+ *
+ * Tailwind v4 is configured in CSS, so the palette that was already here as
+ * custom properties becomes the theme itself: `--color-panel` is what makes
+ * `bg-panel` exist. The names are unchanged, which is what lets the light
+ * theme and the components that have not moved yet keep working from the same
+ * values rather than from a copy that can drift.
+ */
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #111311;
+  --color-panel: #171a17;
+  --color-panel-alt: #1d201d;
+  --color-surface-sunken: #141614;
+  --color-surface-code: #121412;
+  --color-surface-selected: #232823;
+  --color-border: #3a3f3a;
+  --color-border-strong: #596159;
+  --color-text: #e5e9e5;
+  --color-muted: #9ca49c;
+  --color-faint: #737b73;
+  --color-accent: #8fc7a8;
+  --color-accent-strong: #a8d5ba;
+  --color-on-accent: #101410;
+  --color-badge-text: #273127;
+  --color-badge-border: #5e846d;
+  --color-badge-bg: #b3d4bf;
+  --color-warning: #d5b56d;
+  --color-error: #dc8580;
+  --color-info: #86aeca;
+  --color-overlay: rgb(17 19 17 / 82%);
+  --color-scrim: rgb(0 0 0 / 70%);
+  --font-mono: "SFMono-Regular", "Cascadia Mono", "Liberation Mono", Menlo, monospace;
+}
