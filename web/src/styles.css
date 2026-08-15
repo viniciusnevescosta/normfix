@@ -1263,3 +1263,21 @@ dialog input {
 .context-menu button:focus-visible {
   background: var(--surface-raised, #262a26);
 }
+
+/* The arrow is a control of its own, so it can be reached from the keyboard
+   and so clicking it never reads as clicking the folder it belongs to. */
+.folder-toggle {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0 0.15rem;
+  width: 1rem;
+}
+
+.folder-toggle:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 1px;
+}

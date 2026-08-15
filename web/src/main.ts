@@ -146,6 +146,8 @@ interface AppState {
   offlineSupport: OfflineSupport | null;
   theme: ThemePreference;
   appearance: Appearance;
+  /** Folders the reader has closed, by prefix. */
+  collapsed: Set<string>;
 }
 
 function requiredElement<T extends Element>(selector: string): T {
@@ -170,6 +172,7 @@ const state: AppState = {
   offlineSupport: null,
   theme: readStoredThemePreference(),
   appearance: "dark",
+  collapsed: new Set<string>(),
 };
 
 const elements = {
@@ -617,6 +620,23 @@ function appendTreeLevel(container: Element, nodes: TreeNode[], depth: number): 
       row.addEventListener("click", () => selectFile(node.path));
     }
 
+    const collapsed = node.kind === "folder" && state.collapsed.has(node.path);
+    if (node.kind === "folder") {
+      // The arrow is its own button so it can be reached from the keyboard and
+      // so clicking it never reads as clicking the folder.
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "folder-toggle";
+      toggle.textContent = collapsed ? "▸" : "▾";
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+      toggle.setAttribute("aria-label", t(collapsed ? "expandFolder" : "collapseFolder"));
+      toggle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleFolder(node.path);
+      });
+      row.append(toggle);
+    }
+
     const mark = document.createElement("span");
     mark.className = node.kind === "file" ? "file-dot" : "folder-mark";
     mark.setAttribute("aria-hidden", "true");
@@ -632,8 +652,19 @@ function appendTreeLevel(container: Element, nodes: TreeNode[], depth: number): 
       row.append(kind);
     }
     container.append(row);
-    if (node.kind === "folder") appendTreeLevel(container, node.children, depth + 1);
+    // A closed folder still accepts a drop: the row is there, and dropping on
+    // it is how something gets put away without opening it first.
+    if (node.kind === "folder" && !collapsed) {
+      appendTreeLevel(container, node.children, depth + 1);
+    }
   }
+}
+
+/** Opens or closes one folder, keeping whatever is selected selected. */
+function toggleFolder(path: string): void {
+  if (state.collapsed.has(path)) state.collapsed.delete(path);
+  else state.collapsed.add(path);
+  renderFileList();
 }
 
 function updateEditorMeta(): void {
