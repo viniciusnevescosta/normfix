@@ -1229,7 +1229,7 @@ dialog input {
 /* A folder reads as the container it is: the row is not selectable, and what
    sits under it is indented rather than named with its whole path. */
 .file-folder {
-  cursor: default;
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1275,22 +1275,6 @@ dialog input {
 
 /* The arrow is a control of its own, so it can be reached from the keyboard
    and so clicking it never reads as clicking the folder it belongs to. */
-.folder-toggle {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  line-height: 1;
-  padding: 0 0.15rem;
-  width: 1rem;
-}
-
-.folder-toggle:focus-visible {
-  outline: 1px solid currentColor;
-  outline-offset: 1px;
-}
-
 /* A file normfix cannot format still shows in the tree, and says so where the
    editor would have been: an empty text box with nothing explaining it reads
    as the page being broken. */

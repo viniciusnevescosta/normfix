@@ -43,7 +43,8 @@ import {
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
-const FOLDER_MARK = "\u{1F4C1}";
+const FOLDER_SHUT = "\u{1F4C1}";
+const FOLDER_OPEN = "\u{1F4C2}";
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
 const LOCALE_STORAGE_KEY = "normfix.locale.v1";
 const FALLBACK_STARS = 0;
@@ -666,25 +667,26 @@ function appendTreeLevel(container: Element, nodes: TreeNode[], depth: number): 
     }
     const collapsed = node.kind === "folder" && state.collapsed.has(node.path);
     if (node.kind === "folder") {
-      // The arrow is its own button so it can be reached from the keyboard and
-      // so clicking it never reads as clicking the folder.
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "folder-toggle";
-      toggle.textContent = collapsed ? "▸" : "▾";
-      toggle.setAttribute("aria-expanded", String(!collapsed));
-      toggle.setAttribute("aria-label", t(collapsed ? "expandFolder" : "collapseFolder"));
-      toggle.addEventListener("click", (event) => {
-        event.stopPropagation();
+      // The whole row opens and closes the folder. A folder has nothing else
+      // to be clicked for — it holds no text to edit — so asking the reader to
+      // hit a small arrow was asking them to aim at nothing.
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
+      row.setAttribute("aria-expanded", String(!collapsed));
+      row.addEventListener("click", () => toggleFolder(node.path));
+      row.addEventListener("keydown", (event) => {
+        const pressed = (event as KeyboardEvent).key;
+        if (pressed !== "Enter" && pressed !== " ") return;
+        event.preventDefault();
         toggleFolder(node.path);
       });
-      row.append(toggle);
     }
 
     const mark = document.createElement("span");
     mark.className = node.kind === "file" ? "file-dot" : "folder-mark";
     mark.setAttribute("aria-hidden", "true");
-    if (node.kind === "folder") mark.textContent = FOLDER_MARK;
+    // The icon is the state: an open folder is open, a closed one is closed.
+    if (node.kind === "folder") mark.textContent = collapsed ? FOLDER_SHUT : FOLDER_OPEN;
     const name = document.createElement("span");
     name.className = "file-name";
     name.textContent = node.name;
@@ -1110,10 +1112,15 @@ function renderSelectedResult(): void {
 function renderDiagnostics(result: ResultRecord): void {
   elements.diagnosticsView.replaceChildren();
   if (result.error || !result.stable) {
+    // Why nothing was formatted goes first, in the reader's language. The
+    // findings then follow, because a file that will not parse has the one
+    // finding that matters most — where the parser lost its way — and hiding
+    // it behind the reason left a reader with a sentence about `ERROR` and
+    // `MISSING` bytes and no line to look at.
     elements.diagnosticsView.append(
-      emptyState(t("fileUnchanged"), result.error || t("unstableFormatter")),
+      emptyState(t("fileUnchanged"), result.stable ? t("unparsableFile") : t("unstableFormatter")),
     );
-    return;
+    if (result.diagnostics.length === 0) return;
   }
   if (result.diagnostics.length === 0) {
     elements.diagnosticsView.append(emptyState(t("noDiagnostics"), t("cliCoverage")));
