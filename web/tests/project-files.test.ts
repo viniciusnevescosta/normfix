@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 
 import {
   ImportBatchError,
@@ -25,10 +25,7 @@ test("portable path keys detect collisions without changing the displayed path",
 });
 
 test("42 identity validation canonicalizes supported addresses and rejects impostors", () => {
-  assert.equal(
-    canonicalIdentityEmail("  Student-A@STUDENT.42.FR "),
-    "student-a@student.42.fr",
-  );
+  assert.equal(canonicalIdentityEmail("  Student-A@STUDENT.42.FR "), "student-a@student.42.fr");
   assert.equal(canonicalIdentityEmail("student-a@example.com"), null);
   assert.equal(canonicalIdentityEmail("bad%login@student.42.fr"), null);
 });
@@ -51,8 +48,7 @@ test("an import is discarded when the project changes during an asynchronous rea
 
   await assert.rejects(
     pending,
-    (error: unknown) =>
-      error instanceof ImportBatchError && error.code === "project_changed",
+    (error: unknown) => error instanceof ImportBatchError && error.code === "project_changed",
   );
 });
 
@@ -67,9 +63,12 @@ test("an import batch returns decoded sources only after every read succeeds", a
     () => revision,
   );
 
-  assert.deepEqual([...imported.sources], [
-    ["a.c", "int a;\n"],
-    ["b.h", "int b;\n"],
-  ]);
+  assert.deepEqual(
+    [...imported.sources],
+    [
+      ["a.c", "int a;\n"],
+      ["b.h", "int b;\n"],
+    ],
+  );
   assert.equal(imported.selectedPath, "b.h");
 });

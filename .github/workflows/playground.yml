@@ -57,6 +57,15 @@ jobs:
         run: npm ci
       - name: Reject known site dependency advisories
         run: npm audit --audit-level=moderate
+      # The playground is a page, and until now nothing here read its
+      # TypeScript for anything but types. oxlint and oxfmt are Rust tools,
+      # which is why they can run on every push without being noticed.
+      - name: Check site formatting
+        run: npm run fmt:check
+      - name: Lint the site sources
+        run: npm run lint
+      - name: Test the playground
+        run: npm test --workspace normfix-playground
       - name: Build the playground and the documentation
         run: npm run build
       - name: Upload preview artifact

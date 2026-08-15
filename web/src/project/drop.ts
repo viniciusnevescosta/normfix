@@ -72,7 +72,12 @@ interface FileEntryLike extends FileSystemEntryLike {
 }
 
 interface DirectoryEntryLike extends FileSystemEntryLike {
-  createReader(): { readEntries(onSuccess: (entries: FileSystemEntryLike[]) => void, onError: (error: unknown) => void): void };
+  createReader(): {
+    readEntries(
+      onSuccess: (entries: FileSystemEntryLike[]) => void,
+      onError: (error: unknown) => void,
+    ): void;
+  };
 }
 
 /**

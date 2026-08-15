@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import test from "node:test";
+import { test } from "vitest";
 
 test("remembering a student identity is an explicit opt-in", async () => {
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");

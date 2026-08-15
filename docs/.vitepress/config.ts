@@ -99,8 +99,7 @@ function localizedRoute(locale: string, page: string): string {
 // custom theme without the legacy VitePress plugin dependency.
 export default defineConfig({
   title: "normfix",
-  description:
-    "Safe automatic fixes and actionable diagnostics for the 42 Norm.",
+  description: "Safe automatic fixes and actionable diagnostics for the 42 Norm.",
   lang: "en-US",
   locales: {
     root: { label: "English", lang: "en-US", link: "/" },
@@ -479,7 +478,7 @@ export default defineConfig({
           { text: "check", link: "/commands/check" },
           { text: "budget", link: "/commands/budget" },
           { text: "preflight", link: "/commands/preflight" },
-              { text: "leaks", link: "/commands/leaks" },
+          { text: "leaks", link: "/commands/leaks" },
           { text: "explain", link: "/commands/explain" },
           { text: "undo", link: "/commands/undo" },
           { text: "upgrade", link: "/commands/upgrade" },
@@ -523,8 +522,7 @@ export default defineConfig({
     outline: [2, 3],
     search: { provider: "local" },
     editLink: {
-      pattern:
-        "https://github.com/viniciusnevescosta/normfix/edit/main/docs/:path",
+      pattern: "https://github.com/viniciusnevescosta/normfix/edit/main/docs/:path",
       text: "Edit this page on GitHub",
     },
     footer: {
@@ -547,9 +545,7 @@ export default defineConfig({
     },
   },
   transformHead({ page, title, description }) {
-    const route = page
-      .replace(/\.(?:md|html)$/, "")
-      .replace(/(^|\/)index$/, "$1");
+    const route = page.replace(/\.(?:md|html)$/, "").replace(/(^|\/)index$/, "$1");
     const withoutLocale = localePrefixes.reduce(
       (value, locale) => value.replace(new RegExp(`^${locale}/`), ""),
       route,
@@ -567,20 +563,36 @@ export default defineConfig({
       ["meta", { property: "og:image", content: `${siteOrigin}/og-normfix.png` }],
       ["meta", { property: "og:image:width", content: "1731" }],
       ["meta", { property: "og:image:height", content: "909" }],
-      ["meta", {
-        property: "og:image:alt",
-        content: "normfix — safe fixes and clear diagnostics for 42 C projects",
-      }],
+      [
+        "meta",
+        {
+          property: "og:image:alt",
+          content: "normfix — safe fixes and clear diagnostics for 42 C projects",
+        },
+      ],
       ["meta", { name: "twitter:card", content: "summary_large_image" }],
       ["meta", { name: "twitter:image", content: `${siteOrigin}/og-normfix.png` }],
-      ["meta", {
-        name: "twitter:image:alt",
-        content: "normfix — safe fixes and clear diagnostics for 42 C projects",
-      }],
-      ["meta", {
-        property: "og:locale",
-        content: activeLocale === "pt" ? "pt_BR" : activeLocale === "es" ? "es_ES" : activeLocale === "fr" ? "fr_FR" : "en_US",
-      }],
+      [
+        "meta",
+        {
+          name: "twitter:image:alt",
+          content: "normfix — safe fixes and clear diagnostics for 42 C projects",
+        },
+      ],
+      [
+        "meta",
+        {
+          property: "og:locale",
+          content:
+            activeLocale === "pt"
+              ? "pt_BR"
+              : activeLocale === "es"
+                ? "es_ES"
+                : activeLocale === "fr"
+                  ? "fr_FR"
+                  : "en_US",
+        },
+      ],
     ];
     if (pageKey !== undefined) {
       head.push(

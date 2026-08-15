@@ -21,8 +21,6 @@ export interface SourceEditor {
   usingMonaco: boolean;
 }
 
-
-
 interface EditorCallbacks {
   onChange: () => void;
   onRun: () => void;
@@ -113,8 +111,9 @@ async function createMonacoEditor(
 ): Promise<SourceEditor> {
   fallback.hidden = true;
   monacoContainer.hidden = false;
-  (globalThis as typeof globalThis & { MonacoEnvironment?: MonacoEnvironmentShape })
-    .MonacoEnvironment = {
+  (
+    globalThis as typeof globalThis & { MonacoEnvironment?: MonacoEnvironmentShape }
+  ).MonacoEnvironment = {
     getWorker: () => new EditorWorker(),
   };
   const monaco = await loadMonaco();
@@ -321,7 +320,10 @@ function registerMakefile(monaco: typeof Monaco): void {
         [/^[A-Za-z_][\w.-]*(?=\s*[:+?]?=)/, "variable.predefined"],
         [/^[^\s:#=]+(?=\s*:)/, "type.identifier"],
         [/:{1,2}|\+=|\?=|:=|=/, "operator"],
-        [/\b(?:include|ifdef|ifndef|ifeq|ifneq|else|endif|define|endef|export|unexport|override|private|vpath)\b/, "keyword"],
+        [
+          /\b(?:include|ifdef|ifndef|ifeq|ifneq|else|endif|define|endef|export|unexport|override|private|vpath)\b/,
+          "keyword",
+        ],
         [/"[^"\\]*(?:\\.[^"\\]*)*"/, "string"],
         [/'[^'\\]*(?:\\.[^'\\]*)*'/, "string"],
       ],

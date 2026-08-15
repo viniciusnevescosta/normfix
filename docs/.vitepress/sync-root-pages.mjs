@@ -20,8 +20,7 @@ const PAGES = [
   { from: "SECURITY.md", to: "security.md" },
 ];
 
-const BANNER =
-  "<!-- Generated from the repository root; edit that file, not this copy. -->";
+const BANNER = "<!-- Generated from the repository root; edit that file, not this copy. -->";
 
 for (const page of PAGES) {
   const source = join(root, page.from);

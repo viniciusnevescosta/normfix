@@ -31,6 +31,7 @@ import {
 import { ZipArchiveError, buildZip } from "./project/archive";
 import { markersFor } from "./project/markers";
 import { collectDroppedFiles, type DroppedFile } from "./project/drop";
+import { openDraftRow } from "./project/draft-row";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
@@ -347,13 +348,14 @@ function applyTranslations(): void {
   elements.twitterTitle.content = t("seoTitle");
   elements.twitterDescription.content = t("seoDescription");
   elements.ogUrl.content = canonical;
-  const ogLocale = state.locale === "pt"
-    ? "pt_BR"
-    : state.locale === "es"
-      ? "es_ES"
-      : state.locale === "fr"
-        ? "fr_FR"
-        : "en_US";
+  const ogLocale =
+    state.locale === "pt"
+      ? "pt_BR"
+      : state.locale === "es"
+        ? "es_ES"
+        : state.locale === "fr"
+          ? "fr_FR"
+          : "en_US";
   elements.ogLocale.content = ogLocale;
   ["en_US", "pt_BR", "es_ES", "fr_FR"]
     .filter((locale) => locale !== ogLocale)
@@ -483,74 +485,15 @@ function selectFile(path: string, syncCurrent = true): void {
   renderFileList();
 }
 
-/**
- * Opens a row in the list with its name waiting to be typed.
- *
- * An editor does not ask for a filename in a modal; it puts the entry where it
- * will live and lets you type over it. Enter commits, Escape and clicking away
- * abandon it, and a name the project cannot accept says so in place rather than
- * discarding what was typed — which is the whole reason the row stays open on a
- * bad name instead of closing and losing it.
- *
- * A folder is a prefix here, because a path is what this project stores. The
- * folder row asks for the prefix and then opens a file row inside it, so a
- * folder never exists holding nothing — there would be nothing to store.
- */
-function openDraftRow(kind: "file" | "folder", prefix = ""): void {
+/** Opens a draft row wired to this page's project state. */
+function openDraft(kind: "file" | "folder"): void {
   if (state.importing) return;
-  const row = document.createElement("div");
-  row.className = "file-item file-draft";
-  const dot = document.createElement("span");
-  dot.className = "file-dot";
-  dot.setAttribute("aria-hidden", "true");
-  const input = document.createElement("input");
-  input.className = "file-name";
-  input.setAttribute("aria-label", t(kind === "file" ? "addFile" : "addFolder"));
-  input.placeholder = kind === "file" ? "new_file.c" : "src";
-  const error = document.createElement("span");
-  error.className = "file-draft-error";
-  row.append(dot, input, error);
-  elements.fileList.append(row);
-  input.focus();
-
-  let settled = false;
-  const close = (): void => {
-    if (settled) return;
-    settled = true;
-    row.remove();
-  };
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      close();
-      state.editor?.focus();
-      return;
-    }
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    const typed = input.value.trim();
-    if (typed.length === 0) {
-      close();
-      return;
-    }
-    if (kind === "folder") {
-      close();
-      // The prefix only becomes real once a file is created inside it.
-      openDraftRow("file", `${prefix}${typed.replace(/\/+$/, "")}/`);
-      return;
-    }
-    try {
-      addSource(`${prefix}${typed}`, "");
-      close();
-      state.editor?.focus();
-    } catch (failure) {
-      error.textContent = failure instanceof Error ? failure.message : String(failure);
-      input.select();
-    }
-  });
-  input.addEventListener("blur", () => {
-    // Losing focus abandons the row, but not while it is showing why a name was
-    // refused: the reader is reading it.
-    if (error.textContent === "") close();
+  openDraftRow({
+    container: elements.fileList,
+    kind,
+    label: t(kind === "file" ? "addFile" : "addFolder"),
+    create: (path) => addSource(path, ""),
+    onClose: () => state.editor?.focus(),
   });
 }
 
@@ -637,7 +580,11 @@ function addSource(path: string, source = ""): void {
   if (state.importing) throw new Error(t("waitForImport"));
   syncEditor();
   const normalized = normalizeSourcePath(path);
-  if ([...state.files.keys()].some((loaded) => portablePathKey(loaded) === portablePathKey(normalized))) {
+  if (
+    [...state.files.keys()].some(
+      (loaded) => portablePathKey(loaded) === portablePathKey(normalized),
+    )
+  ) {
     throw new Error(t("importConflict", { path: normalized }));
   }
   const proposed = new Map(state.files);
@@ -722,11 +669,7 @@ async function loadFiles(incoming: readonly DroppedFile[], skipped = 0): Promise
 
     let imported: Awaited<ReturnType<typeof readImportBatch>>;
     try {
-      imported = await readImportBatch(
-        candidates.values(),
-        startingRevision,
-        () => state.revision,
-      );
+      imported = await readImportBatch(candidates.values(), startingRevision, () => state.revision);
     } catch (error) {
       if (error instanceof ImportBatchError && error.code === "project_changed") {
         throw new Error(t("importChanged"));
@@ -805,9 +748,10 @@ async function runFormatter(): Promise<void> {
         return [file.path, { ...file, inputSource }];
       }),
     );
-    state.selectedResult = state.selected && state.results.has(state.selected)
-      ? state.selected
-      : response.files[0]?.path ?? null;
+    state.selectedResult =
+      state.selected && state.results.has(state.selected)
+        ? state.selected
+        : (response.files[0]?.path ?? null);
     renderRunResult(response.summary);
     paintMarkers();
     setRuntimeMessage("ready", "wasmReady");
@@ -917,17 +861,12 @@ function renderDiagnostics(result: ResultRecord): void {
   elements.diagnosticsView.replaceChildren();
   if (result.error || !result.stable) {
     elements.diagnosticsView.append(
-      emptyState(
-        t("fileUnchanged"),
-        result.error || t("unstableFormatter"),
-      ),
+      emptyState(t("fileUnchanged"), result.error || t("unstableFormatter")),
     );
     return;
   }
   if (result.diagnostics.length === 0) {
-    elements.diagnosticsView.append(
-      emptyState(t("noDiagnostics"), t("cliCoverage")),
-    );
+    elements.diagnosticsView.append(emptyState(t("noDiagnostics"), t("cliCoverage")));
   } else {
     for (const diagnostic of result.diagnostics) {
       const template = elements.diagnosticTemplate.content.firstElementChild;
@@ -997,13 +936,7 @@ function renderBudget(budgets: BrowserBudget[]): HTMLElement {
   table.className = "budget-table";
   const header = document.createElement("thead");
   const headerRow = document.createElement("tr");
-  for (const label of [
-    t("function"),
-    t("line"),
-    t("bodyLines"),
-    t("variables"),
-    t("parameters"),
-  ]) {
+  for (const label of [t("function"), t("line"), t("bodyLines"), t("variables"), t("parameters")]) {
     const cell = document.createElement("th");
     cell.scope = "col";
     cell.textContent = label;
@@ -1067,10 +1000,10 @@ function applySelectedResult(): void {
 function applicableResults(): ResultRecord[] {
   return [...state.results.values()].filter(
     (result) =>
-      !result.error
-      && result.stable
-      && state.files.get(result.path) === result.inputSource
-      && result.formatted !== result.inputSource,
+      !result.error &&
+      result.stable &&
+      state.files.get(result.path) === result.inputSource &&
+      result.formatted !== result.inputSource,
   );
 }
 
@@ -1152,18 +1085,12 @@ function downloadCurrent(): void {
 
 function downloadAll(): void {
   const files = [...state.results.values()]
-    .filter(
-      (file) =>
-        !file.error && file.stable && state.files.get(file.path) === file.inputSource,
-    )
+    .filter((file) => !file.error && file.stable && state.files.get(file.path) === file.inputSource)
     .map((file) => ({ path: file.path, source: file.formatted }));
   if (files.length === 0) return;
   try {
     const archive = buildZip(files satisfies ProjectSourceFile[]);
-    downloadBlob(
-      new Blob([archive], { type: "application/zip" }),
-      "normfix-formatted.zip",
-    );
+    downloadBlob(new Blob([archive], { type: "application/zip" }), "normfix-formatted.zip");
   } catch (error) {
     if (error instanceof ZipArchiveError) {
       setRuntime("error", t("archivePath", { path: error.path }));
@@ -1240,7 +1167,7 @@ async function importDrop(transfer: DataTransfer | null): Promise<void> {
 }
 
 elements.filePicker.addEventListener("change", () => {
-  const chosen = [...elements.filePicker.files ?? []].map((file): DroppedFile => ({
+  const chosen = [...(elements.filePicker.files ?? [])].map((file): DroppedFile => ({
     path: file.webkitRelativePath || file.name,
     file,
   }));
@@ -1273,8 +1200,8 @@ elements.fileKinds.addEventListener("change", (event) => {
   elements.newFileName.focus();
 });
 
-elements.addFile.addEventListener("click", () => openDraftRow("file"));
-elements.addFolder.addEventListener("click", () => openDraftRow("folder"));
+elements.addFile.addEventListener("click", () => openDraft("file"));
+elements.addFolder.addEventListener("click", () => openDraft("folder"));
 elements.newFileForm.addEventListener("submit", (event) => {
   if (!(event instanceof SubmitEvent)) return;
   if (!(event.submitter instanceof HTMLButtonElement) || event.submitter.value !== "create") {

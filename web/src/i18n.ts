@@ -5,7 +5,8 @@ export type Locale = (typeof SUPPORTED_LOCALES)[number];
 const english = {
   skipEditor: "Skip to editor",
   seoTitle: "normfix browser playground · 42 C formatter",
-  seoDescription: "Format 42 School C, headers, Makefiles, and Markdown privately in your browser with normfix WebAssembly.",
+  seoDescription:
+    "Format 42 School C, headers, Makefiles, and Markdown privately in your browser with normfix WebAssembly.",
   docs: "Documentation",
   github: "GitHub",
   githubTitle: "Open the official normfix repository on GitHub",
@@ -23,7 +24,8 @@ const english = {
   resultViews: "Result views",
   officialDependencies: "Official dependencies",
   introTitle: "Browser playground",
-  introText: "Safe formatting and diagnostics in this tab. Source and identity never leave your browser.",
+  introText:
+    "Safe formatting and diagnostics in this tab. Source and identity never leave your browser.",
   project: "Project",
   sourceFiles: "Project files",
   addFile: "Add a project file",
@@ -36,12 +38,14 @@ const english = {
   rememberIdentity: "Remember on this device",
   saveIdentity: "Save",
   forgetIdentity: "Forget",
-  identityPrivacy: "Kept in this browser only. It never leaves this tab, and no server ever sees it.",
+  identityPrivacy:
+    "Kept in this browser only. It never leaves this tab, and no server ever sees it.",
   identitySaved: "Identity saved locally.",
   identitySession: "Identity will be used for this tab only.",
   identityForgotten: "Saved identity removed.",
   invalidIdentity: "Enter a valid 42 student email.",
-  storageUnavailable: "Browser storage is unavailable; the identity will be used for this tab only.",
+  storageUnavailable:
+    "Browser storage is unavailable; the identity will be used for this tab only.",
   input: "Input",
   linesBytes: "{lines} lines · {bytes} bytes",
   safeMode: "Safe mode only. No destructive removal or semantic rewrite.",
@@ -63,7 +67,8 @@ const english = {
   diff: "Diff",
   scope: "Scope",
   browserPreview: "Browser preview",
-  scopeText: "The playground runs native safe C/header, Makefile, and Markdown formatting. Native diagnostics remain in English. The CLI adds the official checker, compiler, Git scopes, transactions, backups, and undo.",
+  scopeText:
+    "The playground runs native safe C/header, Makefile, and Markdown formatting. Native diagnostics remain in English. The CLI adds the official checker, compiler, Git scopes, transactions, backups, and undo.",
   dependencies: "Official tools",
   norminette: "Norminette",
   wsl: "WSL for Windows CLI",
@@ -98,7 +103,8 @@ const english = {
   parameters: "Parameters",
   onlySupported: "Only .c, .h, .md, and Makefile inputs are supported.",
   importConflict: "{path} is already loaded. Remove it before importing a replacement.",
-  portablePath: "Use one NFC-normalized portable relative path without empty, dot, reserved, or trailing-dot segments.",
+  portablePath:
+    "Use one NFC-normalized portable relative path without empty, dot, reserved, or trailing-dot segments.",
   pathBytes: "Paths must fit within {count} UTF-8 bytes.",
   emptyProject: "Select or add at least one supported project file.",
   maxFiles: "The playground accepts at most {count} files per run.",
@@ -121,7 +127,8 @@ const english = {
   dropAccepted: "Takes .c, .h, .md, and Makefile. Everything else is skipped.",
   githubFallback: "GitHub star count unavailable; showing the last bundled count.",
   offlineAvailability: "Offline availability",
-  offlineInstallable: "Once this page has loaded, it keeps working without a network, and your browser can install it as an app.",
+  offlineInstallable:
+    "Once this page has loaded, it keeps working without a network, and your browser can install it as an app.",
   fullToolLink: "Get the full tool",
   fullToolNote: "The download runs the official checker and the compiler, which this page cannot.",
   fileKind: "Kind",
@@ -141,7 +148,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     ...english,
     skipEditor: "Ir para o editor",
     seoTitle: "normfix playground · formatador C para a 42",
-    seoDescription: "Formate C, headers, Makefiles e Markdown da 42 com privacidade no navegador usando WebAssembly.",
+    seoDescription:
+      "Formate C, headers, Makefiles e Markdown da 42 com privacidade no navegador usando WebAssembly.",
     docs: "Documentação",
     githubTitle: "Abrir o repositório oficial do normfix no GitHub",
     language: "Idioma",
@@ -158,7 +166,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     resultViews: "Visualizações do resultado",
     officialDependencies: "Dependências oficiais",
     introTitle: "Playground no navegador",
-    introText: "Formatação e diagnósticos seguros nesta aba. Código e identidade nunca saem do navegador.",
+    introText:
+      "Formatação e diagnósticos seguros nesta aba. Código e identidade nunca saem do navegador.",
     project: "Projeto",
     sourceFiles: "Arquivos do projeto",
     addFile: "Adicionar arquivo ao projeto",
@@ -175,7 +184,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     identitySession: "A identidade será usada apenas nesta aba.",
     identityForgotten: "Identidade salva removida.",
     invalidIdentity: "Digite um e-mail de estudante da 42 válido.",
-    storageUnavailable: "O armazenamento do navegador não está disponível; a identidade será usada apenas nesta aba.",
+    storageUnavailable:
+      "O armazenamento do navegador não está disponível; a identidade será usada apenas nesta aba.",
     input: "Entrada",
     linesBytes: "{lines} linhas · {bytes} bytes",
     safeMode: "Apenas modo seguro. Sem remoção destrutiva ou reescrita semântica.",
@@ -197,7 +207,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     diff: "Diff",
     scope: "Escopo",
     browserPreview: "Prévia no navegador",
-    scopeText: "O playground executa formatação nativa e segura de C/headers, Makefile e Markdown. Os diagnósticos nativos continuam em inglês. A CLI acrescenta o verificador oficial, compilador, escopos Git, transações, backups e undo.",
+    scopeText:
+      "O playground executa formatação nativa e segura de C/headers, Makefile e Markdown. Os diagnósticos nativos continuam em inglês. A CLI acrescenta o verificador oficial, compilador, escopos Git, transações, backups e undo.",
     dependencies: "Ferramentas oficiais",
     wsl: "WSL para a CLI no Windows",
     rust: "Rust para compilar do código-fonte",
@@ -209,7 +220,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     loadingFormatter: "Carregando formatador…",
     wasmReady: "Pronto",
     wasmRequired: "O formatador não carregou",
-    wasmBuildHelp: "Recarregue a página. Se continuar falhando, seu navegador pode estar bloqueando parte dela.",
+    wasmBuildHelp:
+      "Recarregue a página. Se continuar falhando, seu navegador pode estar bloqueando parte dela.",
     formatting: "Formatando nesta aba…",
     filesSummary: "arquivos",
     changedSummary: "alterados",
@@ -218,7 +230,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     failedSummary: "falhas",
     noByteChanges: "Nenhuma alteração de bytes proposta.",
     fileUnchanged: "Este arquivo não foi alterado",
-    unstableFormatter: "O formatador não chegou a um ponto fixo; o resultado parcial foi descartado.",
+    unstableFormatter:
+      "O formatador não chegou a um ponto fixo; o resultado parcial foi descartado.",
     noDiagnostics: "Nenhum diagnóstico nativo restante",
     cliCoverage: "Execute a CLI para a cobertura do verificador oficial e do compilador.",
     next: "Próximo passo",
@@ -231,16 +244,19 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     parameters: "Parâmetros",
     onlySupported: "Apenas arquivos .c, .h, .md e Makefile são aceitos.",
     importConflict: "{path} já está carregado. Remova-o antes de importar um substituto.",
-    portablePath: "Use um caminho relativo portátil normalizado em NFC, sem segmentos vazios, ponto, nomes reservados ou ponto final.",
+    portablePath:
+      "Use um caminho relativo portátil normalizado em NFC, sem segmentos vazios, ponto, nomes reservados ou ponto final.",
     pathBytes: "Os caminhos devem caber em {count} bytes UTF-8.",
     emptyProject: "Selecione ou adicione ao menos um arquivo de projeto aceito.",
     maxFiles: "O playground aceita no máximo {count} arquivos por execução.",
-    pathCollision: "{path} colide com outro caminho em plataformas sem diferenciação de maiúsculas.",
+    pathCollision:
+      "{path} colide com outro caminho em plataformas sem diferenciação de maiúsculas.",
     fileTooLarge: "{path} excede o limite de {count} bytes do navegador.",
     projectTooLarge: "Os arquivos selecionados excedem o limite de {count} bytes do projeto.",
     waitForImport: "Aguarde a importação atual terminar.",
     importRunning: "Já existe uma importação em andamento.",
-    importDuplicate: "{path} duplica outro caminho selecionado em plataformas sem diferenciação de maiúsculas.",
+    importDuplicate:
+      "{path} duplica outro caminho selecionado em plataformas sem diferenciação de maiúsculas.",
     invalidUtf8: "{path} não é um arquivo de texto UTF-8 válido.",
     importChanged: "O projeto mudou durante o carregamento; a importação foi cancelada.",
     responseSchema: "O formatador retornou um esquema de resposta incompatível.",
@@ -254,7 +270,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     dropAccepted: "Aceita .c, .h, .md e Makefile. O resto é ignorado.",
     githubFallback: "Contagem de estrelas indisponível; exibindo o último valor incluído.",
     offlineAvailability: "Disponibilidade offline",
-    offlineInstallable: "Depois que esta página carrega, ela continua funcionando sem rede, e o navegador pode instalá-la como aplicativo.",
+    offlineInstallable:
+      "Depois que esta página carrega, ela continua funcionando sem rede, e o navegador pode instalá-la como aplicativo.",
     fullToolLink: "Baixar a ferramenta completa",
     fullToolNote: "O download roda o verificador oficial e o compilador, que esta página não tem.",
     fileKind: "Tipo",
@@ -269,7 +286,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     ...english,
     skipEditor: "Ir al editor",
     seoTitle: "normfix playground · formateador C para 42",
-    seoDescription: "Formatea C, headers, Makefiles y Markdown de 42 de forma privada en el navegador con WebAssembly.",
+    seoDescription:
+      "Formatea C, headers, Makefiles y Markdown de 42 de forma privada en el navegador con WebAssembly.",
     docs: "Documentación",
     githubTitle: "Abrir el repositorio oficial de normfix en GitHub",
     language: "Idioma",
@@ -286,7 +304,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     resultViews: "Vistas del resultado",
     officialDependencies: "Dependencias oficiales",
     introTitle: "Playground en el navegador",
-    introText: "Formato y diagnósticos seguros en esta pestaña. El código y la identidad nunca salen del navegador.",
+    introText:
+      "Formato y diagnósticos seguros en esta pestaña. El código y la identidad nunca salen del navegador.",
     project: "Proyecto",
     sourceFiles: "Archivos del proyecto",
     addFile: "Añadir un archivo al proyecto",
@@ -298,12 +317,14 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     rememberIdentity: "Recordar en este dispositivo",
     saveIdentity: "Guardar",
     forgetIdentity: "Olvidar",
-    identityPrivacy: "Se guarda solo en este navegador. No sale de esta pestaña, y ningún servidor lo ve.",
+    identityPrivacy:
+      "Se guarda solo en este navegador. No sale de esta pestaña, y ningún servidor lo ve.",
     identitySaved: "Identidad guardada localmente.",
     identitySession: "La identidad se usará solo en esta pestaña.",
     identityForgotten: "Identidad guardada eliminada.",
     invalidIdentity: "Introduce un correo de estudiante de 42 válido.",
-    storageUnavailable: "El almacenamiento del navegador no está disponible; la identidad se usará solo en esta pestaña.",
+    storageUnavailable:
+      "El almacenamiento del navegador no está disponible; la identidad se usará solo en esta pestaña.",
     input: "Entrada",
     linesBytes: "{lines} líneas · {bytes} bytes",
     safeMode: "Solo modo seguro. Sin eliminación destructiva ni reescritura semántica.",
@@ -324,7 +345,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     diagnostics: "Diagnósticos",
     scope: "Alcance",
     browserPreview: "Vista previa del navegador",
-    scopeText: "El playground ejecuta formato nativo y seguro de C/headers, Makefile y Markdown. Los diagnósticos nativos siguen en inglés. La CLI añade el verificador oficial, compilador, ámbitos Git, transacciones, copias y undo.",
+    scopeText:
+      "El playground ejecuta formato nativo y seguro de C/headers, Makefile y Markdown. Los diagnósticos nativos siguen en inglés. La CLI añade el verificador oficial, compilador, ámbitos Git, transacciones, copias y undo.",
     dependencies: "Herramientas oficiales",
     wsl: "WSL para la CLI en Windows",
     rust: "Rust para compilar desde el código fuente",
@@ -336,7 +358,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     loadingFormatter: "Cargando formateador…",
     wasmReady: "Listo",
     wasmRequired: "El formateador no cargó",
-    wasmBuildHelp: "Recarga la página. Si sigue fallando, tu navegador puede estar bloqueando parte de ella.",
+    wasmBuildHelp:
+      "Recarga la página. Si sigue fallando, tu navegador puede estar bloqueando parte de ella.",
     formatting: "Formateando en esta pestaña…",
     filesSummary: "archivos",
     changedSummary: "cambiados",
@@ -358,16 +381,19 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     parameters: "Parámetros",
     onlySupported: "Solo se admiten archivos .c, .h, .md y Makefile.",
     importConflict: "{path} ya está cargado. Elimínalo antes de importar un reemplazo.",
-    portablePath: "Usa una ruta relativa portátil normalizada en NFC, sin segmentos vacíos, puntos, nombres reservados ni punto final.",
+    portablePath:
+      "Usa una ruta relativa portátil normalizada en NFC, sin segmentos vacíos, puntos, nombres reservados ni punto final.",
     pathBytes: "Las rutas deben caber en {count} bytes UTF-8.",
     emptyProject: "Selecciona o añade al menos un archivo de proyecto compatible.",
     maxFiles: "El playground admite como máximo {count} archivos por ejecución.",
-    pathCollision: "{path} entra en conflicto con otra ruta en plataformas que no distinguen mayúsculas.",
+    pathCollision:
+      "{path} entra en conflicto con otra ruta en plataformas que no distinguen mayúsculas.",
     fileTooLarge: "{path} supera el límite del navegador de {count} bytes.",
     projectTooLarge: "Los archivos seleccionados superan el límite del proyecto de {count} bytes.",
     waitForImport: "Espera a que termine la importación actual.",
     importRunning: "Ya hay una importación en curso.",
-    importDuplicate: "{path} duplica otra ruta seleccionada en plataformas que no distinguen mayúsculas.",
+    importDuplicate:
+      "{path} duplica otra ruta seleccionada en plataformas que no distinguen mayúsculas.",
     invalidUtf8: "{path} no es texto UTF-8 válido.",
     importChanged: "El proyecto cambió durante la carga; se canceló la importación.",
     responseSchema: "El formateador devolvió un esquema de respuesta incompatible.",
@@ -379,11 +405,14 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     skippedOther: "{count} archivos omitidos porque normfix no los formatea.",
     dropHere: "Suelta archivos o una carpeta de proyecto",
     dropAccepted: "Acepta .c, .h, .md y Makefile. Lo demás se omite.",
-    githubFallback: "No se pudo obtener la cantidad de estrellas; se muestra el último valor incluido.",
+    githubFallback:
+      "No se pudo obtener la cantidad de estrellas; se muestra el último valor incluido.",
     offlineAvailability: "Disponibilidad sin conexión",
-    offlineInstallable: "Una vez cargada esta página, sigue funcionando sin red, y el navegador puede instalarla como aplicación.",
+    offlineInstallable:
+      "Una vez cargada esta página, sigue funcionando sin red, y el navegador puede instalarla como aplicación.",
     fullToolLink: "Descargar la herramienta completa",
-    fullToolNote: "La descarga ejecuta el verificador oficial y el compilador, que esta página no tiene.",
+    fullToolNote:
+      "La descarga ejecuta el verificador oficial y el compilador, que esta página no tiene.",
     fileKind: "Tipo",
     folderHint: "Una ruta como src/utils.c crea la carpeta con él.",
     offlineActive: "Sin conexión: sigue funcionando",
@@ -396,7 +425,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     ...english,
     skipEditor: "Aller à l’éditeur",
     seoTitle: "normfix playground · formateur C pour 42",
-    seoDescription: "Formatez C, headers, Makefiles et Markdown de 42 en privé dans le navigateur avec WebAssembly.",
+    seoDescription:
+      "Formatez C, headers, Makefiles et Markdown de 42 en privé dans le navigateur avec WebAssembly.",
     docs: "Guides",
     githubTitle: "Ouvrir le dépôt officiel de normfix sur GitHub",
     language: "Langue",
@@ -413,7 +443,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     resultViews: "Vues du résultat",
     officialDependencies: "Dépendances officielles",
     introTitle: "Playground dans le navigateur",
-    introText: "Formatage et diagnostics sûrs dans cet onglet. Le code et l’identité ne quittent jamais le navigateur.",
+    introText:
+      "Formatage et diagnostics sûrs dans cet onglet. Le code et l’identité ne quittent jamais le navigateur.",
     project: "Projet",
     sourceFiles: "Fichiers du projet",
     addFile: "Ajouter un fichier au projet",
@@ -425,12 +456,14 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     rememberIdentity: "Mémoriser sur cet appareil",
     saveIdentity: "Enregistrer",
     forgetIdentity: "Oublier",
-    identityPrivacy: "Gardé dans ce navigateur seulement. Rien ne quitte cet onglet, et aucun serveur ne le voit.",
+    identityPrivacy:
+      "Gardé dans ce navigateur seulement. Rien ne quitte cet onglet, et aucun serveur ne le voit.",
     identitySaved: "Identité enregistrée localement.",
     identitySession: "L’identité sera utilisée uniquement dans cet onglet.",
     identityForgotten: "Identité enregistrée supprimée.",
     invalidIdentity: "Saisissez une adresse étudiante 42 valide.",
-    storageUnavailable: "Le stockage du navigateur est indisponible ; l’identité sera utilisée uniquement dans cet onglet.",
+    storageUnavailable:
+      "Le stockage du navigateur est indisponible ; l’identité sera utilisée uniquement dans cet onglet.",
     input: "Entrée",
     linesBytes: "{lines} lignes · {bytes} octets",
     safeMode: "Mode sûr uniquement. Aucune suppression destructive ni réécriture sémantique.",
@@ -451,7 +484,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     diagnostics: "Résultats du diagnostic",
     scope: "Portée",
     browserPreview: "Aperçu navigateur",
-    scopeText: "Le playground exécute le formatage natif et sûr de C/headers, Makefile et Markdown. Les diagnostics natifs restent en anglais. La CLI ajoute le vérificateur officiel, le compilateur, les portées Git, les transactions, les sauvegardes et undo.",
+    scopeText:
+      "Le playground exécute le formatage natif et sûr de C/headers, Makefile et Markdown. Les diagnostics natifs restent en anglais. La CLI ajoute le vérificateur officiel, le compilateur, les portées Git, les transactions, les sauvegardes et undo.",
     dependencies: "Outils officiels",
     wsl: "WSL pour la CLI sous Windows",
     rust: "Rust pour compiler depuis les sources",
@@ -463,7 +497,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     loadingFormatter: "Chargement du formateur…",
     wasmReady: "Prêt",
     wasmRequired: "Le formateur n’a pas pu charger",
-    wasmBuildHelp: "Rechargez la page. Si l’échec persiste, votre navigateur en bloque peut-être une partie.",
+    wasmBuildHelp:
+      "Rechargez la page. Si l’échec persiste, votre navigateur en bloque peut-être une partie.",
     formatting: "Formatage dans cet onglet…",
     filesSummary: "fichiers",
     changedSummary: "modifiés",
@@ -472,7 +507,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     failedSummary: "échecs",
     noByteChanges: "Aucune modification d’octets proposée.",
     fileUnchanged: "Ce fichier n’a pas été modifié",
-    unstableFormatter: "Le formateur n’a pas atteint de point fixe ; le résultat partiel a été ignoré.",
+    unstableFormatter:
+      "Le formateur n’a pas atteint de point fixe ; le résultat partiel a été ignoré.",
     noDiagnostics: "Aucun diagnostic natif restant",
     cliCoverage: "Exécutez la CLI pour la couverture du vérificateur officiel et du compilateur.",
     next: "Étape suivante",
@@ -485,16 +521,19 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     parameters: "Paramètres",
     onlySupported: "Seuls les fichiers .c, .h, .md et Makefile sont pris en charge.",
     importConflict: "{path} est déjà chargé. Supprimez-le avant d’importer un remplacement.",
-    portablePath: "Utilisez un chemin relatif portable normalisé NFC, sans segment vide, point, nom réservé ni point final.",
+    portablePath:
+      "Utilisez un chemin relatif portable normalisé NFC, sans segment vide, point, nom réservé ni point final.",
     pathBytes: "Les chemins doivent tenir dans {count} octets UTF-8.",
     emptyProject: "Sélectionnez ou ajoutez au moins un fichier de projet pris en charge.",
     maxFiles: "Le playground accepte au plus {count} fichiers par exécution.",
-    pathCollision: "{path} entre en conflit avec un autre chemin sur une plateforme insensible à la casse.",
+    pathCollision:
+      "{path} entre en conflit avec un autre chemin sur une plateforme insensible à la casse.",
     fileTooLarge: "{path} dépasse la limite navigateur de {count} octets.",
     projectTooLarge: "Les sources sélectionnées dépassent la limite projet de {count} octets.",
     waitForImport: "Attendez la fin de l’importation en cours.",
     importRunning: "Une importation est déjà en cours.",
-    importDuplicate: "{path} duplique un autre chemin sélectionné sur une plateforme insensible à la casse.",
+    importDuplicate:
+      "{path} duplique un autre chemin sélectionné sur une plateforme insensible à la casse.",
     invalidUtf8: "{path} n’est pas un texte UTF-8 valide.",
     importChanged: "Le projet a changé pendant le chargement ; l’importation a été annulée.",
     responseSchema: "Le formateur a renvoyé un schéma de réponse incompatible.",
@@ -508,16 +547,20 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     dropAccepted: "Accepte .c, .h, .md et Makefile. Le reste est ignoré.",
     githubFallback: "Nombre d’étoiles indisponible ; la dernière valeur intégrée est affichée.",
     offlineAvailability: "Disponibilité hors ligne",
-    offlineInstallable: "Une fois cette page chargée, elle continue de fonctionner sans réseau, et le navigateur peut l’installer comme application.",
+    offlineInstallable:
+      "Une fois cette page chargée, elle continue de fonctionner sans réseau, et le navigateur peut l’installer comme application.",
     fullToolLink: "Télécharger l’outil complet",
-    fullToolNote: "Le téléchargement exécute le vérificateur officiel et le compilateur, que cette page n’a pas.",
+    fullToolNote:
+      "Le téléchargement exécute le vérificateur officiel et le compilateur, que cette page n’a pas.",
     fileKind: "Type",
     folderHint: "Un chemin comme src/utils.c crée le dossier avec lui.",
     offlineActive: "Hors ligne — toujours fonctionnel",
-    offlineActiveTitle: "Il n’y a pas de réseau. Le formatage s’exécute sur cet appareil comme avant.",
+    offlineActiveTitle:
+      "Il n’y a pas de réseau. Le formatage s’exécute sur cet appareil comme avant.",
     offlineUpdate: "Nouvelle version prête",
     offlineUpdateAction: "Recharger",
-    offlineUpdateTitle: "Rechargez cet onglet pour utiliser la version qui vient d’être téléchargée.",
+    offlineUpdateTitle:
+      "Rechargez cet onglet pour utiliser la version qui vient d’être téléchargée.",
   },
 };
 
@@ -529,9 +572,7 @@ const intentionallyIdentical = new Set<MessageKey>([
 ]);
 
 function placeholders(message: string): string[] {
-  return [...message.matchAll(/\{([a-z][a-zA-Z0-9]*)\}/g)]
-    .map((match) => match[1] ?? "")
-    .sort();
+  return [...message.matchAll(/\{([a-z][a-zA-Z0-9]*)\}/g)].map((match) => match[1] ?? "").sort();
 }
 
 export function translationCatalogueProblems(): string[] {

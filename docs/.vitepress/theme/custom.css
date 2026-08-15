@@ -10,8 +10,7 @@
   --vp-c-brand-3: #325a43;
   --vp-c-brand-soft: rgb(143 199 168 / 16%);
 
-  --vp-font-family-mono: "SFMono-Regular", "Cascadia Mono", "Liberation Mono",
-    Menlo, monospace;
+  --vp-font-family-mono: "SFMono-Regular", "Cascadia Mono", "Liberation Mono", Menlo, monospace;
 }
 
 .dark {
@@ -56,11 +55,7 @@
 /* Home hero, tuned to the playground accent. */
 :root {
   --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(
-    120deg,
-    var(--vp-c-brand-1),
-    #86aeca
-  );
+  --vp-home-hero-name-background: linear-gradient(120deg, var(--vp-c-brand-1), #86aeca);
   --vp-home-hero-image-background-image: linear-gradient(
     -45deg,
     var(--vp-c-brand-soft),

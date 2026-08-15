@@ -63,21 +63,28 @@ const NormfixLayout = defineComponent({
       const activeLocale = locale();
       return ["pt", "es", "fr"].includes(activeLocale) ? `/${activeLocale}/` : "/";
     };
-    const playgroundTitle = () => ({
-      pt: "Abrir o playground WebAssembly no navegador",
-      es: "Abrir el playground WebAssembly en el navegador",
-      fr: "Ouvrir le playground WebAssembly dans le navigateur",
-    })[locale()] ?? "Open the in-browser WebAssembly playground";
+    const playgroundTitle = () =>
+      ({
+        pt: "Abrir o playground WebAssembly no navegador",
+        es: "Abrir el playground WebAssembly en el navegador",
+        fr: "Ouvrir le playground WebAssembly dans le navigateur",
+      })[locale()] ?? "Open the in-browser WebAssembly playground";
     const renderDiagrams = async () => {
       await nextTick();
-      const nodes = [...document.querySelectorAll<HTMLElement>("pre.mermaid:not([data-processed])")];
+      const nodes = [
+        ...document.querySelectorAll<HTMLElement>("pre.mermaid:not([data-processed])"),
+      ];
       if (nodes.length > 0) {
         const { default: mermaid } = await import("mermaid");
         await mermaid.run({ nodes });
       }
     };
     onMounted(() => void renderDiagrams());
-    watch(() => route.path, () => void renderDiagrams(), { flush: "post" });
+    watch(
+      () => route.path,
+      () => void renderDiagrams(),
+      { flush: "post" },
+    );
 
     // A URL the reader typed or was sent is a decision: it is recorded, never
     // overridden. Only the language-neutral landing route is redirected, and
@@ -87,9 +94,7 @@ const NormfixLayout = defineComponent({
       // `route.path` may or may not carry the `/docs/` base depending on how
       // VitePress resolved the request, so the check tolerates both rather than
       // silently never firing.
-      const withoutBase = route.path
-        .replace(/^\/docs/, "")
-        .replace(/index\.html$/, "");
+      const withoutBase = route.path.replace(/^\/docs/, "").replace(/index\.html$/, "");
       const landing = withoutBase === "/" || withoutBase === "";
       if (!landing) {
         rememberLocale(current);

@@ -1,7 +1,6 @@
 /// The single public GitHub endpoint this page reads, and how it is read.
 
-export const GITHUB_REPOSITORY_API =
-  "https://api.github.com/repos/viniciusnevescosta/normfix";
+export const GITHUB_REPOSITORY_API = "https://api.github.com/repos/viniciusnevescosta/normfix";
 
 /// Request options for the repository metadata request.
 ///
@@ -26,7 +25,5 @@ export function githubRequestInit(): RequestInit {
 export function starCount(payload: unknown): number | null {
   if (typeof payload !== "object" || payload === null) return null;
   const value = (payload as { stargazers_count?: unknown }).stargazers_count;
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
-    ? value
-    : null;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }

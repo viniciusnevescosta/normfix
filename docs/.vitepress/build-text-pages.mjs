@@ -47,7 +47,7 @@ export function plainText(source) {
   const withoutFrontmatter = source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
   return `${withoutFrontmatter
     .split("\n")
-    .filter((line) => !/^:::/.test(line.trim()))
+    .filter((line) => !line.trim().startsWith(":::"))
     .join("\n")
     .replace(/^```[a-z]*\s*\[[^\]]*\]\s*$/gim, "```")
     .replace(/\n{3,}/g, "\n\n")

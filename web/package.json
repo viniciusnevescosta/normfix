@@ -13,14 +13,20 @@
     "build:vercel": "./scripts/vercel-build.sh",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "check": "npm run typecheck && npm test && vite build"
+    "test": "vitest run",
+    "check": "npm run fmt:check && npm run lint && npm run typecheck && npm test && vite build",
+    "test:watch": "vitest",
+    "lint": "oxlint src tests",
+    "fmt:check": "oxfmt --check src tests"
   },
   "devDependencies": {
     "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "happy-dom": "^20.11.2",
     "monaco-editor": "0.56.0",
     "tsx": "4.23.12",
     "typescript": "7.0.2",
-    "vite": "8.2.1"
+    "vite": "8.2.1",
+    "vitest": "^4.1.10"
   }
 }

@@ -19,14 +19,14 @@ export type SourcePathProblem =
 
 export function sourcePathProblem(path: string): SourcePathProblem | null {
   if (
-    path.length === 0
-    || path.startsWith("/")
-    || path.includes("\\")
-    || path.includes(":")
-    || path.normalize("NFC") !== path
-    || path.split("/").some((part) => part === "" || part === "." || part === "..")
-    || path.split("/").some((part) => /[. ]$/.test(part) || windowsReservedName(part))
-    || [...path].some((character) => /\p{Cc}/u.test(character))
+    path.length === 0 ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    path.includes(":") ||
+    path.normalize("NFC") !== path ||
+    path.split("/").some((part) => part === "" || part === "." || part === "..") ||
+    path.split("/").some((part) => /[. ]$/.test(part) || windowsReservedName(part)) ||
+    [...path].some((character) => /\p{Cc}/u.test(character))
   ) {
     return { code: "portable_path" };
   }

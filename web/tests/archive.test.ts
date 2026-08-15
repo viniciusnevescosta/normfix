@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -81,12 +81,15 @@ test("an empty project still produces a readable archive", () => {
 test("a name too long for the zip name field is refused, not truncated", () => {
   const path = `${"a".repeat(70000)}.c`;
 
-  assert.throws(() => buildZip([{ path, source: "" }]), (error: unknown) => {
-    assert.ok(error instanceof ZipArchiveError);
-    assert.equal(error.code, "name_too_long");
-    assert.equal(error.path, path);
-    return true;
-  });
+  assert.throws(
+    () => buildZip([{ path, source: "" }]),
+    (error: unknown) => {
+      assert.ok(error instanceof ZipArchiveError);
+      assert.equal(error.code, "name_too_long");
+      assert.equal(error.path, path);
+      return true;
+    },
+  );
 });
 
 test("a real unzip implementation accepts the archive", (t) => {

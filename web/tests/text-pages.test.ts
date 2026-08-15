@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 
 // @ts-expect-error - the build script is plain ESM without types.
 import { plainText, routeFor } from "../../docs/.vitepress/build-text-pages.mjs";
 
 test("frontmatter is dropped and the prose is kept", () => {
-  const source = "---\nlayout: home\ntitle: Why\n---\n\n# Why normfix\n\nIt changes only what it can prove.\n";
+  const source =
+    "---\nlayout: home\ntitle: Why\n---\n\n# Why normfix\n\nIt changes only what it can prove.\n";
 
   assert.equal(plainText(source), "# Why normfix\n\nIt changes only what it can prove.\n");
 });

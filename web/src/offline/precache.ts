@@ -34,9 +34,7 @@ export type RequestStrategy = "page" | "asset" | "passthrough";
  * addresses something else. `/pt` and `/pt/index.html` both name `/pt/`.
  */
 export function pagePathFor(pathname: string): string | null {
-  let path = pathname.endsWith("/index.html")
-    ? pathname.slice(0, -"index.html".length)
-    : pathname;
+  let path = pathname.endsWith("/index.html") ? pathname.slice(0, -"index.html".length) : pathname;
   if (!path.endsWith("/")) path = `${path}/`;
   return (PAGE_PATHS as readonly string[]).includes(path) ? path : null;
 }

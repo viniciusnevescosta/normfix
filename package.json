@@ -24,6 +24,13 @@
     "dev": "npm run dev --workspace normfix-playground",
     "docs:dev": "npm run dev --workspace normfix-docs",
     "preview": "npm run preview --workspace normfix-playground",
-    "typecheck": "npm run typecheck --workspace normfix-playground"
+    "typecheck": "npm run typecheck --workspace normfix-playground",
+    "lint": "oxlint web/src web/tests docs/.vitepress",
+    "fmt": "oxfmt web/src web/tests docs/.vitepress",
+    "fmt:check": "oxfmt --check web/src web/tests docs/.vitepress"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.63.0",
+    "oxlint": "^1.78.0"
   }
 }

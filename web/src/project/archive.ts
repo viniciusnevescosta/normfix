@@ -108,7 +108,7 @@ export function buildZip(files: readonly ArchiveEntry[]): Uint8Array<ArrayBuffer
     // External attributes. 0o100644 is a regular file readable by everyone and
     // writable by its owner; it sits in the high half, which is where the Unix
     // "version made by" above tells a reader to look.
-    view.setUint32(offset + 38, ((0o100644 << 16) >>> 0), true);
+    view.setUint32(offset + 38, (0o100644 << 16) >>> 0, true);
     view.setUint32(offset + 42, entry.offset, true);
     archive.set(entry.name, offset + 46);
     offset += 46 + entry.name.length;
