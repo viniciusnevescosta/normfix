@@ -24,6 +24,25 @@ function open(overrides: Record<string, unknown> = {}) {
   return { calls, container, button };
 }
 
+test("remembering a student identity is an explicit opt-in", () => {
+  // This guarantee used to be checked by reading index.html for an unchecked
+  // attribute. The panel is a component now, so it is checked where the
+  // decision actually lives: an address typed and saved without touching the
+  // box is kept for this tab only, and never written to the machine.
+  const panel = open();
+  const box = panel.container.querySelector<HTMLInputElement>("input[type=checkbox]");
+  assert.ok(box, "the choice is offered");
+  assert.equal(box.checked, false, "and it is not made for the reader");
+
+  const field = panel.container.querySelector<HTMLInputElement>("#identity-email");
+  assert.ok(field);
+  field.value = "vneves-c@student.42.fr";
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  panel.button("saveIdentity")?.click();
+
+  assert.deepEqual(panel.calls, [["save", "vneves-c@student.42.fr", false]]);
+});
+
 test("with nothing stored it offers to remember, and saves what was typed", () => {
   const panel = open();
   const field = panel.container.querySelector<HTMLInputElement>("#identity-email");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { SUPPORTED_LOCALES, translationCatalogueProblems, translatePlural } from "../src/i18n";
+import { SUPPORTED_LOCALES, translatePlural, translationCatalogueProblems } from "../src/i18n";
 
 test("every advertised locale translates the complete browser catalogue", () => {
   assert.deepEqual(translationCatalogueProblems(), []);

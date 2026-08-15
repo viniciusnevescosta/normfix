@@ -1,46 +1,45 @@
+import { mount } from "svelte";
+import Diagnostics from "./components/Diagnostics.svelte";
+import FileTree from "./components/FileTree.svelte";
+import IdentityPanel from "./components/IdentityPanel.svelte";
 import { createSourceEditor, type SourceEditor } from "./editor";
-import { startOfflineSupport, type OfflineState, type OfflineSupport } from "./offline/pwa";
+import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 import {
+  detectLocale,
+  type Locale,
+  type MessageKey,
+  SUPPORTED_LOCALES,
+  translate,
+  translatePlural,
+} from "./i18n";
+import { type OfflineState, type OfflineSupport, startOfflineSupport } from "./offline/pwa";
+import { buildZip, ZipArchiveError } from "./project/archive";
+import { openDraftRow } from "./project/draft-row";
+import { collectDroppedFiles, type DroppedFile } from "./project/drop";
+import {
+  canonicalIdentityEmail,
+  ImportBatchError,
+  MAX_FILE_BYTES,
+  MAX_FILES,
+  MAX_PROJECT_BYTES,
+  type ProjectSourceFile,
+  portablePathKey,
+  readImportBatch,
+  sourcePathProblem,
+} from "./project/files";
+import { markersFor } from "./project/markers";
+import { deserializeProject, isSameProject, serializeProject } from "./project/persistence";
+import { movedPath, renamedPath, rewritePrefix, wouldContainItself } from "./project/tree";
+import {
+  type Appearance,
   applyThemePreference,
   isThemePreference,
   readStoredThemePreference,
   storeThemePreference,
-  watchSystemAppearance,
-  type Appearance,
   type ThemePreference,
+  watchSystemAppearance,
 } from "./theme";
-import {
-  SUPPORTED_LOCALES,
-  detectLocale,
-  translate,
-  translatePlural,
-  type Locale,
-  type MessageKey,
-} from "./i18n";
-import {
-  ImportBatchError,
-  MAX_FILES,
-  MAX_FILE_BYTES,
-  MAX_PROJECT_BYTES,
-  canonicalIdentityEmail,
-  portablePathKey,
-  readImportBatch,
-  sourcePathProblem,
-  type ProjectSourceFile,
-} from "./project/files";
-import { ZipArchiveError, buildZip } from "./project/archive";
-import { markersFor } from "./project/markers";
-import { collectDroppedFiles, type DroppedFile } from "./project/drop";
-import { mount } from "svelte";
-
-import FileTree from "./components/FileTree.svelte";
-import IdentityPanel from "./components/IdentityPanel.svelte";
-import Diagnostics from "./components/Diagnostics.svelte";
 import { diagnosticsState, identityState, treeState } from "./tree-state.svelte";
-import { openDraftRow } from "./project/draft-row";
-import { deserializeProject, isSameProject, serializeProject } from "./project/persistence";
-import { movedPath, renamedPath, rewritePrefix, wouldContainItself } from "./project/tree";
-import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
@@ -1310,10 +1309,12 @@ async function importDrop(transfer: DataTransfer | null): Promise<void> {
 }
 
 elements.filePicker.addEventListener("change", () => {
-  const chosen = [...(elements.filePicker.files ?? [])].map((file): DroppedFile => ({
-    path: file.webkitRelativePath || file.name,
-    file,
-  }));
+  const chosen = [...(elements.filePicker.files ?? [])].map(
+    (file): DroppedFile => ({
+      path: file.webkitRelativePath || file.name,
+      file,
+    }),
+  );
   void loadFiles(chosen).catch((error: unknown) => {
     setRuntime("error", error instanceof Error ? error.message : String(error));
   });

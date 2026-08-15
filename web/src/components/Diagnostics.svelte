@@ -1,58 +1,58 @@
 <script lang="ts">
-  // What a run found in one file: why nothing was formatted when that is the
-  // answer, then the findings, then what was fixed, then how much room each
-  // function has left.
-  //
-  // The order is the point. A file that will not parse has the one finding
-  // that matters most — where the parser lost its way — and the imperative
-  // version returned before reaching it, leaving a reader with a sentence
-  // about ERROR and MISSING bytes and no line to look at.
-  interface Location {
-    line: number;
-    column: number;
-  }
+// What a run found in one file: why nothing was formatted when that is the
+// answer, then the findings, then what was fixed, then how much room each
+// function has left.
+//
+// The order is the point. A file that will not parse has the one finding
+// that matters most — where the parser lost its way — and the imperative
+// version returned before reaching it, leaving a reader with a sentence
+// about ERROR and MISSING bytes and no line to look at.
+interface Location {
+  line: number;
+  column: number;
+}
 
-  interface Diagnostic {
-    rule_id: string;
-    severity: string;
-    message: string;
-    location: Location | null;
-    help: string | null;
-    source: string;
-  }
+interface Diagnostic {
+  rule_id: string;
+  severity: string;
+  message: string;
+  location: Location | null;
+  help: string | null;
+  source: string;
+}
 
-  interface Fix {
-    rule_id: string;
-    description: string;
-  }
+interface Fix {
+  rule_id: string;
+  description: string;
+}
 
-  interface Budget {
-    function: string;
-    line: number;
-    lines: number;
-    line_limit: number;
-    variables: number;
-    variable_limit: number;
-    parameters: number;
-    parameter_limit: number;
-  }
+interface Budget {
+  function: string;
+  line: number;
+  lines: number;
+  line_limit: number;
+  variables: number;
+  variable_limit: number;
+  parameters: number;
+  parameter_limit: number;
+}
 
-  interface Props {
-    diagnostics: readonly Diagnostic[];
-    fixes: readonly Fix[];
-    budget: readonly Budget[];
-    /** The reason nothing was written, when there is one. */
-    error: string | null;
-    stable: boolean;
-    translate: (key: string, values?: Record<string, string | number>) => string;
-  }
+interface Props {
+  diagnostics: readonly Diagnostic[];
+  fixes: readonly Fix[];
+  budget: readonly Budget[];
+  /** The reason nothing was written, when there is one. */
+  error: string | null;
+  stable: boolean;
+  translate: (key: string, values?: Record<string, string | number>) => string;
+}
 
-  const { diagnostics, fixes, budget, error, stable, translate }: Props = $props();
+const { diagnostics, fixes, budget, error, stable, translate }: Props = $props();
 
-  // A file the parser could not read carries the reason as an error; an
-  // unstable run carries none. `stable` is false for both, so reading it to
-  // tell them apart sent every unreadable file the fixed-point message.
-  const unwritten = $derived(Boolean(error) || !stable);
+// A file the parser could not read carries the reason as an error; an
+// unstable run carries none. `stable` is false for both, so reading it to
+// tell them apart sent every unreadable file the fixed-point message.
+const unwritten = $derived(Boolean(error) || !stable);
 </script>
 
 {#if unwritten}

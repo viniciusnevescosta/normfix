@@ -16,8 +16,8 @@
     "test": "vitest run",
     "check": "npm run fmt:check && npm run lint && npm run typecheck && npm test && vite build",
     "test:watch": "vitest",
-    "lint": "oxlint src tests",
-    "fmt:check": "oxfmt --check src tests"
+    "lint": "biome lint ../web/src ../web/tests",
+    "fmt:check": "biome format ../web/src ../web/tests"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

@@ -10,7 +10,7 @@
 // container fences, and the attributes it hangs on code blocks. What is kept is
 // everything a reader would have read.
 
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 

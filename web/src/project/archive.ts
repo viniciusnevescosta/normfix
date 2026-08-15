@@ -140,6 +140,10 @@ const CRC_TABLE = (() => {
 function crc32(bytes: Uint8Array): number {
   let crc = 0xffffffff;
   for (const byte of bytes) {
+    // The index is masked to a byte and the table has 256 entries, so this
+    // cannot miss. Reaching for a fallback instead would turn an impossible
+    // state into a silently wrong checksum, which is the one thing a checksum
+    // must never be.
     crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
   }
   return (crc ^ 0xffffffff) >>> 0;

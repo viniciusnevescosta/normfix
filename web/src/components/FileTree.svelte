@@ -1,91 +1,91 @@
 <script lang="ts">
-  // The project panel: folders, files, and everything done to them.
-  //
-  // The imperative version rebuilt this list by hand and had to remember to do
-  // it after every change — a folder opened, a file renamed, a result applied.
-  // Forgetting one showed a project that no longer existed. Here the markup is
-  // a function of the state, so there is nothing to remember and nothing to
-  // forget.
-  //
-  // The panel owns no project state. It is handed what to draw and hands back
-  // what the reader did, which keeps the rules about what a path may be where
-  // they are already proven.
-  import { SvelteSet } from "svelte/reactivity";
+// The project panel: folders, files, and everything done to them.
+//
+// The imperative version rebuilt this list by hand and had to remember to do
+// it after every change — a folder opened, a file renamed, a result applied.
+// Forgetting one showed a project that no longer existed. Here the markup is
+// a function of the state, so there is nothing to remember and nothing to
+// forget.
+//
+// The panel owns no project state. It is handed what to draw and hands back
+// what the reader did, which keeps the rules about what a path may be where
+// they are already proven.
+import { SvelteSet } from "svelte/reactivity";
 
-  import { buildTree, type TreeNode } from "../project/tree";
+import { buildTree, type TreeNode } from "../project/tree";
 
-  interface Props {
-    files: readonly string[];
-    unsupported: ReadonlySet<string>;
-    changed: ReadonlySet<string>;
-    selected: string | null;
-    translate: (key: string) => string;
-    kindOf: (path: string) => string;
-    onSelect: (path: string) => void;
-    onMove: (path: string, isFolder: boolean, folder: string) => void;
-    onRename: (path: string, isFolder: boolean) => void;
-    onDelete: (path: string, isFolder: boolean) => void;
-  }
+interface Props {
+  files: readonly string[];
+  unsupported: ReadonlySet<string>;
+  changed: ReadonlySet<string>;
+  selected: string | null;
+  translate: (key: string) => string;
+  kindOf: (path: string) => string;
+  onSelect: (path: string) => void;
+  onMove: (path: string, isFolder: boolean, folder: string) => void;
+  onRename: (path: string, isFolder: boolean) => void;
+  onDelete: (path: string, isFolder: boolean) => void;
+}
 
-  const {
-    files,
-    unsupported,
-    changed,
-    selected,
-    translate,
-    kindOf,
-    onSelect,
-    onMove,
-    onRename,
-    onDelete,
-  }: Props = $props();
+const {
+  files,
+  unsupported,
+  changed,
+  selected,
+  translate,
+  kindOf,
+  onSelect,
+  onMove,
+  onRename,
+  onDelete,
+}: Props = $props();
 
-  const tree = $derived(buildTree(files));
-  let collapsed = $state(new SvelteSet<string>());
-  let menu = $state<{ path: string; isFolder: boolean; x: number; y: number } | null>(null);
-  let dropInto = $state<string | null>(null);
+const tree = $derived(buildTree(files));
+let collapsed = $state(new SvelteSet<string>());
+let menu = $state<{ path: string; isFolder: boolean; x: number; y: number } | null>(null);
+let dropInto = $state<string | null>(null);
 
-  /** Flattens the tree to the rows that are actually visible. */
-  function rows(nodes: TreeNode[], depth = 0): Array<{ node: TreeNode; depth: number }> {
-    const visible: Array<{ node: TreeNode; depth: number }> = [];
-    for (const node of nodes) {
-      visible.push({ node, depth });
-      if (node.kind === "folder" && !collapsed.has(node.path)) {
-        visible.push(...rows(node.children, depth + 1));
-      }
+/** Flattens the tree to the rows that are actually visible. */
+function rows(nodes: TreeNode[], depth = 0): Array<{ node: TreeNode; depth: number }> {
+  const visible: Array<{ node: TreeNode; depth: number }> = [];
+  for (const node of nodes) {
+    visible.push({ node, depth });
+    if (node.kind === "folder" && !collapsed.has(node.path)) {
+      visible.push(...rows(node.children, depth + 1));
     }
-    return visible;
   }
+  return visible;
+}
 
-  function toggle(path: string): void {
-    if (collapsed.has(path)) collapsed.delete(path);
-    else collapsed.add(path);
-  }
+function toggle(path: string): void {
+  if (collapsed.has(path)) collapsed.delete(path);
+  else collapsed.add(path);
+}
 
-  /**
-   * Where a drop lands.
-   *
-   * Dropping on a file means dropping beside it, in the folder that holds it,
-   * which is what the pointer looks like it is doing.
-   */
-  function destination(node: TreeNode): string {
-    if (node.kind === "folder") return node.path;
-    return node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : "";
-  }
+/**
+ * Where a drop lands.
+ *
+ * Dropping on a file means dropping beside it, in the folder that holds it,
+ * which is what the pointer looks like it is doing.
+ */
+function destination(node: TreeNode): string {
+  if (node.kind === "folder") return node.path;
+  return node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : "";
+}
 
-  function startDrag(event: DragEvent, node: TreeNode): void {
-    event.dataTransfer?.setData("text/normfix-entry", `${node.kind}:${node.path}`);
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-  }
+function startDrag(event: DragEvent, node: TreeNode): void {
+  event.dataTransfer?.setData("text/normfix-entry", `${node.kind}:${node.path}`);
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+}
 
-  function drop(event: DragEvent, folder: string): void {
-    const payload = event.dataTransfer?.getData("text/normfix-entry");
-    dropInto = null;
-    if (!payload) return;
-    event.preventDefault();
-    const separator = payload.indexOf(":");
-    onMove(payload.slice(separator + 1), payload.slice(0, separator) === "folder", folder);
-  }
+function drop(event: DragEvent, folder: string): void {
+  const payload = event.dataTransfer?.getData("text/normfix-entry");
+  dropInto = null;
+  if (!payload) return;
+  event.preventDefault();
+  const separator = payload.indexOf(":");
+  onMove(payload.slice(separator + 1), payload.slice(0, separator) === "folder", folder);
+}
 </script>
 
 <svelte:window

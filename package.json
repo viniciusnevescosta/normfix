@@ -25,12 +25,12 @@
     "docs:dev": "npm run dev --workspace normfix-docs",
     "preview": "npm run preview --workspace normfix-playground",
     "typecheck": "npm run typecheck --workspace normfix-playground",
-    "lint": "oxlint web/src web/tests docs/.vitepress",
-    "fmt": "oxfmt web/src web/tests docs/.vitepress",
-    "fmt:check": "oxfmt --check web/src web/tests docs/.vitepress"
+    "lint": "biome lint",
+    "fmt": "biome format --write",
+    "fmt:check": "biome format",
+    "check:all": "biome check"
   },
   "devDependencies": {
-    "oxfmt": "^0.63.0",
-    "oxlint": "^1.78.0"
+    "@biomejs/biome": "^2.5.8"
   }
 }

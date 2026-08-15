@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import {
+  type Bundle,
   CACHE_MATCH_OPTIONS,
   EXTRA_SHELL_PATHS,
-  PAGE_PATHS,
   offlineShell,
+  PAGE_PATHS,
   pagePathFor,
   staticClosure,
   strategyFor,
-  type Bundle,
 } from "../src/offline/precache";
 
 /** A bundle shaped like a real build: an entry, its CSS, a dynamic editor, the WASM. */

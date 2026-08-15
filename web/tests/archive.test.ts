@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { test } from "vitest";
 
-import { ZipArchiveError, buildZip } from "../src/project/archive";
+import { buildZip, ZipArchiveError } from "../src/project/archive";
 
 const decoder = new TextDecoder();
 

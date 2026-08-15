@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import {
-  MAX_STORED_BYTES,
   deserializeProject,
   isSameProject,
+  MAX_STORED_BYTES,
   serializeProject,
 } from "../src/project/persistence";
 

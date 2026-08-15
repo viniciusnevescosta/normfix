@@ -7,7 +7,7 @@
 // policy: which files are cached and which requests are answered both come
 // from precache.ts, so they can be tested without a browser.
 
-import { CACHE_MATCH_OPTIONS, strategyFor, pagePathFor } from "./precache";
+import { CACHE_MATCH_OPTIONS, pagePathFor, strategyFor } from "./precache";
 
 /** Cache name for this exact build. Injected by the build; see vite.config.ts. */
 declare const __NORMFIX_CACHE__: string;

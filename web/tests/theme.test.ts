@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { THEME_PREFERENCES, isThemePreference, resolveAppearance } from "../src/theme";
+import { isThemePreference, resolveAppearance, THEME_PREFERENCES } from "../src/theme";
 
 test("an explicit choice overrides the system in both directions", () => {
   // The point of offering the override is that it wins. A reader on a light

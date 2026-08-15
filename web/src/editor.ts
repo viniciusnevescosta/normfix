@@ -1,8 +1,7 @@
-import type * as Monaco from "monaco-editor/editor.js";
-
-import type { Appearance } from "./theme";
-import type { EditorMarker } from "./project/markers";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
+import type * as Monaco from "monaco-editor/editor.js";
+import type { EditorMarker } from "./project/markers";
+import type { Appearance } from "./theme";
 
 export interface SourceEditor {
   getValue(): string;
