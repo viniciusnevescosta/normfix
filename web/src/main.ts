@@ -1,5 +1,6 @@
 import { mount } from "svelte";
 import Diagnostics from "./components/Diagnostics.svelte";
+import EditorNotice from "./components/EditorNotice.svelte";
 import FileTree from "./components/FileTree.svelte";
 import IdentityPanel from "./components/IdentityPanel.svelte";
 import ResultSummary from "./components/ResultSummary.svelte";
@@ -40,7 +41,13 @@ import {
   type ThemePreference,
   watchSystemAppearance,
 } from "./theme";
-import { diagnosticsState, identityState, resultState, treeState } from "./tree-state.svelte";
+import {
+  diagnosticsState,
+  editorState,
+  identityState,
+  resultState,
+  treeState,
+} from "./tree-state.svelte";
 
 const UTF8_ENCODER = new TextEncoder();
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
@@ -192,9 +199,7 @@ const elements = {
   editorTitle: requiredElement<HTMLElement>("#editor-title"),
   editorMeta: requiredElement<HTMLElement>("#editor-meta"),
   identityPanel: requiredElement<HTMLElement>("#identity-panel"),
-  editorDisabled: requiredElement<HTMLElement>("#editor-disabled"),
-  editorDisabledTitle: requiredElement<HTMLElement>("#editor-disabled-title"),
-  editorDisabledText: requiredElement<HTMLElement>("#editor-disabled-text"),
+  editorNotice: requiredElement<HTMLElement>("#editor-notice"),
   restoreNotice: requiredElement<HTMLElement>("#restore-notice"),
   discardRestore: requiredElement<HTMLButtonElement>("#discard-restore"),
   confirmDelete: requiredElement<HTMLDialogElement>("#confirm-delete"),
@@ -612,9 +617,7 @@ function showEmptyProject(): void {
   state.selected = null;
   elements.editorTitle.textContent = "";
   elements.editorMeta.textContent = "";
-  elements.editorDisabledTitle.textContent = t("noFilesTitle");
-  elements.editorDisabledText.textContent = t("emptyProjectHint");
-  elements.editorDisabled.hidden = false;
+  editorState.notice = { title: t("noFilesTitle"), detail: t("emptyProjectHint") };
   elements.run.disabled = true;
   renderFileList();
 }
@@ -682,16 +685,14 @@ function showUnsupported(path: string): void {
   state.selected = null;
   elements.editorTitle.textContent = path;
   elements.editorMeta.textContent = "";
-  elements.editorDisabledTitle.textContent = t("unsupportedFile");
-  elements.editorDisabledText.textContent = t("supportedKinds");
-  elements.editorDisabled.hidden = false;
+  editorState.notice = { title: t("unsupportedFile"), detail: t("supportedKinds") };
   elements.run.disabled = true;
   renderFileList();
 }
 
 /** Turns the editor back on for a file normfix does format. */
 function enableEditor(): void {
-  elements.editorDisabled.hidden = true;
+  editorState.notice = null;
   elements.run.disabled = state.formatter === null || state.running;
 }
 
@@ -1505,6 +1506,15 @@ elements.language.addEventListener("change", () => {
 elements.offlineUpdate.addEventListener("click", () => {
   state.offlineSupport?.applyUpdate();
 });
+mount(EditorNotice, {
+  target: elements.editorNotice,
+  props: {
+    get notice() {
+      return editorState.notice;
+    },
+  },
+});
+
 mount(IdentityPanel, {
   target: elements.identityPanel,
   props: {

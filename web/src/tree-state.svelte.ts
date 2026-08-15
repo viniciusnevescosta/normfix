@@ -21,6 +21,10 @@ export const diagnosticsState = $state({
   stable: true,
 });
 
+export const editorState = $state({
+  notice: null as { title: string; detail: string } | null,
+});
+
 export const resultState = $state({
   summary: { files: 0, changed: 0, fixes: 0, diagnostics: 0, failed: 0 },
   paths: [] as string[],
