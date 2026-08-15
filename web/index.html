@@ -307,32 +307,6 @@
       </section>
     </main>
 
-    <dialog id="new-file-dialog">
-      <form method="dialog" id="new-file-form">
-        <div>
-          <p class="eyebrow" data-i18n="addSource">Add file</p>
-          <h2 data-i18n="chooseFilename">Choose a relative filename</h2>
-        </div>
-        <fieldset class="file-kinds">
-          <legend data-i18n="fileKind">Kind</legend>
-          <label><input type="radio" name="kind" value="c" checked><span>.c</span></label>
-          <label><input type="radio" name="kind" value="h"><span>.h</span></label>
-          <label><input type="radio" name="kind" value="makefile"><span>Makefile</span></label>
-          <label><input type="radio" name="kind" value="md"><span>.md</span></label>
-        </fieldset>
-        <label>
-          <span data-i18n="filename">Filename</span>
-          <input id="new-file-name" name="filename" value="new_file.c" required>
-        </label>
-        <p class="form-hint" data-i18n="folderHint">A path such as <code>src/utils.c</code> creates the folder with it.</p>
-        <p class="form-error" id="new-file-error" role="alert"></p>
-        <div class="dialog-actions">
-          <button class="button secondary" value="cancel" formnovalidate data-i18n="cancel">Cancel</button>
-          <button class="button primary" value="create" data-i18n="createFile">Create file</button>
-        </div>
-      </form>
-    </dialog>
-
     <template id="diagnostic-template">
       <article class="diagnostic-card">
         <div class="diagnostic-head">

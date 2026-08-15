@@ -32,9 +32,18 @@ import { ZipArchiveError, buildZip } from "./project/archive";
 import { markersFor } from "./project/markers";
 import { collectDroppedFiles, type DroppedFile } from "./project/drop";
 import { openDraftRow } from "./project/draft-row";
+import {
+  buildTree,
+  movedPath,
+  renamedPath,
+  rewritePrefix,
+  wouldContainItself,
+  type TreeNode,
+} from "./project/tree";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 
 const UTF8_ENCODER = new TextEncoder();
+const FOLDER_MARK = "\u{1F4C1}";
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
 const LOCALE_STORAGE_KEY = "normfix.locale.v1";
 const FALLBACK_STARS = 0;
@@ -190,11 +199,6 @@ const elements = {
   diagnosticsView: requiredElement<HTMLElement>("#diagnostics-view"),
   diagnosticCount: requiredElement<HTMLElement>("#diagnostic-count"),
   diagnosticTemplate: requiredElement<HTMLTemplateElement>("#diagnostic-template"),
-  dialog: requiredElement<HTMLDialogElement>("#new-file-dialog"),
-  newFileForm: requiredElement<HTMLFormElement>("#new-file-form"),
-  newFileName: requiredElement<HTMLInputElement>("#new-file-name"),
-  fileKinds: requiredElement<HTMLFieldSetElement>(".file-kinds"),
-  newFileError: requiredElement<HTMLElement>("#new-file-error"),
   language: requiredElement<HTMLSelectElement>("#language"),
   theme: requiredElement<HTMLSelectElement>("#theme"),
   identityEmail: requiredElement<HTMLInputElement>("#identity-email"),
@@ -497,29 +501,138 @@ function openDraft(kind: "file" | "folder"): void {
   });
 }
 
+/**
+ * Applies a set of path rewrites as one change.
+ *
+ * All or nothing: a move that would collide with an existing name, or produce a
+ * path the project cannot store, leaves the project exactly as it was. Half a
+ * rename is a project the reader did not ask for and cannot undo.
+ */
+function applyMoves(moves: Array<readonly [string, string]>): void {
+  if (state.importing || moves.length === 0) return;
+  syncEditor();
+  const proposed = new Map(state.files);
+  for (const [from] of moves) proposed.delete(from);
+  for (const [from, to] of moves) {
+    const normalized = normalizeSourcePath(to);
+    const clashes = [...proposed.keys()].some(
+      (loaded) => portablePathKey(loaded) === portablePathKey(normalized),
+    );
+    if (clashes) throw new Error(t("importConflict", { path: normalized }));
+    proposed.set(normalized, state.files.get(from) ?? "");
+  }
+  validateProjectSources(proposed);
+  const selected = moves.find(([from]) => from === state.selected);
+  state.files = proposed;
+  state.revision += 1;
+  invalidateResults();
+  const reselect = selected ? normalizeSourcePath(selected[1]) : state.selected;
+  if (reselect === null) renderFileList();
+  else selectFile(reselect, false);
+}
+
+/** Moves one entry, or a whole folder, under `folder`. */
+function moveEntry(path: string, isFolder: boolean, folder: string): void {
+  if (isFolder && wouldContainItself(path, folder)) return;
+  const moves = isFolder
+    ? rewritePrefix(state.files.keys(), path, movedPath(path, folder))
+    : [[path, movedPath(path, folder)] as const];
+  if (moves.every(([from, to]) => from === to)) return;
+  try {
+    applyMoves(moves);
+  } catch (failure) {
+    reportProjectError(failure);
+  }
+}
+
+/** Renames one entry's last segment, carrying a folder's contents with it. */
+function renameEntry(path: string, isFolder: boolean, name: string): void {
+  const target = renamedPath(path, name);
+  if (target === path) return;
+  try {
+    applyMoves(isFolder ? rewritePrefix(state.files.keys(), path, target) : [[path, target]]);
+  } catch (failure) {
+    reportProjectError(failure);
+  }
+}
+
+/** Removes one entry, or a folder and everything under it. */
+function deleteEntry(path: string, isFolder: boolean): void {
+  if (state.importing) return;
+  syncEditor();
+  const removed = isFolder
+    ? [...state.files.keys()].filter((loaded) => loaded === path || loaded.startsWith(`${path}/`))
+    : [path];
+  // The project always holds at least one file: an editor with nothing open
+  // has nothing to format and no way back.
+  if (removed.length === 0 || removed.length >= state.files.size) return;
+  const proposed = new Map(state.files);
+  for (const loaded of removed) proposed.delete(loaded);
+  state.files = proposed;
+  state.revision += 1;
+  invalidateResults();
+  if (state.selected !== null && removed.includes(state.selected)) {
+    const next = [...state.files.keys()].sort()[0];
+    if (next === undefined) renderFileList();
+    else selectFile(next, false);
+  } else {
+    renderFileList();
+  }
+}
+
+function reportProjectError(failure: unknown): void {
+  elements.identityStatus.textContent =
+    failure instanceof Error ? failure.message : String(failure);
+}
+
+/** The entry the pointer is over, whichever part of the row it landed on. */
+function entryOf(target: EventTarget | null): HTMLElement | null {
+  return target instanceof Element ? target.closest<HTMLElement>("[data-path]") : null;
+}
+
 function renderFileList(): void {
   elements.fileList.replaceChildren();
-  for (const path of [...state.files.keys()].sort()) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "file-item";
-    item.setAttribute("role", "option");
-    item.setAttribute("aria-selected", String(path === state.selected));
-    item.title = path;
-    if (state.results.get(path)?.changed) item.classList.add("changed");
+  closeContextMenu();
+  appendTreeLevel(elements.fileList, buildTree(state.files.keys()), 0);
+  // The panel itself is the project root, so a file dragged clear of every
+  // folder comes back out to the top rather than having nowhere to land.
+  elements.fileList.dataset.path = "";
+  elements.fileList.dataset.kind = "folder";
+}
 
-    const dot = document.createElement("span");
-    dot.className = "file-dot";
-    dot.setAttribute("aria-hidden", "true");
+function appendTreeLevel(container: Element, nodes: TreeNode[], depth: number): void {
+  for (const node of nodes) {
+    const row = document.createElement(node.kind === "file" ? "button" : "div");
+    row.className = `file-item file-${node.kind}`;
+    row.dataset.path = node.path;
+    row.dataset.kind = node.kind;
+    row.style.paddingLeft = `${0.5 + depth * 0.85}rem`;
+    row.title = node.path;
+    row.draggable = true;
+    if (row instanceof HTMLButtonElement) {
+      row.type = "button";
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", String(node.path === state.selected));
+      if (state.results.get(node.path)?.changed) row.classList.add("changed");
+      row.addEventListener("click", () => selectFile(node.path));
+    }
+
+    const mark = document.createElement("span");
+    mark.className = node.kind === "file" ? "file-dot" : "folder-mark";
+    mark.setAttribute("aria-hidden", "true");
+    if (node.kind === "folder") mark.textContent = FOLDER_MARK;
     const name = document.createElement("span");
     name.className = "file-name";
-    name.textContent = path;
-    const kind = document.createElement("span");
-    kind.className = "file-kind";
-    kind.textContent = fileKind(path);
-    item.append(dot, name, kind);
-    item.addEventListener("click", () => selectFile(path));
-    elements.fileList.append(item);
+    name.textContent = node.name;
+    row.append(mark, name);
+    if (node.kind === "file") {
+      const kind = document.createElement("span");
+      kind.className = "file-kind";
+      kind.textContent = fileKind(node.path);
+      row.append(kind);
+    }
+    container.append(row);
+    if (node.kind === "folder") appendTreeLevel(container, node.children, depth + 1);
   }
 }
 
@@ -1182,40 +1295,146 @@ elements.removeFile.addEventListener("click", removeSelected);
 /// hand is how a reader discovers that only by getting it wrong. Picking a kind
 /// rewrites the name, and keeping the folder means choosing a kind after typing
 /// `src/utils.c` does not throw the folder away.
-function nameForKind(kind: string, current: string): string {
-  const separator = current.lastIndexOf("/");
-  const folder = separator >= 0 ? current.slice(0, separator + 1) : "";
-  // The stem the reader typed survives the switch; only `Makefile`, which has
-  // no stem of its own, is replaced when they move away from it.
-  const typed = current.slice(separator + 1).replace(/\.[^.]*$/, "");
-  if (kind === "makefile") return `${folder}Makefile`;
-  const stem = typed === "" || typed === "Makefile" ? "new_file" : typed;
-  return `${folder}${stem}.${kind}`;
+
+// Dragging an entry onto a folder, and the menu that renames or deletes one.
+//
+// The panel itself carries the root prefix, so an entry dragged clear of every
+// folder lands at the top of the project rather than nowhere. A drop is read
+// from the row under the pointer, never from the row the drag started on.
+let contextMenu: HTMLElement | null = null;
+
+function closeContextMenu(): void {
+  contextMenu?.remove();
+  contextMenu = null;
 }
 
-elements.fileKinds.addEventListener("change", (event) => {
-  const kind = event.target;
-  if (!(kind instanceof HTMLInputElement)) return;
-  elements.newFileName.value = nameForKind(kind.value, elements.newFileName.value.trim());
-  elements.newFileName.focus();
+function dropTargetOf(target: EventTarget | null): { path: string; kind: string } | null {
+  const entry = entryOf(target);
+  if (!entry) return null;
+  // Dropping on a file means dropping into the folder that holds it, which is
+  // what the pointer looks like it is doing.
+  const path = entry.dataset.path ?? "";
+  if (entry.dataset.kind === "folder") return { path, kind: "folder" };
+  const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  return { path: parent, kind: "folder" };
+}
+
+elements.fileList.addEventListener("dragstart", (event) => {
+  const entry = entryOf(event.target);
+  if (!entry?.dataset.path) return;
+  event.dataTransfer?.setData("text/normfix-entry", `${entry.dataset.kind}:${entry.dataset.path}`);
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+});
+
+elements.fileList.addEventListener("dragover", (event) => {
+  if (!event.dataTransfer?.types.includes("text/normfix-entry")) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  const entry = entryOf(event.target);
+  for (const row of elements.fileList.querySelectorAll(".drop-into")) {
+    row.classList.remove("drop-into");
+  }
+  if (entry?.dataset.kind === "folder") entry.classList.add("drop-into");
+});
+
+elements.fileList.addEventListener("dragleave", (event) => {
+  entryOf(event.target)?.classList.remove("drop-into");
+});
+
+elements.fileList.addEventListener("drop", (event) => {
+  const payload = event.dataTransfer?.getData("text/normfix-entry");
+  if (!payload) return;
+  event.preventDefault();
+  for (const row of elements.fileList.querySelectorAll(".drop-into")) {
+    row.classList.remove("drop-into");
+  }
+  const separator = payload.indexOf(":");
+  const kind = payload.slice(0, separator);
+  const path = payload.slice(separator + 1);
+  const destination = dropTargetOf(event.target);
+  if (destination) moveEntry(path, kind === "folder", destination.path);
+});
+
+elements.fileList.addEventListener("contextmenu", (event) => {
+  const entry = entryOf(event.target);
+  if (!entry?.dataset.path) return;
+  event.preventDefault();
+  openContextMenu(entry, event.clientX, event.clientY);
+});
+
+function openContextMenu(entry: HTMLElement, x: number, y: number): void {
+  closeContextMenu();
+  const path = entry.dataset.path ?? "";
+  const isFolder = entry.dataset.kind === "folder";
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+  menu.setAttribute("role", "menu");
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+
+  const action = (label: string, run: () => void): void => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "menuitem");
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      closeContextMenu();
+      run();
+    });
+    menu.append(button);
+  };
+
+  action(t("renameEntry"), () => startRename(entry, path, isFolder));
+  action(t("deleteEntry"), () => deleteEntry(path, isFolder));
+  document.body.append(menu);
+  contextMenu = menu;
+  menu.querySelector("button")?.focus();
+}
+
+/** Turns a row into its own name field, the way the draft row already reads. */
+function startRename(entry: HTMLElement, path: string, isFolder: boolean): void {
+  const label = entry.querySelector<HTMLElement>(".file-name");
+  if (!label) return;
+  const current = label.textContent ?? "";
+  const input = document.createElement("input");
+  input.className = "file-name";
+  input.value = current;
+  input.setAttribute("aria-label", t("renameEntry"));
+  label.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const restore = (): void => {
+    if (settled) return;
+    settled = true;
+    renderFileList();
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") restore();
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const typed = input.value.trim();
+    settled = true;
+    if (typed.length === 0 || typed === current) {
+      renderFileList();
+      return;
+    }
+    renameEntry(path, isFolder, typed);
+    renderFileList();
+  });
+  input.addEventListener("blur", restore);
+}
+
+document.addEventListener("click", (event) => {
+  if (contextMenu && !contextMenu.contains(event.target as Node)) closeContextMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeContextMenu();
 });
 
 elements.addFile.addEventListener("click", () => openDraft("file"));
 elements.addFolder.addEventListener("click", () => openDraft("folder"));
-elements.newFileForm.addEventListener("submit", (event) => {
-  if (!(event instanceof SubmitEvent)) return;
-  if (!(event.submitter instanceof HTMLButtonElement) || event.submitter.value !== "create") {
-    return;
-  }
-  event.preventDefault();
-  try {
-    addSource(elements.newFileName.value.trim(), "");
-    elements.dialog.close();
-    state.editor?.focus();
-  } catch (error) {
-    elements.newFileError.textContent = error instanceof Error ? error.message : String(error);
-  }
-});
 elements.resultFile.addEventListener("change", () => {
   state.selectedResult = elements.resultFile.value;
   renderSelectedResult();
