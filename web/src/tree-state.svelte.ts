@@ -21,6 +21,17 @@ export const diagnosticsState = $state({
   stable: true,
 });
 
+export const resultState = $state({
+  summary: { files: 0, changed: 0, fixes: 0, diagnostics: 0, failed: 0 },
+  paths: [] as string[],
+  selected: "",
+  usable: false,
+  applicable: 0,
+  diagnosticCount: 0,
+  view: "formatted" as "formatted" | "diagnostics" | "diff",
+  copyLabel: "",
+});
+
 export const treeState = $state({
   files: [] as string[],
   unsupported: new Set<string>(),

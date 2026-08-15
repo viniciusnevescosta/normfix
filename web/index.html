@@ -222,33 +222,7 @@
       </section>
 
       <section class="results" id="results" aria-labelledby="results-title" hidden>
-        <div class="results-heading">
-          <div>
-            <span class="section-label" data-i18n="inMemoryResult">In-memory result</span>
-            <h2 id="results-title" data-i18n="reviewOutput">Review output</h2>
-          </div>
-          <div class="summary" id="summary" aria-label="Run summary" data-i18n-aria="runSummary"></div>
-        </div>
-
-        <div class="result-toolbar">
-          <label>
-            <span data-i18n="resultFile">Result file</span>
-            <select id="result-file"></select>
-          </label>
-          <div class="toolbar-actions">
-            <button class="button" id="apply-all" type="button" disabled data-i18n="fixAll">Fix all files</button>
-            <button class="button secondary" id="apply-result" type="button" disabled data-i18n="fixCurrent">Fix this file</button>
-            <button class="button secondary" id="copy-current" type="button" data-i18n="copyFile">Copy file</button>
-            <button class="button secondary" id="download-current" type="button" data-i18n="downloadFile">Download file</button>
-            <button class="button secondary" id="download-all" type="button" data-i18n="downloadAll">Download all (.zip)</button>
-          </div>
-        </div>
-
-        <div class="tabs" role="tablist" aria-label="Result views" data-i18n-aria="resultViews">
-          <button role="tab" aria-selected="true" aria-controls="formatted-view" id="formatted-tab" data-view="formatted" data-i18n="formatted">Formatted</button>
-          <button role="tab" aria-selected="false" aria-controls="diagnostics-view" id="diagnostics-tab" data-view="diagnostics"><span data-i18n="diagnostics">Diagnostics</span> <span id="diagnostic-count">0</span></button>
-          <button role="tab" aria-selected="false" aria-controls="diff-view" id="diff-tab" data-view="diff" data-i18n="diff">Diff</button>
-        </div>
+        <div id="result-summary"></div>
 
         <div class="result-view code-view" id="formatted-view" role="tabpanel" aria-labelledby="formatted-tab">
           <pre><code id="formatted-output"></code></pre>

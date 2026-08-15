@@ -2,6 +2,7 @@ import { mount } from "svelte";
 import Diagnostics from "./components/Diagnostics.svelte";
 import FileTree from "./components/FileTree.svelte";
 import IdentityPanel from "./components/IdentityPanel.svelte";
+import ResultSummary from "./components/ResultSummary.svelte";
 import { createSourceEditor, type SourceEditor } from "./editor";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 import {
@@ -39,7 +40,7 @@ import {
   type ThemePreference,
   watchSystemAppearance,
 } from "./theme";
-import { diagnosticsState, identityState, treeState } from "./tree-state.svelte";
+import { diagnosticsState, identityState, resultState, treeState } from "./tree-state.svelte";
 
 const UTF8_ENCODER = new TextEncoder();
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
@@ -202,17 +203,10 @@ const elements = {
   confirmDeleteCancel: requiredElement<HTMLButtonElement>("#confirm-delete-cancel"),
   run: requiredElement<HTMLButtonElement>("#run"),
   results: requiredElement<HTMLElement>("#results"),
-  summary: requiredElement<HTMLElement>("#summary"),
-  resultFile: requiredElement<HTMLSelectElement>("#result-file"),
-  applyResult: requiredElement<HTMLButtonElement>("#apply-result"),
-  applyAll: requiredElement<HTMLButtonElement>("#apply-all"),
-  copyCurrent: requiredElement<HTMLButtonElement>("#copy-current"),
-  downloadCurrent: requiredElement<HTMLButtonElement>("#download-current"),
-  downloadAll: requiredElement<HTMLButtonElement>("#download-all"),
+  resultSummary: requiredElement<HTMLElement>("#result-summary"),
   formattedOutput: requiredElement<HTMLElement>("#formatted-output"),
   diffOutput: requiredElement<HTMLElement>("#diff-output"),
   diagnosticsView: requiredElement<HTMLElement>("#diagnostics-view"),
-  diagnosticCount: requiredElement<HTMLElement>("#diagnostic-count"),
   language: requiredElement<HTMLSelectElement>("#language"),
   theme: requiredElement<HTMLSelectElement>("#theme"),
   starCount: requiredElement<HTMLElement>("#star-count"),
@@ -487,8 +481,8 @@ function invalidateResults(): void {
   elements.results.hidden = true;
   // The panel is hidden, but an enabled control with nothing to act on is the
   // kind of state that only stays harmless by accident.
-  elements.applyAll.disabled = true;
-  elements.applyResult.disabled = true;
+  resultState.usable = false;
+  resultState.applicable = 0;
   // Marks describe a result. Once there is no result they describe a file that
   // may already have been edited past them.
   paintMarkers();
@@ -1018,40 +1012,81 @@ function renderRunResult(providedSummary: BrowserSummary | null = null): void {
     failed: files.filter((file) => file.error).length,
   };
   renderSummary(summary);
-  elements.resultFile.replaceChildren();
-  for (const file of files) {
-    const option = document.createElement("option");
-    option.value = file.path;
-    option.textContent = file.path;
-    elements.resultFile.append(option);
-  }
   if (!state.selectedResult || !state.results.has(state.selectedResult)) {
     state.selectedResult = files[0]?.path ?? null;
   }
-  elements.resultFile.value = state.selectedResult ?? "";
   renderSelectedResult();
   renderFileList();
   elements.results.hidden = false;
 }
 
 function renderSummary(summary: BrowserSummary): void {
-  const values: Array<readonly [number, MessageKey]> = [
-    [summary.files, "filesSummary"],
-    [summary.changed, "changedSummary"],
-    [summary.fixes, "fixesSummary"],
-    [summary.diagnostics, "diagnosticsSummary"],
-    [summary.failed, "failedSummary"],
-  ];
-  elements.summary.replaceChildren();
-  for (const [value, label] of values) {
-    const pill = document.createElement("span");
-    pill.className = "summary-pill";
-    const count = document.createElement("strong");
-    count.textContent = String(value);
-    pill.append(count, document.createTextNode(t(label)));
-    elements.summary.append(pill);
-  }
+  resultState.summary = summary;
 }
+
+/**
+ * Hands the result header everything it draws.
+ *
+ * The counts, the picker, the five buttons and the tabs were disabled and
+ * re-enabled by hand after every run, apply and edit. They are derived from
+ * the shown result now, so a button that would do nothing cannot be left
+ * clickable.
+ */
+function renderResultHeader(): void {
+  const result = selectedResult();
+  const usable = result !== undefined && !result.error && result.stable;
+  resultState.paths = [...state.results.keys()];
+  resultState.selected = state.selectedResult ?? "";
+  resultState.usable = usable;
+  resultState.applicable = applicableResults().length;
+  resultState.diagnosticCount = result?.diagnostics.length ?? 0;
+  if (resultMounted) return;
+  resultMounted = true;
+  mount(ResultSummary, {
+    target: elements.resultSummary,
+    props: {
+      get summary() {
+        return resultState.summary;
+      },
+      get paths() {
+        return resultState.paths;
+      },
+      get selected() {
+        return resultState.selected;
+      },
+      get usable() {
+        return resultState.usable;
+      },
+      get applicable() {
+        return resultState.applicable;
+      },
+      get diagnosticCount() {
+        return resultState.diagnosticCount;
+      },
+      get view() {
+        return resultState.view;
+      },
+      get copyLabel() {
+        return resultState.copyLabel;
+      },
+      translate: (key: string) => t(key as MessageKey),
+      onSelect: (path: string) => {
+        state.selectedResult = path;
+        renderSelectedResult();
+      },
+      onView: activateTab,
+      onApply: applySelectedResult,
+      onApplyAll: applyAllResults,
+      onCopy: () => {
+        void copyCurrent();
+      },
+      onDownload: downloadCurrent,
+      onDownloadAll: downloadAll,
+    },
+  });
+}
+
+let resultMounted = false;
 
 function selectedResult(): ResultRecord | undefined {
   if (!state.selectedResult) return undefined;
@@ -1065,12 +1100,8 @@ function renderSelectedResult(): void {
   if (!result) return;
   elements.formattedOutput.textContent = result.formatted;
   elements.diffOutput.textContent = result.diff || t("noByteChanges");
-  elements.diagnosticCount.textContent = String(result.diagnostics.length);
-  elements.applyResult.disabled = Boolean(result.error) || !result.stable;
-  elements.applyAll.disabled = applicableResults().length === 0;
-  elements.downloadCurrent.disabled = Boolean(result.error) || !result.stable;
-  elements.copyCurrent.disabled = Boolean(result.error) || !result.stable;
   resetCopyLabel();
+  renderResultHeader();
   renderDiagnostics(result);
 }
 
@@ -1115,12 +1146,10 @@ function renderDiagnostics(result: ResultRecord): void {
 
 let diagnosticsMounted = false;
 
-function activateTab(view: string): void {
-  for (const tab of document.querySelectorAll<HTMLButtonElement>("[role=tab][data-view]")) {
-    const selected = tab.dataset.view === view;
-    tab.setAttribute("aria-selected", String(selected));
-    const panel = requiredElement<HTMLElement>(`#${tab.dataset.view}-view`);
-    panel.hidden = !selected;
+function activateTab(view: "formatted" | "diagnostics" | "diff"): void {
+  resultState.view = view;
+  for (const name of ["formatted", "diagnostics", "diff"] as const) {
+    requiredElement<HTMLElement>(`#${name}-view`).hidden = name !== view;
   }
 }
 
@@ -1183,11 +1212,11 @@ function resetCopyLabel(): void {
     window.clearTimeout(copyLabelTimer);
     copyLabelTimer = undefined;
   }
-  elements.copyCurrent.textContent = t("copyFile");
+  resultState.copyLabel = t("copyFile");
 }
 
 function flashCopyLabel(label: string): void {
-  elements.copyCurrent.textContent = label;
+  resultState.copyLabel = label;
   if (copyLabelTimer !== undefined) window.clearTimeout(copyLabelTimer);
   copyLabelTimer = window.setTimeout(resetCopyLabel, 1600);
 }
@@ -1444,22 +1473,6 @@ addEventListener("visibilitychange", () => {
 
 elements.addFile.addEventListener("click", () => openDraft("file"));
 elements.addFolder.addEventListener("click", () => openDraft("folder"));
-elements.resultFile.addEventListener("change", () => {
-  state.selectedResult = elements.resultFile.value;
-  renderSelectedResult();
-});
-elements.applyResult.addEventListener("click", applySelectedResult);
-elements.applyAll.addEventListener("click", applyAllResults);
-elements.copyCurrent.addEventListener("click", () => {
-  void copyCurrent();
-});
-elements.downloadCurrent.addEventListener("click", downloadCurrent);
-elements.downloadAll.addEventListener("click", downloadAll);
-for (const tab of document.querySelectorAll<HTMLButtonElement>("[role=tab][data-view]")) {
-  tab.addEventListener("click", () => {
-    if (tab.dataset.view) activateTab(tab.dataset.view);
-  });
-}
 /**
  * Repaints for the chosen appearance.
  *
