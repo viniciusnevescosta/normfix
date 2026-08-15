@@ -193,6 +193,8 @@ const elements = {
   editorTitle: requiredElement<HTMLElement>("#editor-title"),
   editorMeta: requiredElement<HTMLElement>("#editor-meta"),
   editorDisabled: requiredElement<HTMLElement>("#editor-disabled"),
+  editorDisabledTitle: requiredElement<HTMLElement>("#editor-disabled-title"),
+  editorDisabledText: requiredElement<HTMLElement>("#editor-disabled-text"),
   confirmDelete: requiredElement<HTMLDialogElement>("#confirm-delete"),
   confirmDeleteText: requiredElement<HTMLElement>("#confirm-delete-text"),
   confirmDeleteAction: requiredElement<HTMLButtonElement>("#confirm-delete-action"),
@@ -603,9 +605,7 @@ function deleteEntry(path: string, isFolder: boolean): void {
   const removed = isFolder
     ? [...state.files.keys()].filter((loaded) => loaded === path || loaded.startsWith(`${path}/`))
     : [path];
-  // The project always holds at least one file: an editor with nothing open
-  // has nothing to format and no way back.
-  if (removed.length === 0 || removed.length >= state.files.size) return;
+  if (removed.length === 0) return;
   const proposed = new Map(state.files);
   for (const loaded of removed) proposed.delete(loaded);
   state.files = proposed;
@@ -613,11 +613,31 @@ function deleteEntry(path: string, isFolder: boolean): void {
   invalidateResults();
   if (state.selected !== null && removed.includes(state.selected)) {
     const next = [...state.files.keys()].sort()[0];
-    if (next === undefined) renderFileList();
+    if (next === undefined) showEmptyProject();
     else selectFile(next, false);
   } else {
     renderFileList();
   }
+}
+
+/**
+ * Shows a project with nothing in it.
+ *
+ * Deleting the last file used to be refused, which read as the page being
+ * broken rather than as a rule. It is allowed now, and what follows says so:
+ * the editor is off, and the notice invites the reader to create or import
+ * instead of leaving an empty text box that would accept typing nobody could
+ * format.
+ */
+function showEmptyProject(): void {
+  state.selected = null;
+  elements.editorTitle.textContent = "";
+  elements.editorMeta.textContent = "";
+  elements.editorDisabledTitle.textContent = t("noFilesTitle");
+  elements.editorDisabledText.textContent = t("emptyProjectHint");
+  elements.editorDisabled.hidden = false;
+  elements.run.disabled = true;
+  renderFileList();
 }
 
 function reportProjectError(failure: unknown): void {
@@ -718,6 +738,8 @@ function showUnsupported(path: string): void {
   state.selected = null;
   elements.editorTitle.textContent = path;
   elements.editorMeta.textContent = "";
+  elements.editorDisabledTitle.textContent = t("unsupportedFile");
+  elements.editorDisabledText.textContent = t("supportedKinds");
   elements.editorDisabled.hidden = false;
   elements.run.disabled = true;
   renderFileList();

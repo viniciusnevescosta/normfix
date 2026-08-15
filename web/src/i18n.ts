@@ -35,6 +35,8 @@ const english = {
   unsupportedFile: "normfix does not format this file.",
   supportedKinds: "It formats .c, .h, .md, and Makefile.",
   unsupportedKind: "not formatted",
+  noFilesTitle: "This project has no files.",
+  emptyProjectHint: "Create one with the buttons above, or drop a folder in.",
   unparsableFile:
     "This file could not be read as C, so nothing was formatted. The finding below is where the parser lost its way.",
   deleteFileText: "Delete {path}?",
@@ -186,6 +188,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     unsupportedFile: "O normfix não formata este arquivo.",
     supportedKinds: "Ele formata .c, .h, .md e Makefile.",
     unsupportedKind: "não formatado",
+    noFilesTitle: "Este projeto não tem arquivos.",
+    emptyProjectHint: "Crie um com os botões acima, ou solte uma pasta aqui.",
     unparsableFile:
       "Este arquivo não pôde ser lido como C, então nada foi formatado. O achado abaixo é onde o parser se perdeu.",
     deleteFileText: "Excluir {path}?",
@@ -333,6 +337,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     unsupportedFile: "normfix no formatea este archivo.",
     supportedKinds: "Formatea .c, .h, .md y Makefile.",
     unsupportedKind: "sin formatear",
+    noFilesTitle: "Este proyecto no tiene archivos.",
+    emptyProjectHint: "Crea uno con los botones de arriba, o suelta una carpeta aquí.",
     unparsableFile:
       "Este archivo no se pudo leer como C, así que no se formateó nada. El hallazgo de abajo es donde el analizador se perdió.",
     deleteFileText: "¿Eliminar {path}?",
@@ -481,6 +487,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     unsupportedFile: "normfix ne formate pas ce fichier.",
     supportedKinds: "Il formate .c, .h, .md et Makefile.",
     unsupportedKind: "non formaté",
+    noFilesTitle: "Ce projet n’a aucun fichier.",
+    emptyProjectHint: "Créez-en un avec les boutons ci-dessus, ou déposez un dossier ici.",
     unparsableFile:
       "Ce fichier n’a pas pu être lu comme du C, donc rien n’a été formaté. Le constat ci-dessous est l’endroit où l’analyseur s’est perdu.",
     deleteFileText: "Supprimer {path} ?",
