@@ -62,6 +62,13 @@ jobs:
           cargo test --locked -p normfix-oracle installed_official_norminette_smoke_test -- --ignored
           cargo test --locked -p normfix-oracle installed_compiler_smoke_test -- --ignored
           cargo test --locked -p normfix-engine --test differential -- --ignored
+      # The declared MSRV is a promise the documentation makes about building
+      # from source. It was checked in CI but not here, so 1.7.0 published a
+      # workspace that the compiler it names cannot build.
+      - name: Install declared MSRV
+        run: rustup toolchain install 1.85.0 --profile minimal
+      - name: Build workspace with the declared MSRV
+        run: cargo +1.85.0 build --workspace --locked
       - name: Deny Clippy warnings
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Deny rustdoc warnings

@@ -503,10 +503,10 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
             "while_statement" | "for_statement" | "do_statement" => {
                 collect_control_body_fact(node.child_by_field_name("body"), &mut facts)?;
                 facts.loops.push(loop_fact(source, node)?);
-                if node.kind() == "for_statement"
-                    && let Some(fact) = for_loop_fact(node)?
-                {
-                    facts.for_loops.push(fact);
+                if node.kind() == "for_statement" {
+                    if let Some(fact) = for_loop_fact(node)? {
+                        facts.for_loops.push(fact);
+                    }
                 }
             }
             "binary_expression" | "assignment_expression" => {
