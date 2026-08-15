@@ -1,7 +1,7 @@
 # Architecture
 
 This document describes the native Rust architecture implemented by
-`normfix` `1.6.3`. It records both what the system does and why
+`normfix` `1.7.0`. It records both what the system does and why
 the boundaries exist. Where a useful library exists but is not part of the
 default CLI pipeline, that distinction is explicit.
 

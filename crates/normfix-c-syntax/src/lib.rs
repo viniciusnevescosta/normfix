@@ -13,9 +13,10 @@ mod tape;
 
 pub use facts::{
     ArrayDeclaratorFact, CFunctionFact, CFunctionKind, CParameterFact, CStatementKind,
-    CTypeTagKind, CallFact, EnumConstantFact, InitialDeclarationBlockFact, LocalDeclarationFact,
-    LoopFact, MacroFact, NullCheckFact, RedundantElseFact, ReturnFact, SingleStatementBodyFact,
-    ChainedAssignmentFact, ForLoopFact, SharedDeclarationFact, SyntaxFacts, TernaryFact, TernaryForm, TypeTagFact,
+    CTypeTagKind, CallFact, ChainedAssignmentFact, EnumConstantFact, ForLoopFact,
+    InitialDeclarationBlockFact, LocalDeclarationFact, LoopFact, MacroFact, NullCheckFact,
+    RedundantElseFact, ReturnFact, SharedDeclarationFact, SingleStatementBodyFact, SyntaxFacts,
+    TernaryFact, TernaryForm, TypeTagFact,
 };
 pub use parser::{CParser, ParseFailure, ParsedFile, SyntaxIssue, SyntaxIssueKind};
 pub use tape::{

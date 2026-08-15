@@ -125,7 +125,10 @@ impl Phase {
         // become a `while`, so this phase has to be allowed to come back.
         !matches!(
             self,
-            Self::CompactContinuations | Self::LongLines | Self::ForLoops | Self::ChainedAssignments
+            Self::CompactContinuations
+                | Self::LongLines
+                | Self::ForLoops
+                | Self::ChainedAssignments
         )
     }
 
@@ -1444,7 +1447,8 @@ fn split_shared_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActi
         // would land beside text it knows nothing about.
         let text = lines.text(line);
         let relative = start.saturating_sub(line.start);
-        if !text[..relative].trim().is_empty() || !text[end.saturating_sub(line.start)..].trim().is_empty()
+        if !text[..relative].trim().is_empty()
+            || !text[end.saturating_sub(line.start)..].trim().is_empty()
         {
             continue;
         }
@@ -1530,8 +1534,12 @@ fn rewrite_for_loops(context: &ParsedContext) -> Result<Vec<Edit>, CActionError>
         if start < rewritten_through {
             continue;
         }
-        let text = |range: Option<TextRange>| range.and_then(|range| source.get(range_bounds(range)));
-        let (initializer, step) = (text(loop_fact.initializer_range), text(loop_fact.step_range));
+        let text =
+            |range: Option<TextRange>| range.and_then(|range| source.get(range_bounds(range)));
+        let (initializer, step) = (
+            text(loop_fact.initializer_range),
+            text(loop_fact.step_range),
+        );
         let condition = text(loop_fact.condition_range).unwrap_or("1");
         let Some(body) = source.get(range_bounds(loop_fact.body_range)) else {
             continue;
@@ -1545,10 +1553,11 @@ fn rewrite_for_loops(context: &ParsedContext) -> Result<Vec<Edit>, CActionError>
         // below the closing brace, describing the wrong thing. The reader's
         // words stay where the reader put them.
         let closing = lines.line_number_at(end.saturating_sub(1));
-        if lines
-            .get(closing)
-            .is_some_and(|last| !lines.text(last)[end.saturating_sub(last.start)..].trim().is_empty())
-        {
+        if lines.get(closing).is_some_and(|last| {
+            !lines.text(last)[end.saturating_sub(last.start)..]
+                .trim()
+                .is_empty()
+        }) {
             continue;
         }
         let indent = lines.text(line)[..leading_whitespace(lines.text(line))].to_owned();
@@ -1624,7 +1633,6 @@ fn rewrite_for_loops(context: &ParsedContext) -> Result<Vec<Edit>, CActionError>
 /// to be reported when the room is not there.
 fn rewrite_ternaries(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
     use std::fmt::Write as _;
-
 
     let source = context.source();
     let lines = context.lines();

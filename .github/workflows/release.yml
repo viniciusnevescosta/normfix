@@ -213,6 +213,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # The manifest renderer lives in this repository, so the job that writes
+      # the tap and the bucket needs the source it is releasing.
+      - name: Check out tagged source
+        uses: actions/checkout@v7
       - name: Download release archives
         uses: actions/download-artifact@v8
         with:
@@ -317,3 +321,45 @@ jobs:
           gh release view "$GITHUB_REF_NAME" --json body -q .body > generated-notes.md
           cat release-header.md generated-notes.md > release-notes.md
           gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md
+      # Both package managers verify a download against a checksum before
+      # installing it, and that checksum can only exist once the artifacts do.
+      # Editing the manifests by hand therefore always lags a release by one,
+      # which is how the tap sat on 1.5.0 while four releases went out. They are
+      # written here instead, from the SHA256SUMS this job just published.
+      #
+      # A missing token is not a failure: the release is already out, and the
+      # step says plainly that the manifests were not pushed.
+      - name: Update the Homebrew tap and the Scoop bucket
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGING_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::PACKAGING_TOKEN is not set; the Homebrew formula and Scoop manifest were not updated for ${GITHUB_REF_NAME}."
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          packaging/render-manifests.sh "$version" dist/SHA256SUMS rendered
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          publish() {
+            repository="$1"
+            source_file="$2"
+            target="$3"
+            work=$(mktemp -d)
+            if ! gh repo clone "$repository" "$work" -- --depth 1 >/dev/null 2>&1; then
+              echo "::warning::could not clone $repository; $target was not updated."
+              return 0
+            fi
+            mkdir -p "$(dirname "$work/$target")"
+            cp "$source_file" "$work/$target"
+            git -C "$work" add "$target"
+            if git -C "$work" diff --cached --quiet; then
+              echo "$repository already describes $version"
+              return 0
+            fi
+            git -C "$work" commit -m "normfix $version"
+            git -C "$work" push
+          }
+          publish viniciusnevescosta/homebrew-normfix rendered/normfix.rb Formula/normfix.rb
+          publish viniciusnevescosta/scoop-normfix rendered/normfix.json bucket/normfix.json

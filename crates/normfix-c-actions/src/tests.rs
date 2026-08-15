@@ -1147,7 +1147,10 @@ fn an_empty_loop_body_is_never_mistaken_for_a_stray_semicolon() {
     // The `for` is forbidden and becomes a `while`, which moves its step into
     // the body. Its own empty body then holds nothing and is no longer a loop
     // body, so losing it is the one case where losing it changes nothing.
-    assert!(fixed.contains("\tc = 0;\n\twhile (c < 2)\n\t\tc++;\n"), "{fixed}");
+    assert!(
+        fixed.contains("\tc = 0;\n\twhile (c < 2)\n\t\tc++;\n"),
+        "{fixed}"
+    );
     assert_eq!(apply(&fixed, &[]), fixed);
 }
 
@@ -1519,11 +1522,7 @@ fn a_declaration_that_cannot_be_assigned_later_is_left_alone() {
     // Each check names the value still attached to its declaration, because a
     // split leaves the declaration itself looking unchanged.
     let fixed = apply(source, &[]);
-    for kept in [
-        "const int\ta = 1;",
-        "static int\tb = 2;",
-        "c[] = {1, 2};",
-    ] {
+    for kept in ["const int\ta = 1;", "static int\tb = 2;", "c[] = {1, 2};"] {
         assert!(fixed.contains(kept), "{kept:?} was rewritten:\n{fixed}");
     }
     // Two initializers in one declaration are no longer beyond reach: each
@@ -1902,9 +1901,15 @@ fn a_ternary_becomes_the_branch_it_stood_for() {
         "}\n",
     );
     let fixed = apply(source, &[]);
-    assert!(fixed.contains("\tif (a > b)\n\t\tr = a;\n\telse\n\t\tr = b;\n"), "{fixed}");
+    assert!(
+        fixed.contains("\tif (a > b)\n\t\tr = a;\n\telse\n\t\tr = b;\n"),
+        "{fixed}"
+    );
     // A return needs no `else`: the first branch already left the function.
-    assert!(fixed.contains("\tif (n < 0)\n\t\treturn (-1);\n\treturn (1);\n"), "{fixed}");
+    assert!(
+        fixed.contains("\tif (n < 0)\n\t\treturn (-1);\n\treturn (1);\n"),
+        "{fixed}"
+    );
     assert!(!fixed.contains('?'), "{fixed}");
 }
 
@@ -1962,8 +1967,9 @@ fn a_ternary_stays_when_the_function_has_no_room_for_it() {
         let _ = writeln!(text, "\tn += {index};");
         text
     });
-    let source =
-        format!("int\tf(int a, int b)\n{{\n\tint\tn;\n\tint\tr;\n\n{body}\tr = a > b ? a : b;\n\treturn (r + n);\n}}\n");
+    let source = format!(
+        "int\tf(int a, int b)\n{{\n\tint\tn;\n\tint\tr;\n\n{body}\tr = a > b ? a : b;\n\treturn (r + n);\n}}\n"
+    );
     assert!(apply(&source, &[]).contains("a > b ? a : b"));
 }
 

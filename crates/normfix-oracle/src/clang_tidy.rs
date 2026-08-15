@@ -223,7 +223,11 @@ mod tests {
         );
         let findings = parse_findings(output);
 
-        assert_eq!(findings.len(), 1, "a note is part of the trace, not a finding");
+        assert_eq!(
+            findings.len(),
+            1,
+            "a note is part of the trace, not a finding"
+        );
         assert_eq!(findings[0].check, "clang-analyzer-unix.Malloc");
         assert_eq!(findings[0].message, "Use of memory after it is released");
         assert_eq!((findings[0].line, findings[0].column), (12, 7));

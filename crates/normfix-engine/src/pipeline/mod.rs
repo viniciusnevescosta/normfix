@@ -57,8 +57,7 @@ use normfix_header::{
 };
 use normfix_oracle::{
     ClangTidy, ClangTidyConfig, CompilerConfig, CompilerError, CompilerReport, CompilerValidator,
-    NorminetteConfig,
-    NorminetteError, NorminetteOracle, NorminetteReport, ProcessLimits,
+    NorminetteConfig, NorminetteError, NorminetteOracle, NorminetteReport, ProcessLimits,
 };
 use normfix_project::{
     DiscoveredFile, DiscoveryOptions, GuardApproval, GuardInsertionApproval, ProjectFileKind,

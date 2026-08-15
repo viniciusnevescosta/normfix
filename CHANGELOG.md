@@ -10,6 +10,89 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.7.0] / 2026-08-15
+
+Hunting bugs on the assumption that everything is wrong until proven otherwise,
+and teaching the tool five more of the Norm's own rules.
+
+### Fixed
+
+- **Assigning through a pointer inside a control statement lost every fix in
+  the file.** `if (x)` followed by `*out = a;` made two rules undo each other
+  until the run gave up: the line opens with what also spells multiplication,
+  so the rule that joins lines read the `)` closing the header as an operand
+  and pulled the body up; the brace rule put it back. Neither ever won, and the
+  whole batch was discarded — not only the part it disagreed about. A `)` that
+  closes a control header ends the header, not an expression, so what follows
+  is the body. Present since at least 1.5.0, and reachable by any project with
+  pointers.
+
+- **A Norminette `Notice:` was counted as a violation.** A notice asks the
+  student to confirm a deliberate choice; a file whose only remark is a notice
+  is one the checker itself calls `OK!`. Ranking it with the errors inflated
+  what was left to do and failed a pipeline over a legitimate global. Notices
+  are now advisories: they appear as `info`, count under `advisories`, and no
+  longer keep an otherwise clean run from exiting `0`.
+
+- **`else if` is no longer split into a nested `if`.** Treating the alternative
+  as a body to put on its own line turned one construct into an `else` holding
+  an `if` — a line longer and a level deeper, in a Norm that counts both.
+
+- **Sixty-one rules gained the advice they were missing.** The catalogue of
+  what to do about a rule was written twice, in two lists that had drifted: the
+  native one knew about ternaries, `goto`, forbidden enums and twenty more,
+  while the path carrying the official checker's findings — which is most of
+  what a student sees — had eleven answers and a shrug for the rest. There is
+  now one catalogue, and every rule the checker can report that normfix does
+  not fix says what to do about it.
+
+### Added
+
+- **A forbidden ternary becomes the branch it stood for.** `x = a > b ? a : b;`
+  becomes an `if`/`else`, and `return (c ? a : b);` becomes an `if` that
+  returns followed by a return. The condition still runs first and exactly one
+  side runs after it, so a compound `+=` with a call in each branch still calls
+  one of them. It declines, with advice instead, where the rewrite would not be
+  the same program: under an unbraced body the new `else` would bind to the
+  outer `if`; a target that moves, like `arr[i++]`, would move twice; a nested
+  ternary would land where the collector no longer looks. It also declines when
+  the three extra lines would push the function past twenty-five, rather than
+  trading a ternary for a structural error.
+
+- **A forbidden `for` becomes the `while` it stood for.** The initializer moves
+  above the loop, the condition becomes the `while` condition, and the step
+  goes last in the body. A `continue` bound to the loop reaches the step in a
+  `for` and jumps past it in a `while`, so those are left alone; a `continue`
+  in a nested loop is not. A declaration in the initializer is scoped to the
+  loop and is left alone too. Loops nested in loops converge across passes.
+
+- **One instruction per line, one declared name per line, and chained
+  assignments written out.** `a = 1; b = 2;` becomes two lines without moving a
+  token. `int *p, q;` becomes `int *p;` and `int q;` — each declarator copied
+  as written, so the star stays where it binds. `a = b = 0;` becomes `b = 0;`
+  and `a = b;`, in that order, so a call on the right still runs once.
+
+- **`clang-tidy` reads a project as an optional lens.** When the machine has
+  one, preflight reports what it saw as `TIDY_` entries: a leak on a path
+  nobody took, a pointer used after it was released — what the parser cannot
+  reach and what fails a defense. It is never a dependency, and its findings
+  are informational: they never authorize an edit and never count toward what
+  is left to fix. `--clang-tidy <PATH>` names an exact executable.
+
+- **Preflight says what a leak run would add.** The static passes read every
+  path and can name a leak on one no run takes; a leak checker runs the program
+  once and reports what that run really did. Both are worth having, and
+  preflight deliberately runs only the static kind, because running a project's
+  binary means running whatever it does.
+
+### Performance
+
+- The new rules cost about 4% of the native layer on an eight-hundred-line
+  file — under two milliseconds against the twelve seconds the same file spends
+  inside the official checker. Collecting a fact now rules a statement out with
+  one comparison before anything walks a subtree or allocates, which took the
+  first version of that cost from 8% to nothing measurable.
+
 ## [1.6.3] / 2026-08-14
 
 Saying it in a language people can read, in the documentation and in the tool
@@ -1351,6 +1434,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.7.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.7.0
 [1.6.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.3
 [1.6.2]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.2
 [1.6.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.1

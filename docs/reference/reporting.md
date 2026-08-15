@@ -93,7 +93,7 @@ inferred from a field that happens to be absent:
   "outcome": "success",
   "result": {
     "state": "available",
-    "current_version": "1.6.3",
+    "current_version": "1.7.0",
     "latest_version": "1.7.0",
     "installed": false
   }

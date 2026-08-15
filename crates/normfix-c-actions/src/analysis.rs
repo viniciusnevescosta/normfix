@@ -747,9 +747,7 @@ pub fn rule_guidance(code: &str) -> Option<&'static str> {
         "INVALID_SUFFIX" | "BAD_FLOAT_SUFFIX" => {
             "Use a suffix the type allows, such as U, L, UL, or F."
         }
-        "MAXIMAL_MUNCH" => {
-            "Separate the operators so they cannot be read as one longer token."
-        }
+        "MAXIMAL_MUNCH" => "Separate the operators so they cannot be read as one longer token.",
         "IMPLICIT_VAR_TYPE" => "Name the type; C does not supply a default one.",
         "ARG_TYPE_UKN" => "Declare the type first, or include the header that declares it.",
         "MISSING_IDENTIFIER" => {
@@ -795,9 +793,7 @@ pub fn rule_guidance(code: &str) -> Option<&'static str> {
         "COMMA_START_LINE" => {
             "End the previous line with the comma instead of opening this one with it."
         }
-        "EOL_OPERATOR" => {
-            "Begin the continuation line with the operator rather than ending on it."
-        }
+        "EOL_OPERATOR" => "Begin the continuation line with the operator rather than ending on it.",
         "ATTR_EOL" => "Move the function attribute to the end of the line.",
         "EMPTY_LINE_FILE_START" | "EMPTY_LINE_EOF" => {
             "Delete the blank line at the edge of the file."

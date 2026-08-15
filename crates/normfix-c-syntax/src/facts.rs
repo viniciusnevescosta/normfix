@@ -1465,7 +1465,10 @@ fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, Par
     // Ordered cheapest first. This runs for every statement in the file, and
     // almost none of them hold a `?:`, so nothing that walks a subtree may
     // happen before the field lookups that rule the statement out.
-    if node.parent().is_none_or(|parent| parent.kind() != "compound_statement") {
+    if node
+        .parent()
+        .is_none_or(|parent| parent.kind() != "compound_statement")
+    {
         return Ok(None);
     }
     let Some(value) = node.named_child(0) else {
@@ -1514,9 +1517,13 @@ fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, Par
             ) else {
                 return Ok(None);
             };
-            if ["call_expression", "update_expression", "assignment_expression"]
-                .iter()
-                .any(|kind| contains_kind(target, kind))
+            if [
+                "call_expression",
+                "update_expression",
+                "assignment_expression",
+            ]
+            .iter()
+            .any(|kind| contains_kind(target, kind))
             {
                 return Ok(None);
             }
@@ -1562,10 +1569,15 @@ fn chained_assignment_fact(
     source: &str,
     node: Node<'_>,
 ) -> Result<Option<ChainedAssignmentFact>, ParseFailure> {
-    if node.parent().is_none_or(|parent| parent.kind() != "compound_statement") {
+    if node
+        .parent()
+        .is_none_or(|parent| parent.kind() != "compound_statement")
+    {
         return Ok(None);
     }
-    let Some(outer) = node.named_child(0).filter(|child| child.kind() == "assignment_expression")
+    let Some(outer) = node
+        .named_child(0)
+        .filter(|child| child.kind() == "assignment_expression")
     else {
         return Ok(None);
     };
@@ -1586,9 +1598,13 @@ fn chained_assignment_fact(
         return Ok(None);
     };
     if contains_kind(node, "comment")
-        || ["call_expression", "update_expression", "assignment_expression"]
-            .iter()
-            .any(|kind| contains_kind(target, kind) || contains_kind(inner_target, kind))
+        || [
+            "call_expression",
+            "update_expression",
+            "assignment_expression",
+        ]
+        .iter()
+        .any(|kind| contains_kind(target, kind) || contains_kind(inner_target, kind))
     {
         return Ok(None);
     }
@@ -1691,10 +1707,7 @@ fn shared_declaration_fact(
 /// exactly what sits between the two: a directive there belongs to a build
 /// configuration this parse cannot see, and a comment there would have to
 /// choose a line, so both leave the pair alone.
-fn collect_crowded_statements(
-    node: Node<'_>,
-    facts: &mut SyntaxFacts,
-) -> Result<(), ParseFailure> {
+fn collect_crowded_statements(node: Node<'_>, facts: &mut SyntaxFacts) -> Result<(), ParseFailure> {
     let mut cursor = node.walk();
     let mut previous: Option<Node<'_>> = None;
     for child in node.named_children(&mut cursor) {
@@ -1800,7 +1813,8 @@ fn contains_kind(node: Node<'_>, kind: &str) -> bool {
         return true;
     }
     let mut cursor = node.walk();
-    node.children(&mut cursor).any(|child| contains_kind(child, kind))
+    node.children(&mut cursor)
+        .any(|child| contains_kind(child, kind))
 }
 
 fn has_ancestor_kind(mut node: Node<'_>, kind: &str) -> bool {
