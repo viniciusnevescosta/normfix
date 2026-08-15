@@ -145,12 +145,27 @@ Ele não roda `make`, não linka um binário, não executa seu programa nem seus
 testes, e não prova a ausência de vazamentos. Isso continua sendo seu, e o
 relatório diz isso.
 
-O preflight informa se o `clang-tidy` está disponível no `PATH` e mostra uma
-receita prática de build de depuração com AddressSanitizer/UndefinedBehaviorSanitizer.
-Ele não roda `clang-tidy`, nem sanitizers, nem `make` (nem mesmo `make -n`, que
-pode avaliar `$(shell ...)`), nem um binário do projeto. Tal execução exige
-confiança separada e explícita no comportamento de build e de execução do
-projeto.
+Ele não roda sanitizers, nem `make` (nem mesmo `make -n`, que pode avaliar
+`$(shell ...)`), nem um binário do projeto. Isso exigiria confiança separada e
+explícita no que o build e a execução do projeto fazem. O preflight mostra uma
+receita prática de build de depuração com AddressSanitizer e
+UndefinedBehaviorSanitizer.
+
+## A lente do clang-tidy
+
+Se a máquina tiver `clang-tidy`, o preflight lê cada fonte C através dele e
+mostra o que ele viu como entradas `TIDY_`. É uma lente, nunca uma dependência:
+uma máquina sem ele roda exatamente como antes, e `--clang-tidy <CAMINHO>`
+aponta um executável exato quando há vários instalados ou nenhum no `PATH`.
+
+Ele pede as duas famílias de checagem que dizem algo sobre o programa — o
+analisador estático, onde moram vazamentos e uso após liberação, e as checagens
+de código propenso a erro. O resto do que o `clang-tidy` traz é estilo de casa
+para C++, que discutiria com a Norm, e quem manda aqui é a Norm.
+
+Os achados dele são informativos e continuam assim: nunca autorizam uma edição,
+nunca entram na conta do que falta corrigir e nunca recusam um resultado de
+formatação.
 
 O preflight adiciona automaticamente uma passagem limitada de análise estática
 profunda: `-fanalyzer` no GCC, `--analyze` no Clang. Fluxos comuns ainda exigem
@@ -160,6 +175,20 @@ que importa porque `/usr/bin/gcc` no macOS é o Clang usando outro nome.
 Eles podem *sugerir* um vazamento ou um acesso inválido; nunca provam correção,
 e nunca autorizam uma edição. Um compilador sem analisador nenhum reporta
 `CC_ANALYZER_UNAVAILABLE` e a execução continua.
+
+## As passagens estáticas e uma execução com leaks respondem coisas diferentes
+
+As passagens acima leem todo caminho que o código poderia tomar, então
+conseguem apontar um vazamento num caminho que nenhuma execução sua percorre. Um
+verificador de vazamento roda o programa uma vez e conta o que aquela execução
+realmente fez — verdade sobre aquela execução, e silêncio sobre todo caminho que
+ela não alcançou.
+
+Valem os dois, e o preflight de propósito roda só o primeiro tipo. Rodar o
+binário de um projeto é rodar o que quer que ele faça, e é por isso que o
+[`normfix leaks`](/pt/commands/leaks) é um comando separado que pergunta antes.
+O preflight diz o que uma execução com leaks acrescentaria, em vez de decidir
+por você.
 
 `preflight` se recusa a combinar com `--no-compiler-preflight`, porque a
 passagem do compilador é o motivo do comando existir.

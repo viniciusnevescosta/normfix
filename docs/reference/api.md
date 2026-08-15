@@ -233,7 +233,26 @@ them arrive here. One shape, one field to read.
 | `--use-gitignore` | `scope.respects_gitignore` |
 | `--unsafe`, `--force`, `--remove-unused`, `--remove-unexpected`, `--remove-invalid-comments` | `granted_capabilities` |
 
-`--threads`, `--timeout`, `--no-cache`, `--norminette`, and `--cc` leave no
+### Rule identifiers carry their source
+
+A `rule_id` says which authority produced the finding, so a caller can weigh it
+without reading the prose.
+
+| Prefix | Who said it |
+|---|---|
+| no prefix | the official Norminette, or a native Norm rule |
+| `CC_` | the C compiler under `-Wall -Wextra -Werror` |
+| `CC_ANALYZER_` | the compiler's own deep analyzer |
+| `TIDY_` | `clang-tidy`, when the machine running normfix has one |
+| `MAKEFILE_`, `HEADER_`, `PREFLIGHT_` | normfix's own project checks |
+
+Everything from a lens — `CC_ANALYZER_` and `TIDY_` — arrives with severity
+`info`. A lens reports a judgement about how a program behaves rather than a
+fact about its text, so it counts under `advisories`, never under `remaining`,
+and it never authorizes an edit. Branch on `severity` rather than on the prefix.
+
+`--threads`, `--timeout`, `--no-cache`, `--norminette`, `--cc`, and
+`--clang-tidy` leave no
 trace, on purpose. They change how a run reaches its answer, not what the
 answer covers, and a caller reading a result should not have to care which were
 used to produce it.

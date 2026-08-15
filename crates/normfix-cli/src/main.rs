@@ -179,6 +179,10 @@ struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     cc: Option<PathBuf>,
 
+    /// Use this exact clang-tidy for the optional preflight lens.
+    #[arg(long, global = true, value_name = "PATH")]
+    clang_tidy: Option<PathBuf>,
+
     /// Run GCC `-fanalyzer` as a slower informational check.
     #[arg(long, global = true)]
     analyzer: bool,
@@ -1036,6 +1040,7 @@ fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions
     options.strict_norminette_version = cli.strict_norminette_version;
     options.compiler_preflight = !cli.no_compiler_preflight;
     options.compiler_executable.clone_from(&cli.cc);
+    options.clang_tidy_executable.clone_from(&cli.clang_tidy);
     options.analyzer = cli.analyzer;
     options.timeout = cli.timeout;
     options.cache = !cli.no_cache;

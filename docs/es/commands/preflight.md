@@ -146,12 +146,27 @@ asignatura puede decir si se exige un Makefile, y normfix no lee asignaturas.
 No ejecuta `make`, no enlaza un binario, no ejecuta tu programa ni tus pruebas, y
 no prueba la ausencia de fugas. Eso sigue siendo tuyo, y el informe lo dice.
 
-Preflight informa si `clang-tidy` está disponible en el `PATH` y muestra una
-receta práctica de compilación de depuración con
-AddressSanitizer/UndefinedBehaviorSanitizer. No ejecuta `clang-tidy`, ni
-sanitizers, ni `make` (ni siquiera `make -n`, que puede evaluar `$(shell ...)`),
-ni un binario del proyecto. Tal ejecución necesita confianza separada y explícita
-en el comportamiento de compilación y de ejecución del proyecto.
+No ejecuta sanitizers, ni `make` (ni siquiera `make -n`, que puede evaluar
+`$(shell ...)`), ni un binario del proyecto. Eso pediría una confianza aparte y
+explícita en lo que hacen la compilación y la ejecución del proyecto. Preflight
+sí muestra una receta práctica de compilación de depuración con AddressSanitizer
+y UndefinedBehaviorSanitizer.
+
+## La lente de clang-tidy
+
+Si la máquina tiene `clang-tidy`, preflight lee cada fuente C a través de él y
+muestra lo que vio como entradas `TIDY_`. Es una lente, nunca una dependencia:
+una máquina sin él funciona exactamente igual que antes, y `--clang-tidy <RUTA>`
+señala un ejecutable exacto cuando hay varios instalados o ninguno en el `PATH`.
+
+Pide las dos familias de comprobaciones que dicen algo sobre el programa: el
+analizador estático, donde viven las fugas y el uso después de liberar, y las
+comprobaciones de código propenso a error. El resto de lo que trae `clang-tidy`
+es estilo de casa para C++, que discutiría con la Norm, y aquí manda la Norm.
+
+Sus hallazgos son informativos y siguen siéndolo: nunca autorizan una edición,
+nunca cuentan para lo que queda por corregir y nunca rechazan un resultado de
+formateo.
 
 Preflight añade automáticamente una pasada acotada de análisis estático profundo:
 `-fanalyzer` en GCC, `--analyze` en Clang. Los flujos corrientes siguen
@@ -162,6 +177,19 @@ nombre.
 Pueden *sugerir* una fuga o un acceso inválido; nunca prueban la corrección, y
 nunca autorizan una edición. Un compilador sin ningún analizador informa
 `CC_ANALYZER_UNAVAILABLE` y la ejecución continúa.
+
+## Las pasadas estáticas y una ejecución con leaks responden cosas distintas
+
+Las pasadas de arriba leen todos los caminos que el código podría tomar, así que
+pueden señalar una fuga en un camino que ninguna ejecución tuya recorre. Un
+verificador de fugas ejecuta el programa una vez y cuenta lo que esa ejecución
+hizo de verdad: certeza sobre esa ejecución, y silencio sobre todo camino al que
+no llegó.
+
+Valen los dos, y preflight a propósito ejecuta solo el primer tipo. Ejecutar el
+binario de un proyecto es ejecutar lo que sea que haga, y por eso
+[`normfix leaks`](/es/commands/leaks) es un comando aparte que pregunta antes.
+Preflight dice qué añadiría una ejecución con leaks, en vez de decidirlo por ti.
 
 `preflight` se niega a combinarse con `--no-compiler-preflight`, porque la pasada
 del compilador es la razón de ser del comando.

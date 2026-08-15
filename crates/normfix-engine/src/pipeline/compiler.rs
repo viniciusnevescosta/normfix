@@ -253,6 +253,49 @@ pub(super) fn hash_compiler_project_file(
     true
 }
 
+/// What the optional `clang-tidy` lens saw in this file.
+///
+/// Every finding is informational and stays that way. The lens reads the file
+/// on disk, reports a judgement about how the program behaves, and never takes
+/// part in the proof that authorizes an edit — normfix edits on facts about the
+/// text, and this is not one. A lens that is absent, that cannot run, or that
+/// runs out of its bounds simply shows nothing.
+fn clang_tidy_diagnostics(
+    oracle: &OracleContext,
+    file: &DiscoveredFile,
+    path: &Utf8PathBuf,
+    original: &str,
+    current: &str,
+) -> Vec<Diagnostic> {
+    let Some(lens) = &oracle.clang_tidy else {
+        return Vec::new();
+    };
+    let Ok(findings) = lens.analyze(&file.path, &oracle.compiler_include_directories) else {
+        return Vec::new();
+    };
+    findings
+        .into_iter()
+        .filter(|finding| compiler_path_matches(&finding.path, path.as_str()))
+        .map(|finding| Diagnostic {
+            rule_id: format!("TIDY_{}", normalize_warning_name(&finding.check)),
+            path: path.clone(),
+            range: remap_compiler_range(original, current, finding.line, finding.column),
+            severity: Severity::Info,
+            message: finding.message,
+            source: DiagnosticSource::Compiler,
+            notes: vec![
+                "clang-tidy reads the file on disk as an optional lens; its findings never authorize or reject an edit."
+                    .to_owned(),
+            ],
+            help: Some(
+                "Follow the ownership or control-flow path it describes; confirm the result at runtime before trusting it."
+                    .to_owned(),
+            ),
+            localized: None,
+        })
+        .collect()
+}
+
 pub(super) fn run_compiler_preflight(
     oracle: &OracleContext,
     options: &FixOptions,
@@ -261,10 +304,11 @@ pub(super) fn run_compiler_preflight(
     original: &str,
     current: &str,
 ) -> Vec<Diagnostic> {
+    let mut lens = clang_tidy_diagnostics(oracle, file, path, original, current);
     if oracle.compiler.is_none() {
         if oracle.compiler_notice_path.as_deref() == Some(file.path.as_path()) {
             if let Some(reason) = &oracle.compiler_unavailable {
-                return vec![point_diagnostic(
+                lens.push(point_diagnostic(
                     path,
                     "CC_PREFLIGHT_UNAVAILABLE",
                     if options.preflight {
@@ -285,12 +329,13 @@ pub(super) fn run_compiler_preflight(
                         "Install `cc` or provide an exact compiler path; formatting and Norminette validation continued safely."
                             .to_owned(),
                     ),
-                )];
+                ));
+                return lens;
             }
         }
-        return Vec::new();
+        return lens;
     }
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = std::mem::take(&mut lens);
     if options.compiler_preflight || options.preflight {
         append_compiler_run(
             &mut diagnostics,

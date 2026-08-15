@@ -145,11 +145,25 @@ For leaks specifically, [`normfix leaks`](/commands/leaks) runs a program you
 already built under a leak checker. It is a separate command because it executes
 your code, and it asks before it does.
 
-Preflight reports whether `clang-tidy` is available on `PATH` and shows a
-practical AddressSanitizer/UndefinedBehaviorSanitizer debug-build recipe. It
-does not run `clang-tidy`, sanitizers, `make` (not even `make -n`, which can
-evaluate `$(shell ...)`), or a project binary. Such execution needs separate,
-explicit trust in the project's build and runtime behavior.
+It does not run sanitizers, `make` (not even `make -n`, which can evaluate
+`$(shell ...)`), or a project binary. Such execution needs separate, explicit
+trust in the project's build and runtime behavior. Preflight does show a
+practical AddressSanitizer/UndefinedBehaviorSanitizer debug-build recipe.
+
+## The clang-tidy lens
+
+If the machine has `clang-tidy`, preflight reads each C source through it and
+reports what it saw as `TIDY_` entries. It is a lens, never a dependency: a
+machine without one runs exactly as before, and `--clang-tidy <PATH>` names an
+exact executable when several are installed or none is on `PATH`.
+
+It asks for the two check families that say something about the program — the
+static analyzer, where leaks and use-after-free live, and the bug-prone checks.
+The rest of what `clang-tidy` ships is house style for C++, which would argue
+with the Norm, and the Norm is the authority here.
+
+Its findings are informational and stay that way: they never authorize an edit,
+never count toward what is left to fix, and never reject a formatting result.
 
 Preflight automatically adds a bounded deep static-analysis pass: `-fanalyzer`
 on GCC, `--analyze` on Clang. Ordinary workflows still require `--analyzer`.
@@ -159,6 +173,18 @@ on GCC, `--analyze` on Clang. Ordinary workflows still require `--analyzer`.
 They can *suggest* a leak or an invalid access; they never prove correctness,
 and they never authorize an edit. A compiler with no analyzer at all reports
 `CC_ANALYZER_UNAVAILABLE` and the run continues.
+
+## Static passes and a leak run answer different questions
+
+The passes above read every path the code could take, so they can name a leak
+on a path no run of your program ever takes. A leak checker runs the program
+once and reports what that run really did — ground truth for that run, and
+silent about every path it did not reach.
+
+Both are worth having, and preflight deliberately runs only the first kind.
+Running a project's binary means running whatever the binary does, which is why
+[`normfix leaks`](/commands/leaks) is a separate command that asks first.
+Preflight names what a leak run would add rather than deciding for you.
 
 `preflight` refuses to combine with `--no-compiler-preflight`, because the compiler
 pass is the point of the command.

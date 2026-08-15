@@ -99,7 +99,7 @@ pub(super) fn append_preflight_diagnostics(
         || "clang-tidy was not found on PATH; install it only if the project allows an additional local advisory pass.".to_owned(),
         |executable| {
             format!(
-                "clang-tidy is available at `{}`; run it with the project's real include paths and compile flags, and review findings manually.",
+                "clang-tidy was found at `{}` and read this project as an optional lens; its findings appear above as TIDY_ entries and never authorize an edit.",
                 executable.display()
             )
         },
@@ -179,7 +179,7 @@ pub(super) fn root_regular_makefiles(root: &Path) -> Vec<PathBuf> {
 fn leak_checker_note() -> String {
     if let Some(executable) = executable_on_path("valgrind") {
         return format!(
-            "A leak checker is available at `{}`; check a built binary with `normfix leaks ./your_program`, which runs it and reports what one run observed.",
+            "A leak checker is available at `{}`. It answers a different question than the static passes above: they read every path and can name a leak on one nobody took, while `normfix leaks ./your_program` runs the program and reports what that one run really did. Preflight never runs it for you, because running a project's binary means running whatever it does.",
             executable.display()
         );
     }

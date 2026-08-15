@@ -56,7 +56,8 @@ use normfix_header::{
     Identity42, RunClock, c_header_filename_matches, ensure_c_header, update_c_header,
 };
 use normfix_oracle::{
-    CompilerConfig, CompilerError, CompilerReport, CompilerValidator, NorminetteConfig,
+    ClangTidy, ClangTidyConfig, CompilerConfig, CompilerError, CompilerReport, CompilerValidator,
+    NorminetteConfig,
     NorminetteError, NorminetteOracle, NorminetteReport, ProcessLimits,
 };
 use normfix_project::{
@@ -157,6 +158,8 @@ pub struct FixOptions {
     pub compiler_preflight: bool,
     /// Exact compiler executable for preflight, or `None` to resolve `cc`.
     pub compiler_executable: Option<PathBuf>,
+    /// Exact `clang-tidy`, or `None` to search `PATH` for one.
+    pub clang_tidy_executable: Option<PathBuf>,
     /// Run GCC `-fanalyzer` as an informational, fail-open advisory backend.
     pub analyzer: bool,
     /// Refuse a Norminette release the project has not verified.
@@ -216,6 +219,7 @@ impl FixOptions {
             norminette_executable: None,
             compiler_preflight: true,
             compiler_executable: None,
+            clang_tidy_executable: None,
             analyzer: false,
             strict_norminette_version: false,
             timeout: Duration::from_secs(5),
@@ -261,6 +265,7 @@ struct OracleContext {
     compiler_notice_path: Option<PathBuf>,
     compiler_project_fingerprint: Option<[u8; 32]>,
     compiler_include_directories: Vec<PathBuf>,
+    clang_tidy: Option<ClangTidy>,
     cache: Option<PersistentCache>,
     project_root: PathBuf,
 }
@@ -657,6 +662,20 @@ fn build_oracle_context(
         compiler_notice_path,
         compiler_project_fingerprint: compiler_project.fingerprint,
         compiler_include_directories: compiler_project.include_directories,
+        // A lens, never a dependency: a machine without it runs as before, and
+        // the run never waits on one that cannot answer for itself.
+        clang_tidy: if has_c_source && options.preflight {
+            ClangTidy::locate(ClangTidyConfig {
+                executable: options.clang_tidy_executable.clone(),
+                limits: ProcessLimits {
+                    timeout: options.timeout.max(Duration::from_secs(30)),
+                    output_bytes: 2 * 1024 * 1024,
+                },
+            })
+            .ok()
+        } else {
+            None
+        },
         cache,
         project_root: absolute_lexical(&options.cwd),
     }))

@@ -12,6 +12,7 @@
 
 #![forbid(unsafe_code)]
 
+mod clang_tidy;
 mod compiler;
 mod executable;
 mod norminette;
@@ -19,6 +20,7 @@ mod process;
 mod token;
 mod valgrind;
 
+pub use clang_tidy::{ClangTidy, ClangTidyConfig, ClangTidyError, ClangTidyFinding};
 pub use compiler::{
     CompilerConfig, CompilerError, CompilerFingerprint, CompilerReport, CompilerValidator,
 };
