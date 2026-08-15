@@ -13,6 +13,14 @@ export const identityState = $state({
   invalid: false,
 });
 
+export const diagnosticsState = $state({
+  diagnostics: [] as unknown[],
+  fixes: [] as unknown[],
+  budget: [] as unknown[],
+  error: null as string | null,
+  stable: true,
+});
+
 export const treeState = $state({
   files: [] as string[],
   unsupported: new Set<string>(),

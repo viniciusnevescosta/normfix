@@ -35,7 +35,8 @@ import { mount } from "svelte";
 
 import FileTree from "./components/FileTree.svelte";
 import IdentityPanel from "./components/IdentityPanel.svelte";
-import { identityState, treeState } from "./tree-state.svelte";
+import Diagnostics from "./components/Diagnostics.svelte";
+import { diagnosticsState, identityState, treeState } from "./tree-state.svelte";
 import { openDraftRow } from "./project/draft-row";
 import { deserializeProject, isSameProject, serializeProject } from "./project/persistence";
 import { movedPath, renamedPath, rewritePrefix, wouldContainItself } from "./project/tree";
@@ -213,7 +214,6 @@ const elements = {
   diffOutput: requiredElement<HTMLElement>("#diff-output"),
   diagnosticsView: requiredElement<HTMLElement>("#diagnostics-view"),
   diagnosticCount: requiredElement<HTMLElement>("#diagnostic-count"),
-  diagnosticTemplate: requiredElement<HTMLTemplateElement>("#diagnostic-template"),
   language: requiredElement<HTMLSelectElement>("#language"),
   theme: requiredElement<HTMLSelectElement>("#theme"),
   starCount: requiredElement<HTMLElement>("#star-count"),
@@ -1075,133 +1075,46 @@ function renderSelectedResult(): void {
   renderDiagnostics(result);
 }
 
+/**
+ * Hands the diagnostics panel one file's result.
+ *
+ * This used to build every card, list and table by hand, and returned early on
+ * an unreadable file — which is how the one finding worth acting on ended up
+ * hidden behind the reason it was not written.
+ */
 function renderDiagnostics(result: ResultRecord): void {
-  elements.diagnosticsView.replaceChildren();
-  if (result.error || !result.stable) {
-    // Why nothing was formatted goes first, in the reader's language. The
-    // findings then follow, because a file that will not parse has the one
-    // finding that matters most — where the parser lost its way — and hiding
-    // it behind the reason left a reader with a sentence about `ERROR` and
-    // `MISSING` bytes and no line to look at.
-    elements.diagnosticsView.append(
-      emptyState(
-        t("fileUnchanged"),
-        // A file the parser could not read carries the reason as an error; an
-        // unstable run carries none. The error is what tells the two apart —
-        // `stable` is false for both, and reading it instead sent every
-        // unreadable file the fixed-point message.
-        result.error ? t("unparsableFile") : t("unstableFormatter"),
-      ),
-    );
-    if (result.diagnostics.length === 0) return;
-  }
-  if (result.diagnostics.length === 0) {
-    elements.diagnosticsView.append(emptyState(t("noDiagnostics"), t("cliCoverage")));
-  } else {
-    for (const diagnostic of result.diagnostics) {
-      const template = elements.diagnosticTemplate.content.firstElementChild;
-      if (!(template instanceof HTMLElement)) {
-        throw new Error("Diagnostic template is missing its root element.");
-      }
-      const card = template.cloneNode(true) as HTMLElement;
-      card.dataset.severity = diagnostic.severity;
-      requiredChild<HTMLElement>(card, ".severity").textContent = diagnostic.severity;
-      requiredChild<HTMLElement>(card, ".rule").textContent = diagnostic.rule_id;
-      requiredChild<HTMLElement>(card, ".location").textContent = diagnostic.location
-        ? `L${diagnostic.location.line}:C${diagnostic.location.column}`
-        : "";
-      requiredChild<HTMLElement>(card, ".diagnostic-message").textContent = diagnostic.message;
-      const help = requiredChild<HTMLElement>(card, ".diagnostic-help");
-      help.textContent = diagnostic.help ? `${t("next")}: ${diagnostic.help}` : diagnostic.source;
-      elements.diagnosticsView.append(card);
-    }
-  }
-  if (result.fixes.length > 0) {
-    const section = document.createElement("section");
-    section.className = "fixes-section";
-    const heading = document.createElement("h3");
-    heading.textContent = t("fixesApplied", { count: result.fixes.length });
-    const list = document.createElement("ul");
-    list.className = "fix-list";
-    for (const fix of result.fixes) {
-      const item = document.createElement("li");
-      const rule = document.createElement("code");
-      rule.textContent = fix.rule_id;
-      item.append(rule, document.createTextNode(fix.description));
-      list.append(item);
-    }
-    section.append(heading, list);
-    elements.diagnosticsView.append(section);
-  }
-  if (result.budget.length > 0) {
-    elements.diagnosticsView.append(renderBudget(result.budget));
-  }
+  diagnosticsState.diagnostics = result.diagnostics;
+  diagnosticsState.fixes = result.fixes;
+  diagnosticsState.budget = result.budget;
+  diagnosticsState.error = result.error;
+  diagnosticsState.stable = result.stable;
+  if (diagnosticsMounted) return;
+  diagnosticsMounted = true;
+  mount(Diagnostics, {
+    target: elements.diagnosticsView,
+    props: {
+      get diagnostics() {
+        return diagnosticsState.diagnostics;
+      },
+      get fixes() {
+        return diagnosticsState.fixes;
+      },
+      get budget() {
+        return diagnosticsState.budget;
+      },
+      get error() {
+        return diagnosticsState.error;
+      },
+      get stable() {
+        return diagnosticsState.stable;
+      },
+      translate: (key: string, values?: Record<string, string | number>) =>
+        values ? t(key as MessageKey, values as Record<string, string>) : t(key as MessageKey),
+    },
+  });
 }
 
-function requiredChild<T extends Element>(parent: ParentNode, selector: string): T {
-  const child = parent.querySelector<T>(selector);
-  if (!child) throw new Error(`Required child is missing: ${selector}`);
-  return child;
-}
-
-function emptyState(title: string, message: string): HTMLElement {
-  const container = document.createElement("div");
-  container.className = "empty-state";
-  const content = document.createElement("div");
-  const strong = document.createElement("strong");
-  strong.textContent = title;
-  const text = document.createElement("span");
-  text.textContent = message;
-  content.append(strong, text);
-  container.append(content);
-  return container;
-}
-
-function renderBudget(budgets: BrowserBudget[]): HTMLElement {
-  const section = document.createElement("section");
-  section.className = "budget-section";
-  const heading = document.createElement("h3");
-  heading.textContent = t("functionBudget");
-  const table = document.createElement("table");
-  table.className = "budget-table";
-  const header = document.createElement("thead");
-  const headerRow = document.createElement("tr");
-  for (const label of [t("function"), t("line"), t("bodyLines"), t("variables"), t("parameters")]) {
-    const cell = document.createElement("th");
-    cell.scope = "col";
-    cell.textContent = label;
-    headerRow.append(cell);
-  }
-  header.append(headerRow);
-  const body = document.createElement("tbody");
-  for (const budget of budgets) {
-    const row = document.createElement("tr");
-    const values = [
-      `${budget.function}()`,
-      String(budget.line),
-      `${budget.lines}/${budget.line_limit}`,
-      `${budget.variables}/${budget.variable_limit}`,
-      `${budget.parameters}/${budget.parameter_limit}`,
-    ];
-    const over = [
-      false,
-      false,
-      budget.lines > budget.line_limit,
-      budget.variables > budget.variable_limit,
-      budget.parameters > budget.parameter_limit,
-    ];
-    values.forEach((value, index) => {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      if (over[index]) cell.className = "budget-over";
-      row.append(cell);
-    });
-    body.append(row);
-  }
-  table.append(header, body);
-  section.append(heading, table);
-  return section;
-}
+let diagnosticsMounted = false;
 
 function activateTab(view: string): void {
   for (const tab of document.querySelectorAll<HTMLButtonElement>("[role=tab][data-view]")) {
