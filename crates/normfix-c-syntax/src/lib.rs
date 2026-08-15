@@ -15,7 +15,7 @@ pub use facts::{
     ArrayDeclaratorFact, CFunctionFact, CFunctionKind, CParameterFact, CStatementKind,
     CTypeTagKind, CallFact, EnumConstantFact, InitialDeclarationBlockFact, LocalDeclarationFact,
     LoopFact, MacroFact, NullCheckFact, RedundantElseFact, ReturnFact, SingleStatementBodyFact,
-    ForLoopFact, SharedDeclarationFact, SyntaxFacts, TernaryFact, TernaryForm, TypeTagFact,
+    ChainedAssignmentFact, ForLoopFact, SharedDeclarationFact, SyntaxFacts, TernaryFact, TernaryForm, TypeTagFact,
 };
 pub use parser::{CParser, ParseFailure, ParsedFile, SyntaxIssue, SyntaxIssueKind};
 pub use tape::{

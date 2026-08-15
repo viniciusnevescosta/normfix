@@ -66,6 +66,7 @@ pub(crate) enum Phase {
     RedundantElse,
     ForLoops,
     Ternaries,
+    ChainedAssignments,
     SharedDeclarations,
     SplitDeclarations,
     FunctionLayout,
@@ -101,6 +102,7 @@ pub(crate) fn phases(options: &CActionOptions) -> Vec<Phase> {
         Phase::RedundantElse,
         Phase::ForLoops,
         Phase::Ternaries,
+        Phase::ChainedAssignments,
         Phase::SharedDeclarations,
         Phase::SplitDeclarations,
         Phase::FunctionLayout,
@@ -123,7 +125,7 @@ impl Phase {
         // become a `while`, so this phase has to be allowed to come back.
         !matches!(
             self,
-            Self::CompactContinuations | Self::LongLines | Self::ForLoops
+            Self::CompactContinuations | Self::LongLines | Self::ForLoops | Self::ChainedAssignments
         )
     }
 
@@ -187,6 +189,10 @@ impl Phase {
             Self::Ternaries => Ok(ActionBatch::semantic(
                 "REPLACE_TERNARY",
                 rewrite_ternaries(context)?,
+            )),
+            Self::ChainedAssignments => Ok(ActionBatch::semantic(
+                "SPLIT_CHAINED_ASSIGNMENT",
+                split_chained_assignments(context)?,
             )),
             Self::SharedDeclarations => Ok(ActionBatch::semantic(
                 "ONE_DECLARATION_PER_LINE",
@@ -1374,6 +1380,45 @@ fn split_declarations(context: &ParsedContext) -> Result<Vec<Edit>, CActionError
 
 /// The Norm's limit on a function body, which a rewrite that adds lines spends.
 const FUNCTION_LINES: u32 = 25;
+
+/// Writes a chained assignment as the two it stands for.
+///
+/// `a = b = 0;` becomes `b = 0;` and then `a = b;`, in that order. The second
+/// reads `b` rather than repeating the value, because that is what the chain
+/// did: `a` takes what `b` holds after any conversion `b`'s type imposes. A
+/// call on the right still runs exactly once, in the first statement.
+fn split_chained_assignments(context: &ParsedContext) -> Result<Vec<Edit>, CActionError> {
+    let lines = context.lines();
+    let mut edits = Vec::new();
+    let mut spent: HashMap<TextRange, u32> = HashMap::new();
+    for chain in &context.facts().chained_assignments {
+        let start = chain.statement_range.start().get() as usize;
+        let end = chain.statement_range.end().get() as usize;
+        let line_number = lines.line_number_at(start);
+        let Some(line) = lines.get(line_number) else {
+            continue;
+        };
+        let already = spent.entry(chain.function_body_range).or_default();
+        if body_line_count(&lines, chain.function_body_range) + *already + 1 > FUNCTION_LINES {
+            continue;
+        }
+        let text = lines.text(line);
+        let indent = &text[..leading_whitespace(text)];
+        edits.push(Edit::new(
+            start,
+            end,
+            format!(
+                "{};\n{indent}{} {} {};",
+                chain.inner, chain.target, chain.operator, chain.inner_target
+            ),
+            "SPLIT_CHAINED_ASSIGNMENT",
+            "wrote a chained assignment as the two it stood for",
+            Some(line_number),
+        )?);
+        *already += 1;
+    }
+    Ok(edits)
+}
 
 /// Gives each variable of a shared declaration its own line.
 ///

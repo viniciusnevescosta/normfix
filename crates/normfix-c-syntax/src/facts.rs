@@ -68,6 +68,26 @@ pub struct SyntaxFacts {
     pub crowded_statements: Vec<TextRange>,
     /// Declarations naming more than one variable at once.
     pub shared_declarations: Vec<SharedDeclarationFact>,
+    /// Statements assigning one value to two names at once.
+    pub chained_assignments: Vec<ChainedAssignmentFact>,
+}
+
+/// A statement that assigns through another assignment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChainedAssignmentFact {
+    /// The whole statement, replaced as a unit.
+    pub statement_range: TextRange,
+    /// What the outer assignment writes to.
+    pub target: String,
+    /// The outer operator, which may be compound.
+    pub operator: String,
+    /// The inner assignment exactly as written.
+    pub inner: String,
+    /// What the inner assignment writes to, and the outer then reads.
+    pub inner_target: String,
+    /// Body of the function that owns the statement, whose line budget the
+    /// split spends.
+    pub function_body_range: TextRange,
 }
 
 /// A declaration that names several variables, which the Norm splits.
@@ -475,6 +495,9 @@ pub(crate) fn collect_facts(source: &str, root: Node<'_>) -> Result<SyntaxFacts,
             "expression_statement" | "return_statement" => {
                 if let Some(fact) = ternary_fact(source, node)? {
                     facts.ternary_statements.push(fact);
+                }
+                if let Some(fact) = chained_assignment_fact(source, node)? {
+                    facts.chained_assignments.push(fact);
                 }
             }
             "while_statement" | "for_statement" | "do_statement" => {
@@ -1520,6 +1543,71 @@ fn ternary_fact(source: &str, node: Node<'_>) -> Result<Option<TernaryFact>, Par
         consequence_range: node_range(consequence.start_byte(), consequence.end_byte())?,
         alternative_range: node_range(alternative.start_byte(), alternative.end_byte())?,
         condition_parenthesized: condition.kind() == "parenthesized_expression",
+        function_body_range: node_range(body.start_byte(), body.end_byte())?,
+    }))
+}
+
+/// A statement assigning one value to two names at once.
+///
+/// `a = b = 0;` is `b = 0` first, and then `a` takes the value `b` holds after
+/// it — after any conversion `b`'s type imposes, which is why the second
+/// statement reads `b` rather than repeating the value. Written out, that is
+/// `b = 0;` and `a = b;`, in that order, and any call on the right still
+/// happens exactly once.
+///
+/// The targets are read as well as written now, so neither may do anything
+/// itself; and a longer chain is left to the next pass, where the inner
+/// assignment is a statement of this same shape.
+fn chained_assignment_fact(
+    source: &str,
+    node: Node<'_>,
+) -> Result<Option<ChainedAssignmentFact>, ParseFailure> {
+    if node.parent().is_none_or(|parent| parent.kind() != "compound_statement") {
+        return Ok(None);
+    }
+    let Some(outer) = node.named_child(0).filter(|child| child.kind() == "assignment_expression")
+    else {
+        return Ok(None);
+    };
+    // The right-hand side settles it for every ordinary assignment in the
+    // file, so it is named before the two fields only a chain needs.
+    let Some(right) = outer.child_by_field_name("right") else {
+        return Ok(None);
+    };
+    let inner = unwrap_parentheses(right);
+    if inner.kind() != "assignment_expression" {
+        return Ok(None);
+    }
+    let (Some(target), Some(operator), Some(inner_target)) = (
+        outer.child_by_field_name("left"),
+        outer.child_by_field_name("operator"),
+        inner.child_by_field_name("left"),
+    ) else {
+        return Ok(None);
+    };
+    if contains_kind(node, "comment")
+        || ["call_expression", "update_expression", "assignment_expression"]
+            .iter()
+            .any(|kind| contains_kind(target, kind) || contains_kind(inner_target, kind))
+    {
+        return Ok(None);
+    }
+    let mut owner = node;
+    while owner.kind() != "function_definition" {
+        let Some(next) = owner.parent() else {
+            return Ok(None);
+        };
+        owner = next;
+    }
+    let Some(body) = owner.child_by_field_name("body") else {
+        return Ok(None);
+    };
+    Ok(Some(ChainedAssignmentFact {
+        statement_range: node_range(node.start_byte(), node.end_byte())?,
+        target: node_text(source, target)?.to_owned(),
+        operator: node_text(source, operator)?.to_owned(),
+        inner: node_text(source, inner)?.to_owned(),
+        inner_target: node_text(source, inner_target)?.to_owned(),
         function_body_range: node_range(body.start_byte(), body.end_byte())?,
     }))
 }

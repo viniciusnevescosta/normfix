@@ -1653,6 +1653,30 @@ fn a_control_body_starting_with_a_star_does_not_deadlock_two_rules() {
 }
 
 #[test]
+fn a_chained_assignment_becomes_the_two_it_stood_for() {
+    // `a = b = c = n;` assigns from the inside out, and each step reads what
+    // the one before it left, so a longer chain unrolls in that order across
+    // passes. A compound operator keeps its meaning: only the inner one holds
+    // the value.
+    let source = concat!(
+        "int\tf(int n)\n",
+        "{\n",
+        "\tint\ta;\n",
+        "\tint\tb;\n",
+        "\tint\tc;\n",
+        "\n",
+        "\ta = b = c = n;\n",
+        "\tb += c = 2;\n",
+        "\treturn (a + b + c);\n",
+        "}\n",
+    );
+    let fixed = apply(source, &[]);
+    assert!(fixed.contains("\tc = n;\n\tb = c;\n\ta = b;\n"), "{fixed}");
+    assert!(fixed.contains("\tc = 2;\n\tb += c;\n"), "{fixed}");
+    assert_eq!(apply(&fixed, &[]), fixed);
+}
+
+#[test]
 fn each_declared_name_gets_its_own_line_and_keeps_its_star() {
     // `int *p, q;` is one pointer and one int, which is the reason the Norm
     // asks for one per line. Copying each declarator as written keeps that
