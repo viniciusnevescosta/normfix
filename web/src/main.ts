@@ -1118,7 +1118,14 @@ function renderDiagnostics(result: ResultRecord): void {
     // it behind the reason left a reader with a sentence about `ERROR` and
     // `MISSING` bytes and no line to look at.
     elements.diagnosticsView.append(
-      emptyState(t("fileUnchanged"), result.stable ? t("unparsableFile") : t("unstableFormatter")),
+      emptyState(
+        t("fileUnchanged"),
+        // A file the parser could not read carries the reason as an error; an
+        // unstable run carries none. The error is what tells the two apart —
+        // `stable` is false for both, and reading it instead sent every
+        // unreadable file the fixed-point message.
+        result.error ? t("unparsableFile") : t("unstableFormatter"),
+      ),
     );
     if (result.diagnostics.length === 0) return;
   }
