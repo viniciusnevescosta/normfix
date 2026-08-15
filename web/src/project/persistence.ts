@@ -1,0 +1,90 @@
+// Keeping a project across a reload, without keeping it a secret.
+//
+// Closing a tab by accident should not cost an afternoon, so the project is
+// written to this browser as it changes. But this page is built for 42 campus
+// machines, which are shared: code left behind is code the next person at that
+// keyboard opens. So restoring is never silent — the page says the work came
+// back and offers to drop it — and nothing is ever written anywhere but here.
+
+/** What a stored project holds. */
+export interface StoredProject {
+  /** Path to source, exactly as the project held them. */
+  files: Record<string, string>;
+  /** Which file was open. */
+  selected: string | null;
+  /** Paths the project showed but could not format. */
+  unsupported: string[];
+  /** When it was written, so a restore can say how old it is. */
+  savedAt: number;
+}
+
+/**
+ * How much stored work is worth keeping.
+ *
+ * Browser storage is a few megabytes shared with everything else this origin
+ * keeps, and a project over this is one the reader imported rather than typed
+ * — recoverable from where it came from, unlike work done here.
+ */
+export const MAX_STORED_BYTES = 2 * 1024 * 1024;
+
+const ENCODER = new TextEncoder();
+
+/**
+ * Turns a project into what gets stored, or `null` when it is not worth it.
+ *
+ * An empty project stores nothing: restoring nothing over nothing only means
+ * telling the reader their work came back when it did not.
+ */
+export function serializeProject(project: StoredProject): string | null {
+  if (Object.keys(project.files).length === 0 && project.unsupported.length === 0) {
+    return null;
+  }
+  const payload = JSON.stringify(project);
+  return ENCODER.encode(payload).length > MAX_STORED_BYTES ? null : payload;
+}
+
+/**
+ * Reads back what was stored, or `null` when there is nothing usable.
+ *
+ * Anything unreadable is treated as absent rather than repaired: a project
+ * half-recovered from damaged storage is worse than one the reader knows they
+ * have to open again.
+ */
+export function deserializeProject(payload: string | null): StoredProject | null {
+  if (!payload) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const record = parsed as Partial<StoredProject>;
+  const files = record.files;
+  if (typeof files !== "object" || files === null) return null;
+  const entries = Object.entries(files).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
+  const unsupported = Array.isArray(record.unsupported)
+    ? record.unsupported.filter((path): path is string => typeof path === "string")
+    : [];
+  if (entries.length === 0 && unsupported.length === 0) return null;
+  return {
+    files: Object.fromEntries(entries),
+    selected: typeof record.selected === "string" ? record.selected : null,
+    unsupported,
+    savedAt: typeof record.savedAt === "number" ? record.savedAt : 0,
+  };
+}
+
+/**
+ * Whether a restored project is the one already on screen.
+ *
+ * The page starts with one sample file. Announcing a restore that produced
+ * exactly that would be announcing nothing.
+ */
+export function isSameProject(stored: StoredProject, files: ReadonlyMap<string, string>): boolean {
+  const entries = Object.entries(stored.files);
+  if (entries.length !== files.size) return false;
+  return entries.every(([path, source]) => files.get(path) === source);
+}

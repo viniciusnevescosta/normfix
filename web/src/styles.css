@@ -1299,3 +1299,18 @@ dialog input {
   font-style: italic;
   opacity: 0.65;
 }
+
+/* The restore is announced rather than assumed. This page is for shared campus
+   machines, and code that comes back without a word is code the next person at
+   that keyboard did not expect to find. */
+.restore-notice {
+  align-items: center;
+  border: 1px solid var(--border, #333);
+  border-radius: 0.35rem;
+  display: flex;
+  font-size: 0.8rem;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.55rem;
+}

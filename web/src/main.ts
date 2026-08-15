@@ -32,6 +32,7 @@ import { ZipArchiveError, buildZip } from "./project/archive";
 import { markersFor } from "./project/markers";
 import { collectDroppedFiles, type DroppedFile } from "./project/drop";
 import { openDraftRow } from "./project/draft-row";
+import { deserializeProject, isSameProject, serializeProject } from "./project/persistence";
 import {
   buildTree,
   movedPath,
@@ -46,6 +47,7 @@ const UTF8_ENCODER = new TextEncoder();
 const FOLDER_SHUT = "\u{1F4C1}";
 const FOLDER_OPEN = "\u{1F4C2}";
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
+const PROJECT_STORAGE_KEY = "normfix.project.v1";
 const LOCALE_STORAGE_KEY = "normfix.locale.v1";
 const FALLBACK_STARS = 0;
 
@@ -195,6 +197,8 @@ const elements = {
   editorDisabled: requiredElement<HTMLElement>("#editor-disabled"),
   editorDisabledTitle: requiredElement<HTMLElement>("#editor-disabled-title"),
   editorDisabledText: requiredElement<HTMLElement>("#editor-disabled-text"),
+  restoreNotice: requiredElement<HTMLElement>("#restore-notice"),
+  discardRestore: requiredElement<HTMLButtonElement>("#discard-restore"),
   confirmDelete: requiredElement<HTMLDialogElement>("#confirm-delete"),
   confirmDeleteText: requiredElement<HTMLElement>("#confirm-delete-text"),
   confirmDeleteAction: requiredElement<HTMLButtonElement>("#confirm-delete-action"),
@@ -497,6 +501,7 @@ async function loadFormatter(): Promise<void> {
 }
 
 function invalidateResults(): void {
+  scheduleSave();
   state.results.clear();
   state.selectedResult = null;
   elements.results.hidden = true;
@@ -1606,6 +1611,91 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeContextMenu();
 });
 
+/**
+ * Writes the project to this browser, so closing the tab does not cost it.
+ *
+ * Debounced, because this runs on every keystroke through the editor's sync,
+ * and a project of a few files is a few hundred kilobytes to re-encode. A
+ * write that fails — storage full, storage denied — is dropped silently: the
+ * work is still on screen, and a warning about a cache nobody asked for would
+ * interrupt a reader for something they cannot act on.
+ */
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function saveProject(): void {
+  const payload = serializeProject({
+    files: Object.fromEntries(state.files),
+    selected: state.selected,
+    unsupported: [...state.unsupported],
+    savedAt: Date.now(),
+  });
+  try {
+    if (payload === null) localStorage.removeItem(PROJECT_STORAGE_KEY);
+    else localStorage.setItem(PROJECT_STORAGE_KEY, payload);
+  } catch {
+    // The project is still open; nothing here is worth interrupting for.
+  }
+}
+
+function scheduleSave(): void {
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveProject, 600);
+}
+
+/**
+ * Brings back the project this browser was holding.
+ *
+ * Never silently: this page is built for campus machines, which are shared,
+ * and code restored without a word is code the next person at that keyboard
+ * did not expect to find. The banner says the work came back and offers to
+ * drop it, which is also the only way to clear what is stored.
+ */
+function restoreProject(): void {
+  const stored = deserializeProject(readStoredProject());
+  if (!stored || isSameProject(stored, state.files)) return;
+  state.files = new Map(Object.entries(stored.files));
+  state.unsupported = new Set(stored.unsupported);
+  state.revision += 1;
+  const selected =
+    stored.selected !== null && state.files.has(stored.selected)
+      ? stored.selected
+      : [...state.files.keys()].sort()[0];
+  if (selected === undefined) showEmptyProject();
+  else selectFile(selected, false);
+  elements.restoreNotice.hidden = false;
+}
+
+function readStoredProject(): string | null {
+  try {
+    return localStorage.getItem(PROJECT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function discardStoredProject(): void {
+  try {
+    localStorage.removeItem(PROJECT_STORAGE_KEY);
+  } catch {
+    // Nothing stored is the state being asked for either way.
+  }
+  state.files = new Map([["main.c", SAMPLE]]);
+  state.unsupported = new Set();
+  state.revision += 1;
+  invalidateResults();
+  selectFile("main.c", false);
+  elements.restoreNotice.hidden = true;
+}
+
+elements.discardRestore.addEventListener("click", discardStoredProject);
+
+// A reload fires `pagehide`; closing a tab on mobile often only fires
+// `visibilitychange`. Both write, because the debounce may not have run.
+addEventListener("pagehide", saveProject);
+addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") saveProject();
+});
+
 elements.addFile.addEventListener("click", () => openDraft("file"));
 elements.addFolder.addEventListener("click", () => openDraft("folder"));
 elements.resultFile.addEventListener("change", () => {
@@ -1669,6 +1759,9 @@ async function initialize(): Promise<void> {
   state.appearance = applyThemePreference(state.theme);
   applyTranslations();
   loadIdentity();
+  // Before the first render, so the panel never shows the sample project for a
+  // frame and then replaces it with the reader's own.
+  restoreProject();
   state.offlineSupport = startOfflineSupport({
     onState: (offlineState) => {
       state.offlineState = offlineState;
@@ -1680,11 +1773,15 @@ async function initialize(): Promise<void> {
   });
   renderFileList();
   const formatterPromise = loadFormatter();
+  // The editor opens on whatever the project ended up holding, which is the
+  // restored file when there was one. Opening on the sample and correcting it
+  // afterwards would show the reader a file that is not theirs first.
+  const opening = state.selected ?? "main.c";
   state.editor = await createSourceEditor(
     elements.editorContainer,
     elements.fallbackEditor,
-    "main.c",
-    SAMPLE,
+    opening,
+    state.files.get(opening) ?? SAMPLE,
     state.appearance,
     {
       onChange: () => {
