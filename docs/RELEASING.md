@@ -112,32 +112,34 @@ state.
 
 ## After the release
 
-The Homebrew tap is a separate repository,
-[`viniciusnevescosta/homebrew-normfix`](https://github.com/viniciusnevescosta/homebrew-normfix),
-and it is not updated by the release workflow. Once the archives are published:
+Both package manifests live in this repository and are written by the release
+itself. `Formula/normfix.rb` is the Homebrew tap and `bucket/normfix.json` is
+the Scoop bucket, and both are rendered from the `SHA256SUMS` the release just
+published, then committed to `main`.
 
-1. update `version`, the four URLs, and the four `sha256` values in
-   `packaging/homebrew/normfix.rb` from the published `SHA256SUMS`;
-2. copy it to `Formula/normfix.rb` in the tap and push;
-3. verify with `brew fetch viniciusnevescosta/normfix/normfix`, which fails
-   loudly on a wrong checksum.
+Nothing is manual, and nothing needs a token beyond the one the workflow
+already has. They lived in two repositories of their own until 1.8.0, updated
+by hand — which meant they were updated when somebody remembered, and the tap
+spent eight releases describing `1.0.0-rc.1` while `brew install` handed people
+a release candidate.
 
-The Scoop bucket,
-[`viniciusnevescosta/scoop-normfix`](https://github.com/viniciusnevescosta/scoop-normfix),
-is separate for the same reason and updated the same way:
+A pre-release renders both manifests and pushes neither: it is installable by
+tag, and must not become what `brew install` and `scoop install` give everyone.
 
-1. set `version` and both `hash` values in `bucket/normfix.json` from the same
-   published `SHA256SUMS`;
-2. push it to the bucket;
-3. verify with `scoop install normfix` on a Windows machine, which fails on a
-   wrong checksum.
+To check a published release by hand:
 
-Neither is automated because both live outside this repository, and a workflow
-step that writes to them would need a token with push access to another repo.
-The tradeoff is deliberate: a stale manifest is visible and fixable, a
-long-lived cross-repository token is neither. Both are conveniences — the
-one-line installer is the path that works on every supported system, and it is
-already correct the moment the release is published.
+- `brew fetch viniciusnevescosta/normfix/normfix` fails loudly on a wrong
+  checksum;
+- `scoop install normfix` does the same on a Windows machine.
+
+Because Homebrew resolves a bare tap name to a `homebrew-` prefixed repository,
+pointing it at this one takes an explicit URL:
+
+```sh
+brew tap viniciusnevescosta/normfix https://github.com/viniciusnevescosta/normfix
+```
+
+Scoop has no such convention and takes the repository directly.
 
 The one-line installer needs no release step. It resolves `/releases/latest`
 for the stable channel and reads checksums from the manifest. Until a stable

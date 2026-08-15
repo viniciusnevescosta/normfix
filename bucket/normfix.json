@@ -1,0 +1,38 @@
+{
+    "version": "1.8.0",
+    "description": "Safe automatic fixes and clear diagnostics for the 42 Norm",
+    "homepage": "https://normfix.vercel.app",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v1.8.0/normfix-x86_64-windows.zip",
+            "hash": "358861834445810deb1d2f236774e04119951f1f844828119f4ab66ddde87e82"
+        },
+        "arm64": {
+            "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v1.8.0/normfix-aarch64-windows.zip",
+            "hash": "af3a6a930748927d928bb6c78e51519510bdee0fc12895956955ec83546fbff5"
+        }
+    },
+    "bin": "normfix.exe",
+    "notes": [
+        "normfix needs the official Norminette, which Scoop does not install.",
+        "Follow https://github.com/42School/norminette; 3.3.59 is the tested baseline.",
+        "Documentation: https://normfix.vercel.app/docs"
+    ],
+    "checkver": {
+        "github": "https://github.com/viniciusnevescosta/normfix"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v$version/normfix-x86_64-windows.zip"
+            },
+            "arm64": {
+                "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v$version/normfix-aarch64-windows.zip"
+            }
+        },
+        "hash": {
+            "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v$version/SHA256SUMS"
+        }
+    }
+}

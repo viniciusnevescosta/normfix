@@ -100,6 +100,7 @@ que vous en utilisez peut-être déjà une.
 ### Homebrew
 
 ```sh
+brew tap viniciusnevescosta/normfix https://github.com/viniciusnevescosta/normfix
 brew install viniciusnevescosta/normfix/normfix
 brew upgrade viniciusnevescosta/normfix/normfix  # plus tard
 brew uninstall normfix                            # pour le retirer
@@ -111,7 +112,7 @@ Linuxbrew.
 ### Scoop, sous Windows sans shell POSIX
 
 ```powershell
-scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
+scoop bucket add normfix https://github.com/viniciusnevescosta/normfix
 scoop install normfix
 scoop update normfix     # plus tard, pour mettre à jour
 scoop uninstall normfix  # pour le retirer

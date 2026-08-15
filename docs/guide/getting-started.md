@@ -97,6 +97,7 @@ you may already be using one of them.
 ### Homebrew
 
 ```sh
+brew tap viniciusnevescosta/normfix https://github.com/viniciusnevescosta/normfix
 brew install viniciusnevescosta/normfix/normfix
 brew upgrade viniciusnevescosta/normfix/normfix  # later
 brew uninstall normfix                            # to remove it
@@ -107,7 +108,7 @@ Installs the same verified binary rather than building it. macOS and Linuxbrew.
 ### Scoop, on Windows without a POSIX shell
 
 ```powershell
-scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
+scoop bucket add normfix https://github.com/viniciusnevescosta/normfix
 scoop install normfix
 scoop update normfix     # later, to upgrade
 scoop uninstall normfix  # to remove it

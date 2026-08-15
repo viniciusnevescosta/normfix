@@ -64,13 +64,14 @@ release exists, it falls back to the newest release candidate; set
 ### Homebrew (MacOS / Linux distributions):
 
 ```sh
+brew tap viniciusnevescosta/normfix https://github.com/viniciusnevescosta/normfix
 brew install viniciusnevescosta/normfix/normfix
 ```
 
 ### Scoop (Windows):
 
 ```powershell
-scoop bucket add normfix https://github.com/viniciusnevescosta/scoop-normfix
+scoop bucket add normfix https://github.com/viniciusnevescosta/normfix
 scoop install normfix
 ```
 
