@@ -21,6 +21,13 @@ export const diagnosticsState = $state({
   stable: true,
 });
 
+export const chromeState = $state({
+  locale: "en",
+  theme: "system",
+  stars: null as number | null,
+  docsHref: "/docs/",
+});
+
 export const codeState = $state({
   formatted: "",
   diff: "",

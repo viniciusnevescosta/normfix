@@ -71,35 +71,7 @@
         </span>
       </a>
       <div class="topbar-end">
-        <label class="language-picker">
-          <span class="visually-hidden" data-i18n="language">Language</span>
-          <select id="language" aria-label="Language">
-            <option value="en">EN</option>
-            <option value="pt">PT</option>
-            <option value="es">ES</option>
-            <option value="fr">FR</option>
-          </select>
-        </label>
-        <label class="language-picker">
-          <span class="visually-hidden" data-i18n="appearance">Appearance</span>
-          <select id="theme" aria-label="Appearance">
-            <option value="system" data-i18n="appearanceSystem">System</option>
-            <option value="light" data-i18n="appearanceLight">Light</option>
-            <option value="dark" data-i18n="appearanceDark">Dark</option>
-          </select>
-        </label>
-        <a class="topbar-link" id="docs-link" href="/docs/" data-i18n="docs">Documentation</a>
-        <a
-          class="topbar-link github-link"
-          href="https://github.com/viniciusnevescosta/normfix"
-          target="_blank"
-          rel="noopener noreferrer"
-          data-i18n-title="githubTitle"
-        >
-          <span data-i18n="github">GitHub</span>
-          <span aria-hidden="true">★</span>
-          <span id="star-count" aria-live="polite">0</span>
-        </a>
+        <div id="top-bar" class="flex items-center gap-3"></div>
         <div id="status-badges" class="flex items-center gap-4"></div>
     </header>
 

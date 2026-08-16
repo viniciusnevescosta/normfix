@@ -9,6 +9,7 @@ import FileTree from "./components/FileTree.svelte";
 import IdentityPanel from "./components/IdentityPanel.svelte";
 import ResultSummary from "./components/ResultSummary.svelte";
 import StatusBadges from "./components/StatusBadges.svelte";
+import TopBar from "./components/TopBar.svelte";
 import { createSourceEditor, type SourceEditor } from "./editor";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 import {
@@ -48,6 +49,7 @@ import {
   watchSystemAppearance,
 } from "./theme";
 import {
+  chromeState,
   codeState,
   confirmState,
   diagnosticsState,
@@ -64,7 +66,6 @@ const UTF8_ENCODER = new TextEncoder();
 const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
 const PROJECT_STORAGE_KEY = "normfix.project.v1";
 const LOCALE_STORAGE_KEY = "normfix.locale.v1";
-const FALLBACK_STARS = 0;
 
 const SAMPLE: string = `#include <unistd.h>
 
@@ -210,6 +211,7 @@ const elements = {
   identityPanel: requiredElement<HTMLElement>("#identity-panel"),
   editorNotice: requiredElement<HTMLElement>("#editor-notice"),
   editorHeader: requiredElement<HTMLElement>("#editor-header"),
+  topBar: requiredElement<HTMLElement>("#top-bar"),
   confirmDelete: requiredElement<HTMLElement>("#confirm-delete"),
   restoreNotice: requiredElement<HTMLElement>("#restore-notice"),
   discardRestore: requiredElement<HTMLButtonElement>("#discard-restore"),
@@ -219,10 +221,6 @@ const elements = {
   formattedOutput: requiredElement<HTMLElement>("#formatted-output"),
   diffOutput: requiredElement<HTMLElement>("#diff-output"),
   diagnosticsView: requiredElement<HTMLElement>("#diagnostics-view"),
-  language: requiredElement<HTMLSelectElement>("#language"),
-  theme: requiredElement<HTMLSelectElement>("#theme"),
-  starCount: requiredElement<HTMLElement>("#star-count"),
-  docsLink: requiredElement<HTMLAnchorElement>("#docs-link"),
   brand: requiredElement<HTMLAnchorElement>(".brand"),
   canonical: requiredElement<HTMLLinkElement>("#canonical-url"),
   manifest: requiredElement<HTMLLinkElement>("#manifest-link"),
@@ -344,8 +342,8 @@ function forgetIdentity(): void {
 
 function applyTranslations(): void {
   document.documentElement.lang = state.locale;
-  elements.language.value = state.locale;
-  elements.theme.value = state.theme;
+  chromeState.locale = state.locale;
+  chromeState.theme = state.theme;
   for (const element of document.querySelectorAll<HTMLElement>("[data-i18n]")) {
     const key = element.dataset.i18n as MessageKey | undefined;
     if (key) element.textContent = t(key);
@@ -367,7 +365,6 @@ function applyTranslations(): void {
   // that no longer exists.
   if (runtimeMessageKey) statusState.runtimeLabel = t(runtimeMessageKey);
   renderOfflineStatus();
-  elements.language.setAttribute("aria-label", t("language"));
   elements.addFile.setAttribute("aria-label", t("addFile"));
   elements.addFolder.setAttribute("aria-label", t("addFolder"));
   const route = state.locale === "en" ? "/" : `/${state.locale}/`;
@@ -404,7 +401,7 @@ function applyTranslations(): void {
   elements.canonical.href = canonical;
   elements.manifest.href = `${route}site.webmanifest`;
   elements.brand.href = route;
-  elements.docsLink.href = state.locale === "en" ? "/docs/" : `/docs/${state.locale}/`;
+  chromeState.docsHref = state.locale === "en" ? "/docs/" : `/docs/${state.locale}/`;
   updateEditorMeta();
   renderOfflineStatus();
   if (state.results.size > 0) renderRunResult();
@@ -427,7 +424,7 @@ function changeLocale(locale: Locale): void {
 }
 
 async function loadGitHubStars(): Promise<void> {
-  elements.starCount.textContent = String(FALLBACK_STARS);
+  chromeState.stars = null;
   try {
     const response = await fetch(GITHUB_REPOSITORY_API, {
       ...githubRequestInit(),
@@ -438,12 +435,9 @@ async function loadGitHubStars(): Promise<void> {
     if (stars === null) {
       throw new Error("GitHub returned an invalid star count");
     }
-    elements.starCount.textContent = stars.toLocaleString(state.locale);
-    elements.starCount.removeAttribute("title");
-    delete elements.starCount.dataset.i18nTitle;
+    chromeState.stars = stars;
   } catch {
-    elements.starCount.dataset.i18nTitle = "githubFallback";
-    elements.starCount.title = t("githubFallback");
+    chromeState.stars = null;
   }
 }
 
@@ -1481,13 +1475,8 @@ function changeTheme(preference: ThemePreference): void {
   state.appearance = applyThemePreference(preference);
   state.editor?.setAppearance(state.appearance);
   storeThemePreference(preference);
-  elements.theme.value = preference;
+  chromeState.theme = preference;
 }
-
-elements.theme.addEventListener("change", () => {
-  const preference = elements.theme.value;
-  if (isThemePreference(preference)) changeTheme(preference);
-});
 
 // Only meaningful while following the system, but harmless otherwise: the
 // preference is what decides, and re-applying it is idempotent.
@@ -1495,12 +1484,33 @@ watchSystemAppearance(() => {
   if (state.theme === "system") changeTheme("system");
 });
 
-elements.language.addEventListener("change", () => {
-  const locale = elements.language.value as Locale;
-  if (SUPPORTED_LOCALES.includes(locale)) changeLocale(locale);
-});
 /** The element holding the formatted text, for selecting it to copy. */
 let formattedElement: HTMLElement | null = null;
+
+mount(TopBar, {
+  target: elements.topBar,
+  props: {
+    get locale() {
+      return chromeState.locale;
+    },
+    get theme() {
+      return chromeState.theme;
+    },
+    get stars() {
+      return chromeState.stars;
+    },
+    get docsHref() {
+      return chromeState.docsHref;
+    },
+    format: (stars: number) => stars.toLocaleString(state.locale),
+    onLocale: (locale: string) => {
+      if (SUPPORTED_LOCALES.includes(locale as Locale)) changeLocale(locale as Locale);
+    },
+    onTheme: (value: string) => {
+      if (isThemePreference(value)) changeTheme(value);
+    },
+  },
+});
 
 mount(CodeView, {
   target: elements.formattedOutput,
