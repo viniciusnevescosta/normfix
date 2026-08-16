@@ -20,11 +20,19 @@ function open(overrides: Record<string, unknown> = {}) {
   return { calls, container };
 }
 
-test("offline support offers nothing while it is simply working", () => {
-  // A badge that is always talking is one nobody reads.
+test("offline support says nothing at all while it is simply working", () => {
+  // A badge that is always talking is one nobody reads, so it is absent rather
+  // than reassuring — the formatter's badge is then the only one on screen.
   const badges = open();
 
   assert.equal(badges.container.querySelector("button"), null);
+  assert.ok(!/offline/i.test(badges.container.textContent ?? ""));
+  assert.match(badges.container.textContent ?? "", /ready/);
+});
+
+test("being offline without support is one of the two things it speaks for", () => {
+  const badges = open({ offline: "ready", online: false });
+
   assert.match(badges.container.textContent ?? "", /[Oo]ffline/);
 });
 

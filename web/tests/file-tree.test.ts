@@ -117,7 +117,7 @@ test("the panel is a tree, and says so to anything not looking at pixels", () =>
 
   assert.equal(
     tree.container.querySelector("[role=tree]")?.getAttribute("aria-label"),
-    "loadedFiles",
+    "Loaded project files",
   );
   // Depth is stated rather than implied by indentation, which a screen reader
   // cannot see.
