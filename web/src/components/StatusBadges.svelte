@@ -20,6 +20,9 @@ interface Props {
 const { runtime, runtimeLabel, offline, online, onUpdate }: Props = $props();
 
 const updateReady = $derived(offline === "update-ready");
+// It speaks for the two events that change what the reader can do, and is
+// absent otherwise: a badge that is always talking is one nobody reads.
+const speaks = $derived(updateReady || (offline === "ready" && !online));
 </script>
 
 <div class="flex items-center gap-2 text-xs" data-state={runtime} role="status">
@@ -33,8 +36,9 @@ const updateReady = $derived(offline === "update-ready");
   <span>{runtimeLabel}</span>
 </div>
 
-<div
-  class="flex items-center gap-2 text-xs"
+{#if speaks}
+  <div
+  class="border-border text-muted flex items-center gap-2 border px-2 py-1 text-xs"
   data-state={offline}
   data-online={online}
   aria-label={translate("offlineAvailability")}
@@ -48,4 +52,5 @@ const updateReady = $derived(offline === "update-ready");
       {translate("offlineUpdateAction")}
     </button>
   {/if}
-</div>
+  </div>
+{/if}

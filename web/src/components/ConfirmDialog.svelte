@@ -29,7 +29,7 @@ $effect(() => {
 
 <dialog
   bind:this={dialog}
-  class="border-border bg-panel rounded border p-4"
+  class="border-border bg-panel text-text m-auto rounded border p-4 backdrop:bg-scrim"
   oncancel={(event) => {
     event.preventDefault();
     onCancel();

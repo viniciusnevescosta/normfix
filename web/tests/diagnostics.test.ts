@@ -32,7 +32,7 @@ test("a clean run says so rather than showing an empty panel", () => {
   const panel = open();
 
   assert.match(panel.text(), /No native diagnostics remain/);
-  assert.match(panel.text(), /command line/);
+  assert.match(panel.text(), /desktop CLI/);
 });
 
 test("a file that would not parse shows the reason and then the finding", () => {
@@ -85,8 +85,12 @@ test("what was fixed and how much room is left are both reported", () => {
   const over = [...panel.container.querySelectorAll("td")].filter((cell) =>
     cell.classList.contains("text-error"),
   );
-  assert.deepEqual(
-    over.map((cell) => cell.textContent?.trim()),
-    ["31/25"],
-  );
+  assert.equal(over.length, 1, "only the limit that is exceeded is marked");
+  assert.match(over[0]?.textContent ?? "", /31\/25/);
+
+  // The headroom is the number a student acts on, and the command line has
+  // always said it. Two numbers to subtract is work the page can do.
+  assert.match(panel.text(), /6 over/);
+  assert.match(panel.text(), /2 left/);
+  assert.match(panel.text(), /2 left/);
 });

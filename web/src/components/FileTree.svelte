@@ -149,9 +149,17 @@ function drop(event: DragEvent, folder: string): void {
       }}
     >
       <!-- The icon is the state: an open folder is open, a closed one closed. -->
-      <span aria-hidden="true">
-        {isFolder ? (collapsed.has(node.path) ? "\u{1F4C1}" : "\u{1F4C2}") : "•"}
-      </span>
+      <!-- Files carry a small block rather than a bullet: it marks a changed
+           file without reading as a list marker in front of every name. -->
+      {#if isFolder}
+        <span aria-hidden="true">{collapsed.has(node.path) ? "\u{1F4C1}" : "\u{1F4C2}"}</span>
+      {:else}
+        <span
+          class="bg-border-strong inline-block h-1 w-1 shrink-0"
+          class:bg-accent={changed.has(node.path)}
+          aria-hidden="true"
+        ></span>
+      {/if}
       <span class="min-w-0 flex-1 truncate">{node.name}</span>
       {#if !isFolder}
         <span class="text-faint text-xs" class:italic={notFormattable}>

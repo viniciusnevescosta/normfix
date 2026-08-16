@@ -54,6 +54,13 @@ const { diagnostics, fixes, budget, error, stable }: Props = $props();
 // unstable run carries none. `stable` is false for both, so reading it to
 // tell them apart sent every unreadable file the fixed-point message.
 const unwritten = $derived(Boolean(error) || !stable);
+
+/** How much room is left, or how far past the limit it already is. */
+function headroom(used: number, limit: number): string {
+  return used > limit
+    ? translate("budgetOver", { count: used - limit })
+    : translate("budgetLeft", { count: limit - used });
+}
 </script>
 
 {#if unwritten}
@@ -125,14 +132,20 @@ const unwritten = $derived(Boolean(error) || !stable);
             <td class="pr-3">{entry.line}</td>
             <!-- Over the limit is marked rather than left to the reader to
                  compare two numbers in every row. -->
+            <!-- The headroom is the number a student acts on, and the command
+                 line has always said it. Two numbers to subtract is work the
+                 page can do for them. -->
             <td class="pr-3" class:text-error={entry.lines > entry.line_limit}>
               {entry.lines}/{entry.line_limit}
+              <span class="text-faint">({headroom(entry.lines, entry.line_limit)})</span>
             </td>
             <td class="pr-3" class:text-error={entry.variables > entry.variable_limit}>
               {entry.variables}/{entry.variable_limit}
+              <span class="text-faint">({headroom(entry.variables, entry.variable_limit)})</span>
             </td>
             <td class="pr-3" class:text-error={entry.parameters > entry.parameter_limit}>
               {entry.parameters}/{entry.parameter_limit}
+              <span class="text-faint">({headroom(entry.parameters, entry.parameter_limit)})</span>
             </td>
           </tr>
         {/each}
