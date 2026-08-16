@@ -27,7 +27,21 @@ test("offline support says nothing at all while it is simply working", () => {
 
   assert.equal(badges.container.querySelector("button"), null);
   assert.ok(!/offline/i.test(badges.container.textContent ?? ""));
-  assert.match(badges.container.textContent ?? "", /ready/);
+  // And with the formatter ready, the top bar carries no badge at all.
+  assert.equal(badges.container.textContent?.trim(), "");
+});
+
+test("the formatter speaks while it is coming and when it failed to come", () => {
+  // Ready is the state the reader expects and can do nothing about.
+  assert.match(
+    open({ runtime: "loading", runtimeLabel: "loading" }).container.textContent ?? "",
+    /loading/,
+  );
+  assert.match(
+    open({ runtime: "error", runtimeLabel: "failed" }).container.textContent ?? "",
+    /failed/,
+  );
+  assert.equal(open({ runtime: "ready" }).container.textContent?.trim(), "");
 });
 
 test("being offline without support is one of the two things it speaks for", () => {

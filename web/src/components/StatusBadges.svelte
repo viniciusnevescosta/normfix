@@ -25,7 +25,10 @@ const updateReady = $derived(offline === "update-ready");
 const speaks = $derived(updateReady || (offline === "ready" && !online));
 </script>
 
-<div class="flex items-center gap-2 text-xs" data-state={runtime} role="status">
+<!-- Ready is the state the reader expects and can do nothing about, so the
+     badge speaks while the formatter is still coming and when it failed to. -->
+{#if runtime !== "ready"}
+  <div class="flex items-center gap-2 text-xs" data-state={runtime} role="status">
   <span
     class="h-2 w-2 rounded-full"
     class:bg-faint={runtime === "loading"}
@@ -33,8 +36,9 @@ const speaks = $derived(updateReady || (offline === "ready" && !online));
     class:bg-error={runtime === "error"}
     aria-hidden="true"
   ></span>
-  <span>{runtimeLabel}</span>
-</div>
+    <span>{runtimeLabel}</span>
+  </div>
+{/if}
 
 {#if speaks}
   <div
