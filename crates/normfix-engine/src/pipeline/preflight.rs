@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use camino::Utf8PathBuf;
 use normfix_core::{Diagnostic, DiagnosticSource, Severity, TextRange, TextSize};
 use normfix_i18n::DiagnosticKey;
+use normfix_makefile::makefile_artifact;
+use normfix_oracle::{ValgrindChecker, ValgrindConfig};
 use normfix_project::{DiscoveredFile, ProjectFileKind};
 
 use super::FixOptions;
@@ -43,6 +45,19 @@ pub(super) fn append_preflight_diagnostics(
         .map(|file| absolute_lexical(&file.path))
         .collect::<BTreeSet<_>>();
     let root_makefiles = root_regular_makefiles(&options.cwd);
+    // A leak check needs a program, and preflight does not make one. Where the
+    // student's own `make` already left it there, it is checked.
+    if let Ok(checker) = ValgrindChecker::locate(ValgrindConfig::default())
+        && let Some(makefile) = root_makefiles.first()
+    {
+        append_leak_diagnostics(
+            diagnostics,
+            &checker,
+            &options.cwd,
+            makefile,
+            &notice_file.path,
+        );
+    }
     let unevaluated_root_makefile = root_makefiles
         .iter()
         .any(|path| !selected_makefiles.contains(path));
@@ -218,4 +233,96 @@ pub(super) fn is_executable_file(metadata: &std::fs::Metadata) -> bool {
     {
         true
     }
+}
+
+/// Runs a leak check when the project has already been built.
+///
+/// Preflight does not build, and this does not change that. It reads the
+/// artifact the Makefile names, and checks it only if that file is already on
+/// disk — so the command still never turns a source tree into a running
+/// program. Where a binary is sitting there from the student's own `make`,
+/// though, refusing to look at it was refusing the one answer a defense
+/// actually turns on.
+///
+/// What comes back is informational. A leak observed here is one run's
+/// evidence, not a proof about every input, and normfix never edits on it.
+pub(super) fn append_leak_diagnostics(
+    diagnostics: &mut BTreeMap<PathBuf, Vec<Diagnostic>>,
+    checker: &ValgrindChecker,
+    root: &Path,
+    makefile: &Path,
+    anchor: &Path,
+) {
+    let Ok(source) = std::fs::read_to_string(makefile) else {
+        return;
+    };
+    let Some(artifact) = makefile_artifact(&source) else {
+        return;
+    };
+    let program = root.join(&artifact);
+    if !program.is_file() {
+        return;
+    }
+    let Ok(report) = checker.check(&program, &[]) else {
+        return;
+    };
+    let lost = report.definitely_lost_bytes + report.indirectly_lost_bytes;
+    if lost == 0 && report.errors.is_empty() {
+        return;
+    }
+    // Anchored to the same file the rest of preflight reports against: a
+    // Makefile is not always among the files a run selected, and a diagnostic
+    // filed against one nobody asked about is a diagnostic nobody sees.
+    let path = Utf8PathBuf::from(anchor.to_string_lossy().into_owned());
+    let mut entries = Vec::new();
+    if lost > 0 {
+        entries.push(Diagnostic {
+            rule_id: "LEAK_OBSERVED".to_owned(),
+            path: path.clone(),
+            range: TextRange::empty(TextSize::new(0)),
+            severity: Severity::Info,
+            message: format!("Running {artifact} once lost {lost} byte(s)."),
+            source: DiagnosticSource::Project,
+            notes: report
+                .sites
+                .iter()
+                .map(|site| match &site.location {
+                    Some(location) => format!(
+                        "{} byte(s) allocated in {}() at {}:{}.",
+                        site.bytes, site.function, location.file, location.line
+                    ),
+                    None => format!(
+                        "{} byte(s) allocated in {}(); build with -g to get the line.",
+                        site.bytes, site.function
+                    ),
+                })
+                .collect(),
+            help: Some(
+                "Free what the run allocated, then check again with `normfix leaks`.".to_owned(),
+            ),
+            localized: None,
+        });
+    }
+    for error in &report.errors {
+        entries.push(Diagnostic {
+            rule_id: "MEMORY_ERROR_OBSERVED".to_owned(),
+            path: path.clone(),
+            range: TextRange::empty(TextSize::new(0)),
+            severity: Severity::Info,
+            message: format!("{} in {}().", error.kind, error.function),
+            source: DiagnosticSource::Project,
+            notes: error.location.as_ref().map_or_else(Vec::new, |location| {
+                vec![format!("At {}:{}.", location.file, location.line)]
+            }),
+            help: Some(
+                "Memory touched outside what the program owns; this run caught it, another may not."
+                    .to_owned(),
+            ),
+            localized: None,
+        });
+    }
+    diagnostics
+        .entry(anchor.to_path_buf())
+        .or_default()
+        .extend(entries);
 }

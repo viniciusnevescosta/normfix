@@ -559,3 +559,48 @@ mod tests {
         );
     }
 }
+
+/// The artifact this Makefile says it produces, when it says so plainly.
+///
+/// Only a literal value is returned. `NAME = push_swap` names a file; a value
+/// built from other variables names one only after `make` has expanded it, and
+/// guessing at that would point a leak check at a path nobody asked for.
+#[must_use]
+pub fn makefile_artifact(source: &str) -> Option<String> {
+    let lines = source_lines(source);
+    let value = logical_assignments(&lines)
+        .into_iter()
+        .find(|assignment| assignment.name == "NAME")?
+        .body
+        .trim()
+        .to_owned();
+    let plain =
+        !value.is_empty() && !value.contains('$') && !value.contains('/') && !value.contains(' ');
+    plain.then_some(value)
+}
+
+#[cfg(test)]
+mod artifact_tests {
+    use super::makefile_artifact;
+
+    #[test]
+    fn a_literal_name_is_the_artifact_and_a_computed_one_is_not() {
+        assert_eq!(
+            makefile_artifact("NAME = push_swap\nall: $(NAME)\n").as_deref(),
+            Some("push_swap")
+        );
+
+        // A value built from other variables names a file only after `make` has
+        // expanded it, and guessing would point a leak check at a path nobody
+        // asked for.
+        for computed in [
+            "NAME = $(PREFIX)_swap\n",
+            "NAME = build/push_swap\n",
+            "NAME = a b\n",
+            "NAME =\n",
+            "all: x\n",
+        ] {
+            assert_eq!(makefile_artifact(computed), None, "{computed:?}");
+        }
+    }
+}

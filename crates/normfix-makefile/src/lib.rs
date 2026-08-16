@@ -14,7 +14,7 @@ mod sources;
 
 use std::path::Path;
 
-pub use analysis::{MakefileDiagnostic, analyze_makefile};
+pub use analysis::{MakefileDiagnostic, analyze_makefile, makefile_artifact};
 pub use compact::{compact_source_assignments, visual_width};
 pub use header::{
     MAKEFILE_HEADER_EDGE, MakefileHeaderError, build_makefile_header, ensure_makefile_header,
