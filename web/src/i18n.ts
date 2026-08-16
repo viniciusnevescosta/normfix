@@ -9,7 +9,6 @@ const english = {
     "Format 42 School C, headers, Makefiles, and Markdown privately in your browser with normfix WebAssembly.",
   docs: "Documentation",
   github: "GitHub",
-  githubTitle: "Open the official normfix repository on GitHub",
   language: "Language",
   appearance: "Appearance",
   appearanceSystem: "System",
@@ -87,10 +86,8 @@ const english = {
   wsl: "WSL for Windows CLI",
   rust: "Rust for source builds",
   addSource: "Add file",
-  chooseFilename: "Choose a relative filename",
   filename: "Filename",
   cancel: "Cancel",
-  createFile: "Create file",
   loadingFormatter: "Loading formatter…",
   wasmReady: "Ready",
   wasmRequired: "The formatter could not load",
@@ -145,12 +142,9 @@ const english = {
   fullToolLink: "Get the full tool",
   fullToolNote: "The download runs the official checker and the compiler, which this page cannot.",
   fileKind: "Kind",
-  folderHint: "A path such as src/utils.c creates the folder with it.",
   offlineActive: "Offline — still working",
-  offlineActiveTitle: "There is no network. Formatting runs on this device exactly as before.",
   offlineUpdate: "New version ready",
   offlineUpdateAction: "Reload",
-  offlineUpdateTitle: "Reload this tab to use the version that was just downloaded.",
 } as const;
 
 export type MessageKey = keyof typeof english;
@@ -164,7 +158,6 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     seoDescription:
       "Formate C, headers, Makefiles e Markdown da 42 com privacidade no navegador usando WebAssembly.",
     docs: "Documentação",
-    githubTitle: "Abrir o repositório oficial do normfix no GitHub",
     language: "Idioma",
     appearance: "Aparência",
     appearanceSystem: "Sistema",
@@ -239,10 +232,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     wsl: "WSL para a CLI no Windows",
     rust: "Rust para compilar do código-fonte",
     addSource: "Adicionar arquivo",
-    chooseFilename: "Escolha um nome de arquivo relativo",
     filename: "Nome do arquivo",
     cancel: "Cancelar",
-    createFile: "Criar arquivo",
     loadingFormatter: "Carregando formatador…",
     wasmReady: "Pronto",
     wasmRequired: "O formatador não carregou",
@@ -301,12 +292,9 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     fullToolLink: "Baixar a ferramenta completa",
     fullToolNote: "O download roda o verificador oficial e o compilador, que esta página não tem.",
     fileKind: "Tipo",
-    folderHint: "Um caminho como src/utils.c cria a pasta junto.",
     offlineActive: "Offline — continua funcionando",
-    offlineActiveTitle: "Não há rede. A formatação roda neste dispositivo exatamente como antes.",
     offlineUpdate: "Nova versão pronta",
     offlineUpdateAction: "Recarregar",
-    offlineUpdateTitle: "Recarregue esta aba para usar a versão que acabou de ser baixada.",
   },
   es: {
     ...english,
@@ -315,7 +303,6 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     seoDescription:
       "Formatea C, headers, Makefiles y Markdown de 42 de forma privada en el navegador con WebAssembly.",
     docs: "Documentación",
-    githubTitle: "Abrir el repositorio oficial de normfix en GitHub",
     language: "Idioma",
     appearance: "Apariencia",
     appearanceSystem: "Sistema",
@@ -390,10 +377,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     wsl: "WSL para la CLI en Windows",
     rust: "Rust para compilar desde el código fuente",
     addSource: "Añadir archivo",
-    chooseFilename: "Elige un nombre de archivo relativo",
     filename: "Nombre de archivo",
     cancel: "Cancelar",
-    createFile: "Crear archivo",
     loadingFormatter: "Cargando formateador…",
     wasmReady: "Listo",
     wasmRequired: "El formateador no cargó",
@@ -453,12 +438,9 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     fullToolNote:
       "La descarga ejecuta el verificador oficial y el compilador, que esta página no tiene.",
     fileKind: "Tipo",
-    folderHint: "Una ruta como src/utils.c crea la carpeta con él.",
     offlineActive: "Sin conexión: sigue funcionando",
-    offlineActiveTitle: "No hay red. El formateo se ejecuta en este dispositivo igual que antes.",
     offlineUpdate: "Nueva versión lista",
     offlineUpdateAction: "Recargar",
-    offlineUpdateTitle: "Recarga esta pestaña para usar la versión recién descargada.",
   },
   fr: {
     ...english,
@@ -467,7 +449,6 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     seoDescription:
       "Formatez C, headers, Makefiles et Markdown de 42 en privé dans le navigateur avec WebAssembly.",
     docs: "Guides",
-    githubTitle: "Ouvrir le dépôt officiel de normfix sur GitHub",
     language: "Langue",
     appearance: "Apparence",
     appearanceSystem: "Système",
@@ -542,10 +523,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     wsl: "WSL pour la CLI sous Windows",
     rust: "Rust pour compiler depuis les sources",
     addSource: "Ajouter un fichier",
-    chooseFilename: "Choisissez un nom de fichier relatif",
     filename: "Nom du fichier",
     cancel: "Annuler",
-    createFile: "Créer le fichier",
     loadingFormatter: "Chargement du formateur…",
     wasmReady: "Prêt",
     wasmRequired: "Le formateur n’a pas pu charger",
@@ -605,14 +584,9 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     fullToolNote:
       "Le téléchargement exécute le vérificateur officiel et le compilateur, que cette page n’a pas.",
     fileKind: "Type",
-    folderHint: "Un chemin comme src/utils.c crée le dossier avec lui.",
     offlineActive: "Hors ligne — toujours fonctionnel",
-    offlineActiveTitle:
-      "Il n’y a pas de réseau. Le formatage s’exécute sur cet appareil comme avant.",
     offlineUpdate: "Nouvelle version prête",
     offlineUpdateAction: "Recharger",
-    offlineUpdateTitle:
-      "Rechargez cet onglet pour utiliser la version qui vient d’être téléchargée.",
   },
 };
 

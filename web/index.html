@@ -84,6 +84,14 @@
       </section>
 
       <div id="drop-overlay"></div>
+
+      <section class="workbench" aria-label="normfix workbench" data-i18n-aria="workbench">
+        <aside class="files-panel" aria-label="Project files" data-i18n-aria="sourceFiles">
+          <div class="panel-heading">
+            <div>
+              <span class="section-label" data-i18n="project">Project</span>
+              <strong data-i18n="sourceFiles">Project files</strong>
+            </div>
             <div class="panel-actions">
               <button
                 class="icon-button"
@@ -148,6 +156,12 @@
       </section>
 
       <section class="results" id="results" aria-labelledby="results-title" hidden>
+        <div class="results-heading">
+          <div>
+            <span class="section-label" data-i18n="inMemoryResult">In-memory result</span>
+            <h2 id="results-title" data-i18n="reviewOutput">Review output</h2>
+          </div>
+        </div>
         <div id="result-summary"></div>
 
         <div class="result-view code-view" id="formatted-view" role="tabpanel" aria-labelledby="formatted-tab">

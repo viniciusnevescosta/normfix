@@ -18,11 +18,6 @@ import {
 
 const state = $state({ locale: detectLocale() });
 
-/** The language everything on the page is currently in. */
-export function currentLocale(): Locale {
-  return state.locale;
-}
-
 /** Switches the page's language, and everything that reads it with it. */
 export function setLocale(locale: Locale): void {
   state.locale = locale;

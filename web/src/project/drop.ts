@@ -50,17 +50,17 @@ const MAX_ENTRIES_SCANNED = 20_000;
  * `.git` in particular is large enough that walking it would be the slowest
  * part of dropping a project.
  */
-export function isIgnoredEntry(name: string): boolean {
+function isIgnoredEntry(name: string): boolean {
   return name.startsWith(".");
 }
 
 /** Strips the leading slash the entry API puts on every full path. */
-export function normalizeDropPath(fullPath: string): string {
+function normalizeDropPath(fullPath: string): string {
   return fullPath.replace(/^\/+/, "");
 }
 
 /** Whether a dropped path is something the playground can format. */
-export function isImportablePath(path: string): boolean {
+function isImportablePath(path: string): boolean {
   return sourcePathProblem(path) === null;
 }
 

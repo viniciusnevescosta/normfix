@@ -118,6 +118,9 @@ body {
 button,
 input,
 select,
+button,
+input,
+select,
 textarea {
   color: inherit;
   font: inherit;
@@ -127,22 +130,14 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
 a:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 2px;
 }
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 code {
   color: var(--accent);
   font-family: inherit;
@@ -190,6 +185,7 @@ code {
 }
 
 .brand strong,
+.brand strong,
 .brand small {
   display: block;
 }
@@ -205,101 +201,8 @@ code {
   align-items: center;
   gap: 14px;
 }
-
-.language-picker select {
-  min-width: 50px;
-  padding: 3px 5px;
-  font-size: 11px;
-}
-
-.github-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.topbar-link {
-  padding: 3px 10px;
-  color: var(--text);
-  border: 1px solid var(--border-strong);
-  font-size: 12px;
-  text-decoration: none;
-}
-
 .topbar-link:hover,
-.topbar-link:focus-visible {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.runtime-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 3px 7px;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  font-size: 11px;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  background: var(--warning);
-}
-
-/*
- * A badge that only ever says "ready" is noise. It stays hidden while nothing
- * is wrong and appears for the two states worth interrupting the reader for:
- * the formatter still loading, and the formatter failing.
- */
-.runtime-status[data-state="ready"] {
-  display: none;
-}
-
-.runtime-status[data-state="ready"] .status-dot {
-  background: var(--accent);
-}
-
-.runtime-status[data-state="error"] .status-dot {
-  background: var(--error);
-}
-
-/*
- * Same rule as the runtime badge. Working offline is the normal state of an
- * installed playground, so saying so on every visit would be noise; the badge
- * appears only when it changes what the reader can do — the network dropped
- * and this tab kept working, or a newer build is waiting for a reload.
- */
-.offline-status {
-  display: none;
-  align-items: center;
-  gap: 7px;
-  padding: 3px 7px;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  font-size: 11px;
-}
-
 .offline-status[data-state="ready"][data-online="false"],
-.offline-status[data-state="update-ready"] {
-  display: flex;
-}
-
-.offline-status[data-state="update-ready"] .status-dot {
-  background: var(--accent);
-}
-
-.offline-update {
-  padding: 0;
-  color: var(--accent);
-  background: none;
-  border: 0;
-  border-bottom: 1px solid currentcolor;
-  font: inherit;
-  cursor: pointer;
-}
-
 /*
  * The drag indicator. It covers the viewport rather than the workbench so a
  * student who lets go slightly off target still hits it, and it states what
@@ -320,25 +223,6 @@ code {
 .drop-overlay[hidden] {
   display: none;
 }
-
-.drop-card {
-  display: grid;
-  gap: 6px;
-  padding: 26px 34px;
-  text-align: center;
-  border: 1px dashed var(--accent);
-  background: var(--panel);
-}
-
-.drop-card strong {
-  font-size: 15px;
-}
-
-.drop-card span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
 main {
   width: min(1320px, calc(100% - 32px));
   margin: 0 auto;
@@ -353,6 +237,8 @@ main {
   padding: 0 0 14px;
 }
 
+h1,
+h2,
 h1,
 h2,
 p {
@@ -483,12 +369,6 @@ h2 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.file-kind {
-  color: var(--faint);
-  font-size: 9px;
-}
-
 .file-actions {
   display: grid;
   gap: 6px;
@@ -527,42 +407,11 @@ h2 {
 .identity-panel input[aria-invalid="true"] {
   border-color: var(--error);
 }
-
-.remember-option {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.remember-option input {
-  margin: 0;
-  accent-color: var(--accent);
-}
-
-.identity-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .identity-actions .button {
   min-height: 25px;
 }
 
 .identity-status,
-.identity-privacy {
-  margin: 0;
-  color: var(--muted);
-  font-size: 8px;
-  line-height: 1.4;
-}
-
-.identity-status:not(:empty) {
-  color: var(--accent);
-}
-
 .button {
   display: inline-flex;
   min-height: 30px;
@@ -626,12 +475,6 @@ h2 {
   min-width: 0;
   flex-direction: column;
 }
-
-.editor-meta {
-  color: var(--muted);
-  font-size: 10px;
-}
-
 .editor-surface {
   position: relative;
   width: 100%;
@@ -662,6 +505,7 @@ h2 {
   white-space: pre;
 }
 
+#monaco-editor[hidden],
 #monaco-editor[hidden],
 #fallback-editor[hidden] {
   display: none;
@@ -710,39 +554,7 @@ kbd {
   justify-content: flex-end;
   gap: 5px;
 }
-
-.summary-pill {
-  padding: 2px 6px;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  background: var(--panel);
-  font-size: 10px;
-}
-
-.summary-pill strong {
-  margin-right: 4px;
-  color: var(--text);
-}
-
-.result-toolbar {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-bottom: 0;
-  background: var(--panel);
-}
-
-.result-toolbar label {
-  display: grid;
-  gap: 2px;
-  color: var(--muted);
-  font-size: 9px;
-  text-transform: uppercase;
-}
-
+select,
 select,
 dialog input {
   min-width: 210px;
@@ -752,13 +564,6 @@ dialog input {
   border-radius: 0;
   background: var(--panel-alt);
 }
-
-.toolbar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
 .tabs {
   display: flex;
   gap: 0;
@@ -779,6 +584,7 @@ dialog input {
   font-size: 10px;
 }
 
+.tabs button:hover,
 .tabs button:hover,
 .tabs button[aria-selected="true"] {
   color: var(--text);
@@ -825,30 +631,6 @@ dialog input {
 .diagnostic-card,
 .empty-state,
 .budget-section,
-.fixes-section {
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-}
-
-.diagnostic-card[data-severity="warning"] {
-  border-left-color: var(--warning);
-}
-
-.diagnostic-card[data-severity="error"] {
-  border-left-color: var(--error);
-}
-
-.diagnostic-card[data-severity="info"] {
-  border-left-color: var(--info);
-}
-
-.diagnostic-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
 .severity {
   font-size: 9px;
   font-weight: 700;
@@ -876,111 +658,13 @@ dialog input {
   color: var(--muted);
   font-size: 10px;
 }
-
-.diagnostic-message {
-  margin: 6px 0 0;
-  font-size: 11px;
-}
-
-.diagnostic-help {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.empty-state {
-  display: grid;
-  min-height: 120px;
-  place-items: center;
-  color: var(--muted);
-  text-align: center;
-}
-
-.empty-state strong {
-  display: block;
-  color: var(--text);
-}
-
-.file-kinds {
-  display: flex;
-  gap: 14px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.file-kinds legend {
-  padding: 0 0 6px;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.file-kinds label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
-.form-hint {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
 .release-link {
   margin-right: 6px;
   font-weight: 600;
 }
 
 .fixes-section h3,
-.budget-section h3 {
-  margin: 0 0 6px;
-  font-size: 11px;
-}
-
-.fix-list {
-  display: grid;
-  gap: 3px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.fix-list li {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.fix-list code {
-  margin-right: 5px;
-  font-size: 9px;
-}
-
-.budget-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 10px;
-}
-
 .budget-table th,
-.budget-table td {
-  padding: 5px;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-}
-
-.budget-table th {
-  color: var(--muted);
-  font-size: 9px;
-  text-transform: uppercase;
-}
-
-.budget-over {
-  color: var(--error);
-  font-weight: 700;
-}
-
 .scope-note {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
@@ -1042,20 +726,6 @@ dialog input {
   min-width: 0;
   width: 100%;
 }
-
-.form-error {
-  min-height: 15px;
-  margin: -6px 0 0;
-  color: var(--error);
-  font-size: 10px;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 5px;
-}
-
 @media (max-width: 760px) {
   main {
     width: min(100% - 16px, 1320px);
@@ -1111,6 +781,7 @@ dialog input {
   }
 
   .results-heading,
+  .results-heading,
   .result-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -1127,10 +798,6 @@ dialog input {
 }
 
 @media (max-width: 520px) {
-  .runtime-status {
-    max-width: 145px;
-  }
-
   #runtime-label {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1142,6 +809,7 @@ dialog input {
     flex-direction: column;
   }
 
+  .toolbar-actions,
   .toolbar-actions,
   .toolbar-actions .button {
     width: 100%;
@@ -1167,34 +835,20 @@ dialog input {
   .button,
   .text-button,
   .icon-button,
+  .language-picker select,
+  .identity-panel input[type="email"],
+  .button,
+  .text-button,
+  .icon-button,
   .file-item {
     min-height: 32px;
   }
-
-  .remember-option input[type="checkbox"] {
-    width: 24px;
-    height: 24px;
-  }
-
-  .remember-option {
-    gap: 8px;
-    align-items: center;
-  }
-
-  .identity-actions {
-    gap: 10px;
-  }
-
   .dependency-links {
     row-gap: 4px;
   }
 
   .dependency-links a {
     display: inline-block;
-    padding: 6px 0;
-  }
-
-  .offline-update {
     padding: 6px 0;
   }
 }
@@ -1227,81 +881,18 @@ dialog input {
   display: flex;
   gap: 0.25rem;
 }
-
-/* A folder reads as the container it is: the row is not selectable, and what
-   sits under it is indented rather than named with its whole path. */
-.file-folder {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  user-select: none;
-}
-
-.folder-mark {
-  font-size: 0.9em;
-}
-
 .file-item.drop-into {
   outline: 1px dashed currentColor;
   outline-offset: -2px;
 }
-
-.context-menu {
-  background: var(--surface, #1a1d1a);
-  border: 1px solid var(--border, #333);
-  border-radius: 0.35rem;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
-  display: flex;
-  flex-direction: column;
-  min-width: 8rem;
-  padding: 0.25rem;
-  position: fixed;
-  z-index: 50;
-}
-
-.context-menu button {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  padding: 0.35rem 0.6rem;
-  text-align: left;
-}
-
 .context-menu button:hover,
-.context-menu button:focus-visible {
-  background: var(--surface-raised, #262a26);
-}
-
 /* The arrow is a control of its own, so it can be reached from the keyboard
    and so clicking it never reads as clicking the folder it belongs to. */
 /* A file normfix cannot format still shows in the tree, and says so where the
    editor would have been: an empty text box with nothing explaining it reads
-   as the page being broken. */
-.editor-disabled {
-  align-items: center;
-  background: var(--surface, #1a1d1a);
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  inset: 0;
-  justify-content: center;
-  position: absolute;
-  text-align: center;
-  z-index: 5;
-}
-
 .file-unsupported .file-name {
   opacity: 0.65;
 }
-
-.file-unsupported .file-kind {
-  font-style: italic;
-  opacity: 0.65;
-}
-
 /* The restore is announced rather than assumed. This page is for shared campus
    machines, and code that comes back without a word is code the next person at
    that keyboard did not expect to find. */

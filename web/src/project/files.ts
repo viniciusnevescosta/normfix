@@ -1,7 +1,7 @@
 import { decodeUtf8Source } from "./source-text";
 
 export const MAX_FILES = 128;
-export const MAX_PATH_BYTES = 240;
+const MAX_PATH_BYTES = 240;
 export const MAX_FILE_BYTES = 1024 * 1024;
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 

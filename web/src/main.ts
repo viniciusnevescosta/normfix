@@ -1634,6 +1634,8 @@ mount(IdentityPanel, {
 
 async function initialize(): Promise<void> {
   setLocale(state.locale);
+  // The old markup carried this as text; the badge is written from state now.
+  setRuntimeMessage("loading", "loadingFormatter");
   state.appearance = applyThemePreference(state.theme);
   applyTranslations();
   loadIdentity();
