@@ -1,4 +1,5 @@
 import { mount } from "svelte";
+import ConfirmDialog from "./components/ConfirmDialog.svelte";
 import Diagnostics from "./components/Diagnostics.svelte";
 import DropOverlay from "./components/DropOverlay.svelte";
 import EditorNotice from "./components/EditorNotice.svelte";
@@ -45,6 +46,7 @@ import {
   watchSystemAppearance,
 } from "./theme";
 import {
+  confirmState,
   diagnosticsState,
   dragState,
   editorState,
@@ -205,12 +207,9 @@ const elements = {
   editorMeta: requiredElement<HTMLElement>("#editor-meta"),
   identityPanel: requiredElement<HTMLElement>("#identity-panel"),
   editorNotice: requiredElement<HTMLElement>("#editor-notice"),
+  confirmDelete: requiredElement<HTMLElement>("#confirm-delete"),
   restoreNotice: requiredElement<HTMLElement>("#restore-notice"),
   discardRestore: requiredElement<HTMLButtonElement>("#discard-restore"),
-  confirmDelete: requiredElement<HTMLDialogElement>("#confirm-delete"),
-  confirmDeleteText: requiredElement<HTMLElement>("#confirm-delete-text"),
-  confirmDeleteAction: requiredElement<HTMLButtonElement>("#confirm-delete-action"),
-  confirmDeleteCancel: requiredElement<HTMLButtonElement>("#confirm-delete-cancel"),
   run: requiredElement<HTMLButtonElement>("#run"),
   results: requiredElement<HTMLElement>("#results"),
   resultSummary: requiredElement<HTMLElement>("#result-summary"),
@@ -591,19 +590,26 @@ function renameEntry(path: string, isFolder: boolean, name: string): void {
 function deleteEntry(path: string, isFolder: boolean): void {
   if (state.importing) return;
   syncEditor();
-  const removed = isFolder
-    ? [...state.files.keys()].filter((loaded) => loaded === path || loaded.startsWith(`${path}/`))
-    : [path];
-  if (removed.length === 0) return;
+  const under = (loaded: string): boolean =>
+    loaded === path || (isFolder && loaded.startsWith(`${path}/`));
+  const removed = [...state.files.keys()].filter(under);
+  // A file the project shows but cannot format lives beside the formattable
+  // ones, not among them. Deleting only from `files` left it in the tree with
+  // no way to remove it — visible, permanent, and not part of the project.
+  const dropped = [...state.unsupported].filter(under);
+  if (removed.length === 0 && dropped.length === 0) return;
   const proposed = new Map(state.files);
   for (const loaded of removed) proposed.delete(loaded);
   state.files = proposed;
+  for (const loaded of dropped) state.unsupported.delete(loaded);
   state.revision += 1;
   invalidateResults();
   if (state.selected !== null && removed.includes(state.selected)) {
     const next = [...state.files.keys()].sort()[0];
     if (next === undefined) showEmptyProject();
     else selectFile(next, false);
+  } else if (state.files.size === 0) {
+    showEmptyProject();
   } else {
     renderFileList();
   }
@@ -711,25 +717,12 @@ function confirmDelete(path: string, isFolder: boolean): void {
   const count = isFolder
     ? [...state.files.keys()].filter((loaded) => loaded.startsWith(`${path}/`)).length
     : 1;
-  elements.confirmDeleteText.textContent = isFolder
-    ? t("deleteFolderText", { path, count: String(count) })
-    : t("deleteFileText", { path });
-  // The confirm button is wired directly rather than through the dialog's
-  // `close` event and its return value: that pair is one indirection more than
-  // this needs, and a delete that quietly does nothing is worse than no
-  // confirmation at all.
-  const confirm = elements.confirmDeleteAction;
-  const accept = (): void => {
-    elements.confirmDelete.close();
-    deleteEntry(path, isFolder);
+  confirmState.request = {
+    text: isFolder
+      ? t("deleteFolderText", { path, count: String(count) })
+      : t("deleteFileText", { path }),
   };
-  confirm.addEventListener("click", accept, { once: true });
-  elements.confirmDeleteCancel.addEventListener(
-    "click",
-    () => confirm.removeEventListener("click", accept),
-    { once: true },
-  );
-  elements.confirmDelete.showModal();
+  confirmState.accept = () => deleteEntry(path, isFolder);
 }
 
 function updateEditorMeta(): void {
@@ -1508,6 +1501,25 @@ elements.language.addEventListener("change", () => {
   const locale = elements.language.value as Locale;
   if (SUPPORTED_LOCALES.includes(locale)) changeLocale(locale);
 });
+mount(ConfirmDialog, {
+  target: elements.confirmDelete,
+  props: {
+    get request() {
+      return confirmState.request;
+    },
+    onConfirm: () => {
+      const accept = confirmState.accept;
+      confirmState.request = null;
+      confirmState.accept = null;
+      accept?.();
+    },
+    onCancel: () => {
+      confirmState.request = null;
+      confirmState.accept = null;
+    },
+  },
+});
+
 mount(StatusBadges, {
   target: elements.statusBadges,
   props: {

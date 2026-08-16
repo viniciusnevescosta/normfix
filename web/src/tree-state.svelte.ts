@@ -21,6 +21,11 @@ export const diagnosticsState = $state({
   stable: true,
 });
 
+export const confirmState = $state({
+  request: null as { text: string } | null,
+  accept: null as (() => void) | null,
+});
+
 export const statusState = $state({
   runtime: "loading" as "loading" | "ready" | "error",
   runtimeLabel: "",
