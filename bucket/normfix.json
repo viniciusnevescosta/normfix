@@ -1,16 +1,16 @@
 {
-    "version": "1.8.0",
+    "version": "1.9.0",
     "description": "Safe automatic fixes and clear diagnostics for the 42 Norm",
     "homepage": "https://normfix.vercel.app",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v1.8.0/normfix-x86_64-windows.zip",
-            "hash": "358861834445810deb1d2f236774e04119951f1f844828119f4ab66ddde87e82"
+            "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v1.9.0/normfix-x86_64-windows.zip",
+            "hash": "e911a1f415d90b17587b212881740e6b81632d45f93dcb28f32cae63bcdec5f7"
         },
         "arm64": {
-            "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v1.8.0/normfix-aarch64-windows.zip",
-            "hash": "af3a6a930748927d928bb6c78e51519510bdee0fc12895956955ec83546fbff5"
+            "url": "https://github.com/viniciusnevescosta/normfix/releases/download/v1.9.0/normfix-aarch64-windows.zip",
+            "hash": "6206943e53756314efe8a8e3515cc876936e35f62eb67fb547094eebd2ba2d51"
         }
     },
     "bin": "normfix.exe",
