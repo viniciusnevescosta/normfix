@@ -16,11 +16,16 @@ test("nothing covers the editor when there is nothing to say", () => {
 
 test("a notice covers the editor and says both halves", () => {
   const { container } = render(EditorNotice, {
-    props: { notice: { title: "unsupportedFile", detail: "supportedKinds" } },
+    props: {
+      notice: {
+        title: "normfix does not format this file.",
+        detail: "It formats .c, .h, .md, and Makefile.",
+      },
+    },
   });
 
   const cover = container.querySelector("[role=status]");
   assert.ok(cover, "the editor is covered rather than left looking editable");
-  assert.match(cover.textContent ?? "", /unsupportedFile/);
-  assert.match(cover.textContent ?? "", /supportedKinds/);
+  assert.match(cover.textContent ?? "", /does not format this file/);
+  assert.match(cover.textContent ?? "", /It formats \.c, \.h, \.md, and Makefile/);
 });

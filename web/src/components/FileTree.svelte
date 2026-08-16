@@ -11,7 +11,7 @@
 // what the reader did, which keeps the rules about what a path may be where
 // they are already proven.
 import { SvelteSet } from "svelte/reactivity";
-
+import { t as translate } from "../i18n-state.svelte";
 import { buildTree, type TreeNode } from "../project/tree";
 
 interface Props {
@@ -19,7 +19,6 @@ interface Props {
   unsupported: ReadonlySet<string>;
   changed: ReadonlySet<string>;
   selected: string | null;
-  translate: (key: string) => string;
   kindOf: (path: string) => string;
   onSelect: (path: string) => void;
   onMove: (path: string, isFolder: boolean, folder: string) => void;
@@ -32,7 +31,6 @@ const {
   unsupported,
   changed,
   selected,
-  translate,
   kindOf,
   onSelect,
   onMove,

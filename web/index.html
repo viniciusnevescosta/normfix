@@ -100,29 +100,7 @@
           <span aria-hidden="true">★</span>
           <span id="star-count" aria-live="polite">0</span>
         </a>
-        <div class="runtime-status" id="runtime-status" data-state="loading" role="status">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="runtime-label" data-i18n="loadingFormatter">Loading formatter…</span>
-        </div>
-        <div
-          class="offline-status"
-          id="offline-status"
-          data-state="unsupported"
-          data-online="true"
-          data-i18n-aria="offlineAvailability"
-        >
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="offline-label" role="status"></span>
-          <button
-            class="offline-update"
-            id="offline-update"
-            type="button"
-            hidden
-            data-i18n="offlineUpdateAction"
-            data-i18n-title="offlineUpdateTitle"
-          >Reload</button>
-        </div>
-      </div>
+        <div id="status-badges" class="flex items-center gap-4"></div>
     </header>
 
     <main>

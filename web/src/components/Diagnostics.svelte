@@ -37,6 +37,8 @@ interface Budget {
   parameter_limit: number;
 }
 
+import { t as translate } from "../i18n-state.svelte";
+
 interface Props {
   diagnostics: readonly Diagnostic[];
   fixes: readonly Fix[];
@@ -44,10 +46,9 @@ interface Props {
   /** The reason nothing was written, when there is one. */
   error: string | null;
   stable: boolean;
-  translate: (key: string, values?: Record<string, string | number>) => string;
 }
 
-const { diagnostics, fixes, budget, error, stable, translate }: Props = $props();
+const { diagnostics, fixes, budget, error, stable }: Props = $props();
 
 // A file the parser could not read carries the reason as an error; an
 // unstable run carries none. `stable` is false for both, so reading it to

@@ -17,7 +17,6 @@ function open(overrides: Record<string, unknown> = {}) {
       diagnosticCount: 1,
       view: "formatted",
       copyLabel: "copyFile",
-      translate: (key: string) => key,
       onSelect: (path: string) => calls.push(["select", path]),
       onView: (view: string) => calls.push(["view", view]),
       onApply: () => calls.push(["apply"]),
@@ -39,13 +38,9 @@ test("the counts are shown with the words that name them", () => {
   const panel = open();
   const text = panel.container.textContent ?? "";
 
-  for (const label of [
-    "filesSummary",
-    "changedSummary",
-    "fixesSummary",
-    "diagnosticsSummary",
-    "failedSummary",
-  ]) {
+  // The words come from the catalogue now rather than from a stub, so this
+  // also proves the keys exist.
+  for (const label of ["files", "changed", "fixes", "diagnostics", "failed"]) {
     assert.match(text, new RegExp(label));
   }
   assert.match(text, /13/, "the fix count is the number, not a description of it");
@@ -54,11 +49,11 @@ test("the counts are shown with the words that name them", () => {
 test("a result that cannot be used leaves no button saying it can", () => {
   const panel = open({ usable: false, applicable: 0 });
 
-  for (const label of ["fixCurrent", "copyFile", "downloadFile", "fixAll"]) {
+  for (const label of ["Fix this file", "copyFile", "Download file", "Fix all files"]) {
     assert.equal(panel.button(label)?.disabled, true, `${label} is disabled`);
   }
   // Downloading the whole project is not about this one file, so it stays.
-  assert.equal(panel.button("downloadAll")?.disabled, false);
+  assert.equal(panel.button("Download all")?.disabled, false);
 });
 
 test("choosing a file and a view reports which was chosen", () => {
@@ -69,7 +64,7 @@ test("choosing a file and a view reports which was chosen", () => {
   picker.value = "src/utils.c";
   picker.dispatchEvent(new Event("change", { bubbles: true }));
 
-  panel.button("diff")?.click();
+  panel.button("Diff")?.click();
 
   assert.deepEqual(panel.calls, [
     ["select", "src/utils.c"],

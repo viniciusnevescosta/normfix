@@ -5,6 +5,7 @@ import EditorNotice from "./components/EditorNotice.svelte";
 import FileTree from "./components/FileTree.svelte";
 import IdentityPanel from "./components/IdentityPanel.svelte";
 import ResultSummary from "./components/ResultSummary.svelte";
+import StatusBadges from "./components/StatusBadges.svelte";
 import { createSourceEditor, type SourceEditor } from "./editor";
 import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 import {
@@ -15,6 +16,7 @@ import {
   translate,
   translatePlural,
 } from "./i18n";
+import { setLocale } from "./i18n-state.svelte";
 import { type OfflineState, type OfflineSupport, startOfflineSupport } from "./offline/pwa";
 import { buildZip, ZipArchiveError } from "./project/archive";
 import { openDraftRow } from "./project/draft-row";
@@ -48,6 +50,7 @@ import {
   editorState,
   identityState,
   resultState,
+  statusState,
   treeState,
 } from "./tree-state.svelte";
 
@@ -188,11 +191,10 @@ const state: AppState = {
 };
 
 const elements = {
-  runtime: requiredElement<HTMLElement>("#runtime-status"),
-  runtimeLabel: requiredElement<HTMLElement>("#runtime-label"),
   fileList: requiredElement<HTMLElement>("#file-list"),
   filePicker: requiredElement<HTMLInputElement>("#file-picker"),
   dropOverlay: requiredElement<HTMLElement>("#drop-overlay"),
+  statusBadges: requiredElement<HTMLElement>("#status-badges"),
 
   addFile: requiredElement<HTMLButtonElement>("#add-file"),
   addFolder: requiredElement<HTMLButtonElement>("#add-folder"),
@@ -218,9 +220,6 @@ const elements = {
   language: requiredElement<HTMLSelectElement>("#language"),
   theme: requiredElement<HTMLSelectElement>("#theme"),
   starCount: requiredElement<HTMLElement>("#star-count"),
-  offlineStatus: requiredElement<HTMLElement>("#offline-status"),
-  offlineLabel: requiredElement<HTMLElement>("#offline-label"),
-  offlineUpdate: requiredElement<HTMLButtonElement>("#offline-update"),
   docsLink: requiredElement<HTMLAnchorElement>("#docs-link"),
   brand: requiredElement<HTMLAnchorElement>(".brand"),
   canonical: requiredElement<HTMLLinkElement>("#canonical-url"),
@@ -361,10 +360,11 @@ function applyTranslations(): void {
     const key = element.dataset.i18nAria as MessageKey | undefined;
     if (key) element.setAttribute("aria-label", t(key));
   }
-  for (const element of document.querySelectorAll<HTMLElement>("[data-i18n-state]")) {
-    const key = element.dataset.i18nState as MessageKey | undefined;
-    if (key) element.textContent = t(key);
-  }
+  // The runtime badge is the one message the page writes rather than marks up,
+  // so it is re-said from the key it was set with instead of from an attribute
+  // that no longer exists.
+  if (runtimeMessageKey) statusState.runtimeLabel = t(runtimeMessageKey);
+  renderOfflineStatus();
   elements.language.setAttribute("aria-label", t("language"));
   elements.addFile.setAttribute("aria-label", t("addFile"));
   elements.addFolder.setAttribute("aria-label", t("addFolder"));
@@ -411,6 +411,9 @@ function applyTranslations(): void {
 
 function changeLocale(locale: Locale): void {
   state.locale = locale;
+  // The components read the language rather than being handed a function, so
+  // this is what re-says every word they have already drawn.
+  setLocale(locale);
   const route = locale === "en" ? "/" : `/${locale}/`;
   window.history.replaceState(null, "", route);
   try {
@@ -443,14 +446,17 @@ async function loadGitHubStars(): Promise<void> {
 }
 
 function setRuntime(stateName: RuntimeState, label: string): void {
-  elements.runtime.dataset.state = stateName;
-  delete elements.runtimeLabel.dataset.i18nState;
-  elements.runtimeLabel.textContent = label;
+  statusState.runtime = stateName;
+  statusState.runtimeLabel = label;
+  runtimeMessageKey = null;
 }
+
+/** The message key the badge is showing, so a language change can re-say it. */
+let runtimeMessageKey: MessageKey | null = null;
 
 function setRuntimeMessage(stateName: RuntimeState, key: MessageKey): void {
   setRuntime(stateName, t(key));
-  elements.runtimeLabel.dataset.i18nState = key;
+  runtimeMessageKey = key;
 }
 
 /**
@@ -459,11 +465,7 @@ function setRuntimeMessage(stateName: RuntimeState, key: MessageKey): void {
  * that change what the reader can do.
  */
 function renderOfflineStatus(): void {
-  elements.offlineStatus.dataset.state = state.offlineState;
-  const updateReady = state.offlineState === "update-ready";
-  elements.offlineUpdate.hidden = !updateReady;
-  elements.offlineLabel.textContent = updateReady ? t("offlineUpdate") : t("offlineActive");
-  elements.offlineStatus.title = updateReady ? "" : t("offlineActiveTitle");
+  statusState.offline = state.offlineState;
 }
 
 async function loadFormatter(): Promise<void> {
@@ -1506,9 +1508,26 @@ elements.language.addEventListener("change", () => {
   const locale = elements.language.value as Locale;
   if (SUPPORTED_LOCALES.includes(locale)) changeLocale(locale);
 });
-elements.offlineUpdate.addEventListener("click", () => {
-  state.offlineSupport?.applyUpdate();
+mount(StatusBadges, {
+  target: elements.statusBadges,
+  props: {
+    get runtime() {
+      return statusState.runtime;
+    },
+    get runtimeLabel() {
+      return statusState.runtimeLabel;
+    },
+    get offline() {
+      return statusState.offline;
+    },
+    get online() {
+      return statusState.online;
+    },
+    translate: (key: string) => t(key as MessageKey),
+    onUpdate: () => state.offlineSupport?.applyUpdate(),
+  },
 });
+
 mount(DropOverlay, {
   target: elements.dropOverlay,
   props: {
@@ -1550,6 +1569,7 @@ mount(IdentityPanel, {
 });
 
 async function initialize(): Promise<void> {
+  setLocale(state.locale);
   state.appearance = applyThemePreference(state.theme);
   applyTranslations();
   loadIdentity();
@@ -1562,7 +1582,7 @@ async function initialize(): Promise<void> {
       renderOfflineStatus();
     },
     onConnectivity: (online) => {
-      elements.offlineStatus.dataset.online = String(online);
+      statusState.online = online;
     },
   });
   renderFileList();

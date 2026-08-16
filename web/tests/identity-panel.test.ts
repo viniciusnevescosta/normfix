@@ -13,7 +13,6 @@ function open(overrides: Record<string, unknown> = {}) {
       stored: false,
       status: "",
       invalid: false,
-      translate: (key: string) => key,
       onSave: (email: string, remember: boolean) => calls.push(["save", email, remember]),
       onForget: () => calls.push(["forget"]),
       ...overrides,
@@ -38,7 +37,7 @@ test("remembering a student identity is an explicit opt-in", () => {
   assert.ok(field);
   field.value = "vneves-c@student.42.fr";
   field.dispatchEvent(new Event("input", { bubbles: true }));
-  panel.button("saveIdentity")?.click();
+  panel.button("Save")?.click();
 
   assert.deepEqual(panel.calls, [["save", "vneves-c@student.42.fr", false]]);
 });
@@ -53,7 +52,7 @@ test("with nothing stored it offers to remember, and saves what was typed", () =
   field.dispatchEvent(new Event("input", { bubbles: true }));
   box.checked = true;
   box.dispatchEvent(new Event("change", { bubbles: true }));
-  panel.button("saveIdentity")?.click();
+  panel.button("Save")?.click();
 
   assert.deepEqual(panel.calls, [["save", "vneves-c@student.42.fr", true]]);
 });
@@ -64,16 +63,16 @@ test("with an identity stored the box and Save are gone, leaving Forget", () => 
   // The box would offer a choice already made, and Save would offer to make it
   // again. What is left is the one action that changes anything.
   assert.equal(panel.container.querySelector("input[type=checkbox]"), null);
-  assert.equal(panel.button("saveIdentity"), undefined);
+  assert.equal(panel.button("Save"), undefined);
 
-  panel.button("forgetIdentity")?.click();
+  panel.button("Forget")?.click();
   assert.deepEqual(panel.calls, [["forget"]]);
 });
 
 test("a refused address is marked for anything not reading the message", () => {
-  const panel = open({ invalid: true, status: "invalidIdentity" });
+  const panel = open({ invalid: true, status: "Enter a valid 42 student email." });
   const field = panel.container.querySelector("#identity-email");
 
   assert.equal(field?.getAttribute("aria-invalid"), "true");
-  assert.match(panel.container.textContent ?? "", /invalidIdentity/);
+  assert.match(panel.container.textContent ?? "", /valid 42 student email/);
 });

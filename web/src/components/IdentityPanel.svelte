@@ -6,17 +6,18 @@
 // is my email on this machine — was the one thing it would not say. What is
 // shown is derived from whether something is stored, which means the two can
 // no longer disagree.
+import { t as translate } from "../i18n-state.svelte";
+
 interface Props {
   email: string;
   stored: boolean;
   status: string;
   invalid: boolean;
-  translate: (key: string) => string;
   onSave: (email: string, remember: boolean) => void;
   onForget: () => void;
 }
 
-const { email, stored, status, invalid, translate, onSave, onForget }: Props = $props();
+const { email, stored, status, invalid, onSave, onForget }: Props = $props();
 
 let typed = $state("");
 let remember = $state(false);

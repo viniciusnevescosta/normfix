@@ -13,6 +13,8 @@ interface Summary {
   failed: number;
 }
 
+import { t as translate } from "../i18n-state.svelte";
+
 interface Props {
   summary: Summary;
   paths: readonly string[];
@@ -24,7 +26,6 @@ interface Props {
   diagnosticCount: number;
   view: "formatted" | "diagnostics" | "diff";
   copyLabel: string;
-  translate: (key: string) => string;
   onSelect: (path: string) => void;
   onView: (view: "formatted" | "diagnostics" | "diff") => void;
   onApply: () => void;
@@ -43,7 +44,6 @@ const {
   diagnosticCount,
   view,
   copyLabel,
-  translate,
   onSelect,
   onView,
   onApply,

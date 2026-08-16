@@ -13,7 +13,6 @@ function open(files: string[], overrides: Record<string, unknown> = {}) {
       unsupported: new Set<string>(),
       changed: new Set<string>(),
       selected: null,
-      translate: (key: string) => key,
       kindOf: () => "C",
       onSelect: (path: string) => calls.push(["select", path]),
       onMove: (path: string, isFolder: boolean, folder: string) =>
@@ -93,8 +92,8 @@ test("a file normfix cannot format is shown, and says so instead of its kind", (
   const tree = open(["notes.py", "main.c"], { unsupported: new Set(["notes.py"]) });
 
   assert.ok(tree.rows().includes("notes.py"), "it is not dropped from the panel");
-  assert.match(tree.row("notes.py").textContent ?? "", /unsupportedKind/);
-  assert.equal(tree.row("notes.py").getAttribute("title"), "unsupportedFile");
+  assert.match(tree.row("notes.py").textContent ?? "", /not formatted/);
+  assert.match(tree.row("notes.py").getAttribute("title") ?? "", /does not format/);
 });
 
 test("right-clicking offers rename and delete for the entry under the pointer", async () => {
@@ -106,7 +105,7 @@ test("right-clicking offers rename and delete for the entry under the pointer", 
   const items = [...document.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
   assert.deepEqual(
     items.map((item) => item.textContent?.trim()),
-    ["renameEntry", "deleteEntry"],
+    ["Rename", "Delete"],
   );
 
   items[1]?.click();

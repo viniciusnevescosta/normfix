@@ -9,12 +9,13 @@
 // It says what will be taken before anything is dropped, because a drop that
 // silently keeps four files out of seven is one the reader has to reverse
 // engineer afterwards.
+import { t as translate } from "../i18n-state.svelte";
+
 interface Props {
   active: boolean;
-  translate: (key: string) => string;
 }
 
-const { active, translate }: Props = $props();
+const { active }: Props = $props();
 </script>
 
 {#if active}

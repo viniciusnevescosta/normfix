@@ -21,6 +21,13 @@ export const diagnosticsState = $state({
   stable: true,
 });
 
+export const statusState = $state({
+  runtime: "loading" as "loading" | "ready" | "error",
+  runtimeLabel: "",
+  offline: "unsupported",
+  online: true,
+});
+
 export const dragState = $state({
   active: false,
 });

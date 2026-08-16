@@ -20,6 +20,6 @@ test("a drag says what will be taken before anything is dropped", () => {
     props: { active: true, translate: (key: string) => key },
   });
 
-  assert.match(container.textContent ?? "", /dropHere/);
-  assert.match(container.textContent ?? "", /dropAccepted/);
+  assert.match(container.textContent ?? "", /Drop files or a project folder/);
+  assert.match(container.textContent ?? "", /Takes \.c, \.h, \.md, and Makefile/);
 });
