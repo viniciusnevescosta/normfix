@@ -12,7 +12,11 @@ What shipped, and why each change was made, lives in the
 This page is only what is still ahead, so a reader never has to work out which
 half they are looking at.
 
-## 1.9 — Python projects
+Numbers move when the work does. Python was 1.9 until the playground's own
+maintainability came first, and a version that promises one thing and ships
+another is worse than one that renumbers.
+
+## 1.10 — Python projects
 
 A separate Python pipeline on the same oracle model the Norminette uses, plus a
 Python-capable playground. The C/Norminette contract stays available and
@@ -27,7 +31,7 @@ has to be installed, is part of that comparison. The choice will be made by what
 each reports on real 42 Python projects, and whichever is chosen becomes the
 versioned oracle the way Norminette 3.3.59 is.
 
-## 1.10 — starting a project
+## 1.11 — starting a project
 
 Create a project from explicit choices: its name and allowed function list, then
 `main.c`, the header, the Makefile, a `README.md` carrying the student's login,

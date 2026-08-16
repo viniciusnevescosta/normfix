@@ -37,8 +37,8 @@ Create an annotated tag whose text is exactly the workspace version prefixed by
 `v`. The tagged commit must already be contained in `main`:
 
 ```sh
-git tag -a v1.8.0 -m 'normfix 1.8.0'
-git push origin v1.8.0
+git tag -a v1.9.0 -m 'normfix 1.9.0'
+git push origin v1.9.0
 ```
 
 `.github/workflows/release.yml` then:
@@ -118,7 +118,7 @@ the Scoop bucket, and both are rendered from the `SHA256SUMS` the release just
 published, then committed to `main`.
 
 Nothing is manual, and nothing needs a token beyond the one the workflow
-already has. They lived in two repositories of their own until 1.8.0, updated
+already has. They lived in two repositories of their own until 1.9.0, updated
 by hand — which meant they were updated when somebody remembered, and the tap
 spent eight releases describing `1.0.0-rc.1` while `brew install` handed people
 a release candidate.

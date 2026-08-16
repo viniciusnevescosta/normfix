@@ -10,7 +10,7 @@ normfix upgrade --check  # signale seulement
 
 ```console
 $ normfix upgrade --check
-normfix 1.8.0 is already the newest release.
+normfix 1.9.0 is already the newest release.
 ```
 
 ## Ce qu'il fait, dans l'ordre

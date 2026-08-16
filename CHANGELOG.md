@@ -10,6 +10,94 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.9.0] / 2026-08-15
+
+The playground stops being a page the code edits by hand.
+
+`main.ts` had grown to eighteen hundred lines of DOM written from the
+outside: a list rebuilt after every change, buttons enabled from four
+places, cards assembled node by node. Every bug fixed in 1.8 came from two
+things disagreeing about what was on screen. Ten components now derive the
+markup from the state, so there is nothing to keep in agreement.
+
+### Added
+
+- **Svelte 5 and Tailwind, starting with the file tree** ([3d8dc88](https://github.com/viniciusnevescosta/normfix/commit/3d8dc88)).
+  The panel was the worst of it: its list was rebuilt by hand and every change
+  had to remember to do that. Tailwind is configured from the palette that was
+  already here, so the tokens are the theme rather than a copy of it.
+
+- **Every panel across, one at a time**: identity ([a072ffe](https://github.com/viniciusnevescosta/normfix/commit/a072ffe)),
+  diagnostics ([0cd01b8](https://github.com/viniciusnevescosta/normfix/commit/0cd01b8)), the result header
+  ([daa233f](https://github.com/viniciusnevescosta/normfix/commit/daa233f)), the editor notice ([01f0460](https://github.com/viniciusnevescosta/normfix/commit/01f0460)), the
+  drop overlay ([084f4a1](https://github.com/viniciusnevescosta/normfix/commit/084f4a1)), the delete confirmation
+  ([9d49120](https://github.com/viniciusnevescosta/normfix/commit/9d49120)), the editor header ([be51234](https://github.com/viniciusnevescosta/normfix/commit/be51234)), the
+  formatted and diff views ([a1c9db4](https://github.com/viniciusnevescosta/normfix/commit/a1c9db4)), and the top bar
+  ([2e678f6](https://github.com/viniciusnevescosta/normfix/commit/2e678f6)). The page worked at every step.
+
+- **Vitest, with a DOM where the DOM is the subject**
+  ([f01be84](https://github.com/viniciusnevescosta/normfix/commit/f01be84)).
+  The suite went from 44 tests to 95. What used to be verified by opening a
+  browser and clicking is now held by tests that run on every push.
+
+- **A guard on the markup nothing else reads** ([9d58709](https://github.com/viniciusnevescosta/normfix/commit/9d58709)).
+  TypeScript sees the TypeScript and Biome sees the script blocks; neither has
+  ever opened `index.html`. Three checks, each proven by breaking what it
+  watches.
+
+- **The function budget says how much room is left** ([bec9f2d](https://github.com/viniciusnevescosta/normfix/commit/bec9f2d)),
+  the way the command line always has: `4/25 (21 left)`, over the limit as
+  well as under.
+
+### Fixed
+
+- **A language change reached nothing** ([55b60bb](https://github.com/viniciusnevescosta/normfix/commit/55b60bb)). Handing each
+  component a `translate` function looked fine and was not: a function is not
+  state, so the selector — the one control whose whole job is to change every
+  word on the page — changed none of them. The tests missed it because they
+  passed a stub returning the key, which proves nothing about whether a reader
+  ever sees words.
+
+- **The layout had been one stacked column for five commits**
+  ([487f1fb](https://github.com/viniciusnevescosta/normfix/commit/487f1fb)). Cutting one block out of `index.html` took the
+  workbench container with it. Every scripted check passed, because they ask
+  what the page does. A screenshot found it. The same change fixed the light
+  theme, which was drawing dark colours: the Tailwind tokens had copied the
+  dark palette's values instead of pointing at the variables that switch.
+
+- **A file normfix cannot format could not be deleted** ([9d49120](https://github.com/viniciusnevescosta/normfix/commit/9d49120)).
+  It lives beside the formattable ones rather than among them, and the delete
+  path only ever looked at the formattable half — so it stayed in the tree,
+  visible and permanent. The same change made confirming actually delete: the
+  dialog's `close` event and return value never fired, so confirming quietly
+  did nothing.
+
+- **Two badges that talked when they had nothing to say**
+  ([bec9f2d](https://github.com/viniciusnevescosta/normfix/commit/bec9f2d), [f01b536](https://github.com/viniciusnevescosta/normfix/commit/f01b536)). Offline support announced
+  itself while simply working, and the formatter announced that it was ready —
+  the state a reader expects and can do nothing about. Both now speak only for
+  what changes what the reader can do.
+
+### Changed
+
+- **Biome replaces oxlint and oxfmt** ([4e00bdb](https://github.com/viniciusnevescosta/normfix/commit/4e00bdb)). They do not read
+  `.svelte` at all, so the tooling was going quiet on exactly the files being
+  written. Biome reads the `<script>` block. Neither reads a template, which is
+  why the component tests matter.
+
+- **Half the stylesheet was no longer reachable** ([487f1fb](https://github.com/viniciusnevescosta/normfix/commit/487f1fb)) — 64
+  rules and 409 lines, with six translation keys belonging to a dialog that no
+  longer exists and four exports nobody imports. The layout is unchanged in
+  both themes after removing them.
+
+- **The Homebrew tap and the Scoop bucket live in this repository**
+  ([5656c7d](https://github.com/viniciusnevescosta/normfix/commit/5656c7d)). They were two repositories of their own, updated by
+  hand, which meant updated when somebody remembered: the tap spent eight
+  releases describing `1.0.0-rc.1` while `brew install` handed people a release
+  candidate. Both are written by the release now, from the checksums it
+  publishes. Pointing Homebrew here costs one `brew tap` line with an explicit
+  URL, because a bare tap name resolves to a `homebrew-` prefixed repository.
+
 ## [1.8.0] / 2026-08-15
 
 The playground stops being a form and becomes an editor.
@@ -1510,6 +1598,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.9.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.9.0
 [1.8.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.8.0
 [1.7.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.7.0
 [1.6.3]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.6.3

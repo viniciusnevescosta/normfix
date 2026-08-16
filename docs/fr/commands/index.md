@@ -26,7 +26,7 @@ scripts, en CI et pendant une relecture.
 
 ## Chaque exemple de ces pages est réel
 
-La sortie affichée a été produite par `normfix 1.8.0` sur ce fichier :
+La sortie affichée a été produite par `normfix 1.9.0` sur ce fichier :
 
 ```c
 # include "libft.h"

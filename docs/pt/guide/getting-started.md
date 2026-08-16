@@ -139,7 +139,7 @@ lado:
 Num Apple Silicon, por exemplo:
 
 ```sh
-version=1.8.0
+version=1.9.0
 archive="normfix-aarch64-macos.tar.gz"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/${archive}"
 curl -LO "https://github.com/viniciusnevescosta/normfix/releases/download/v${version}/SHA256SUMS"
@@ -155,7 +155,7 @@ está no seu `PATH`.
 ### Travando uma versão, ou escolhendo onde ele fica
 
 ```sh
-NORMFIX_VERSION=v1.8.0 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
+NORMFIX_VERSION=v1.9.0 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
 
