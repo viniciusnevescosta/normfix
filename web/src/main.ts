@@ -2,6 +2,7 @@ import { mount } from "svelte";
 import ConfirmDialog from "./components/ConfirmDialog.svelte";
 import Diagnostics from "./components/Diagnostics.svelte";
 import DropOverlay from "./components/DropOverlay.svelte";
+import EditorHeader from "./components/EditorHeader.svelte";
 import EditorNotice from "./components/EditorNotice.svelte";
 import FileTree from "./components/FileTree.svelte";
 import IdentityPanel from "./components/IdentityPanel.svelte";
@@ -50,6 +51,7 @@ import {
   diagnosticsState,
   dragState,
   editorState,
+  headerState,
   identityState,
   resultState,
   statusState,
@@ -203,10 +205,9 @@ const elements = {
   removeFile: requiredElement<HTMLButtonElement>("#remove-file"),
   editorContainer: requiredElement<HTMLElement>("#monaco-editor"),
   fallbackEditor: requiredElement<HTMLTextAreaElement>("#fallback-editor"),
-  editorTitle: requiredElement<HTMLElement>("#editor-title"),
-  editorMeta: requiredElement<HTMLElement>("#editor-meta"),
   identityPanel: requiredElement<HTMLElement>("#identity-panel"),
   editorNotice: requiredElement<HTMLElement>("#editor-notice"),
+  editorHeader: requiredElement<HTMLElement>("#editor-header"),
   confirmDelete: requiredElement<HTMLElement>("#confirm-delete"),
   restoreNotice: requiredElement<HTMLElement>("#restore-notice"),
   discardRestore: requiredElement<HTMLButtonElement>("#discard-restore"),
@@ -514,7 +515,7 @@ function selectFile(path: string, syncCurrent = true): void {
   if (source === undefined) return;
   state.selected = path;
   state.editor?.setFile(path, source);
-  elements.editorTitle.textContent = path;
+  headerState.path = path;
   updateEditorMeta();
   renderFileList();
 }
@@ -626,8 +627,7 @@ function deleteEntry(path: string, isFolder: boolean): void {
  */
 function showEmptyProject(): void {
   state.selected = null;
-  elements.editorTitle.textContent = "";
-  elements.editorMeta.textContent = "";
+  headerState.path = null;
   editorState.notice = { title: t("noFilesTitle"), detail: t("emptyProjectHint") };
   elements.run.disabled = true;
   renderFileList();
@@ -694,8 +694,7 @@ function renderFileList(): void {
 function showUnsupported(path: string): void {
   syncEditor();
   state.selected = null;
-  elements.editorTitle.textContent = path;
-  elements.editorMeta.textContent = "";
+  headerState.path = path;
   editorState.notice = { title: t("unsupportedFile"), detail: t("supportedKinds") };
   elements.run.disabled = true;
   renderFileList();
@@ -727,12 +726,8 @@ function confirmDelete(path: string, isFolder: boolean): void {
 
 function updateEditorMeta(): void {
   const source = state.editor?.getValue() ?? state.files.get(state.selected ?? "") ?? "";
-  const lines = source.length === 0 ? 0 : source.split("\n").length;
-  const bytes = UTF8_ENCODER.encode(source).length;
-  elements.editorMeta.textContent = t("linesBytes", {
-    lines,
-    bytes: bytes.toLocaleString(state.locale),
-  });
+  headerState.lines = source.length === 0 ? 0 : source.split("\n").length;
+  headerState.bytes = UTF8_ENCODER.encode(source).length;
 }
 
 function fileKind(path: string): string {
@@ -1501,6 +1496,26 @@ elements.language.addEventListener("change", () => {
   const locale = elements.language.value as Locale;
   if (SUPPORTED_LOCALES.includes(locale)) changeLocale(locale);
 });
+mount(EditorHeader, {
+  target: elements.editorHeader,
+  props: {
+    get path() {
+      return headerState.path;
+    },
+    get lines() {
+      return headerState.lines;
+    },
+    get bytes() {
+      return headerState.bytes;
+    },
+    measure: (lines: number, bytes: number) =>
+      t("linesBytes", { lines, bytes: bytes.toLocaleString(state.locale) }),
+    get label() {
+      return t("input");
+    },
+  },
+});
+
 mount(ConfirmDialog, {
   target: elements.confirmDelete,
   props: {
@@ -1603,6 +1618,10 @@ async function initialize(): Promise<void> {
   // restored file when there was one. Opening on the sample and correcting it
   // afterwards would show the reader a file that is not theirs first.
   const opening = state.selected ?? "main.c";
+  // The old markup carried the first filename as text, so nothing had to say
+  // it. The header is written from state now, and the first file is the one
+  // case nothing else announces.
+  headerState.path = opening;
   state.editor = await createSourceEditor(
     elements.editorContainer,
     elements.fallbackEditor,

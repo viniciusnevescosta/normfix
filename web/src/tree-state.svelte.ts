@@ -21,6 +21,12 @@ export const diagnosticsState = $state({
   stable: true,
 });
 
+export const headerState = $state({
+  path: null as string | null,
+  lines: 0,
+  bytes: 0,
+});
+
 export const confirmState = $state({
   request: null as { text: string } | null,
   accept: null as (() => void) | null,
