@@ -21,6 +21,11 @@ export const diagnosticsState = $state({
   stable: true,
 });
 
+export const codeState = $state({
+  formatted: "",
+  diff: "",
+});
+
 export const headerState = $state({
   path: null as string | null,
   lines: 0,

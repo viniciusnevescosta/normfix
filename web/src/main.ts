@@ -1,4 +1,5 @@
 import { mount } from "svelte";
+import CodeView from "./components/CodeView.svelte";
 import ConfirmDialog from "./components/ConfirmDialog.svelte";
 import Diagnostics from "./components/Diagnostics.svelte";
 import DropOverlay from "./components/DropOverlay.svelte";
@@ -47,6 +48,7 @@ import {
   watchSystemAppearance,
 } from "./theme";
 import {
+  codeState,
   confirmState,
   diagnosticsState,
   dragState,
@@ -1092,8 +1094,8 @@ function selectedResult(): ResultRecord | undefined {
 function renderSelectedResult(): void {
   const result = selectedResult();
   if (!result) return;
-  elements.formattedOutput.textContent = result.formatted;
-  elements.diffOutput.textContent = result.diff || t("noByteChanges");
+  codeState.formatted = result.formatted;
+  codeState.diff = result.diff || t("noByteChanges");
   resetCopyLabel();
   renderResultHeader();
   renderDiagnostics(result);
@@ -1220,7 +1222,8 @@ function selectFormattedOutput(): void {
   const selection = window.getSelection();
   if (!selection) return;
   const range = document.createRange();
-  range.selectNodeContents(elements.formattedOutput);
+  if (!formattedElement) return;
+  range.selectNodeContents(formattedElement);
   selection.removeAllRanges();
   selection.addRange(range);
 }
@@ -1496,6 +1499,30 @@ elements.language.addEventListener("change", () => {
   const locale = elements.language.value as Locale;
   if (SUPPORTED_LOCALES.includes(locale)) changeLocale(locale);
 });
+/** The element holding the formatted text, for selecting it to copy. */
+let formattedElement: HTMLElement | null = null;
+
+mount(CodeView, {
+  target: elements.formattedOutput,
+  props: {
+    get text() {
+      return codeState.formatted;
+    },
+    bind: (element: HTMLElement) => {
+      formattedElement = element;
+    },
+  },
+});
+
+mount(CodeView, {
+  target: elements.diffOutput,
+  props: {
+    get text() {
+      return codeState.diff;
+    },
+  },
+});
+
 mount(EditorHeader, {
   target: elements.editorHeader,
   props: {
