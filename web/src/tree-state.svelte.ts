@@ -21,6 +21,10 @@ export const diagnosticsState = $state({
   stable: true,
 });
 
+export const dragState = $state({
+  active: false,
+});
+
 export const editorState = $state({
   notice: null as { title: string; detail: string } | null,
 });

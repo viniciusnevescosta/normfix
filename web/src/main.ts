@@ -1,5 +1,6 @@
 import { mount } from "svelte";
 import Diagnostics from "./components/Diagnostics.svelte";
+import DropOverlay from "./components/DropOverlay.svelte";
 import EditorNotice from "./components/EditorNotice.svelte";
 import FileTree from "./components/FileTree.svelte";
 import IdentityPanel from "./components/IdentityPanel.svelte";
@@ -43,6 +44,7 @@ import {
 } from "./theme";
 import {
   diagnosticsState,
+  dragState,
   editorState,
   identityState,
   resultState,
@@ -191,6 +193,7 @@ const elements = {
   fileList: requiredElement<HTMLElement>("#file-list"),
   filePicker: requiredElement<HTMLInputElement>("#file-picker"),
   dropOverlay: requiredElement<HTMLElement>("#drop-overlay"),
+
   addFile: requiredElement<HTMLButtonElement>("#add-file"),
   addFolder: requiredElement<HTMLButtonElement>("#add-folder"),
   removeFile: requiredElement<HTMLButtonElement>("#remove-file"),
@@ -1288,14 +1291,14 @@ let dragDepth = 0;
 
 function setDragging(active: boolean): void {
   dragDepth = active ? dragDepth : 0;
-  elements.dropOverlay.hidden = !active;
+  dragState.active = active;
 }
 
 window.addEventListener("dragenter", (event) => {
   if (!dragCarriesFiles(event)) return;
   event.preventDefault();
   dragDepth += 1;
-  elements.dropOverlay.hidden = false;
+  dragState.active = true;
 });
 
 window.addEventListener("dragover", (event) => {
@@ -1506,6 +1509,16 @@ elements.language.addEventListener("change", () => {
 elements.offlineUpdate.addEventListener("click", () => {
   state.offlineSupport?.applyUpdate();
 });
+mount(DropOverlay, {
+  target: elements.dropOverlay,
+  props: {
+    get active() {
+      return dragState.active;
+    },
+    translate: (key: string) => t(key as MessageKey),
+  },
+});
+
 mount(EditorNotice, {
   target: elements.editorNotice,
   props: {
