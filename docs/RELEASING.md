@@ -112,6 +112,21 @@ state.
 
 ## After the release
 
+### Bumping the version
+
+The workspace version appears in `Cargo.toml`, the three `package.json` files,
+and the pages that quote a download URL. `package-lock.json` is not one of
+them: it holds hundreds of third-party versions, and replacing the old version
+string across it renames whichever dependency happens to share the number.
+
+1.9.0 was tagged that way and the release failed on `npm ci`, because a
+transitive dependency at `1.8.0` had been rewritten to a `1.9.0` that was never
+published. Bump the lock with npm, which only touches the project's own entry:
+
+```sh
+npm install --package-lock-only --ignore-scripts
+```
+
 Both package manifests live in this repository and are written by the release
 itself. `Formula/normfix.rb` is the Homebrew tap and `bucket/normfix.json` is
 the Scoop bucket, and both are rendered from the `SHA256SUMS` the release just
