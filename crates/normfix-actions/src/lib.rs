@@ -10,10 +10,10 @@
 mod filesystem;
 
 use filesystem::{
-    absolute_lexical, canonical_directory, file_blake3, file_sha256_hex, make_journal,
-    persist_staged, preflight, preflight_bytes, prepare_backup_root, prepare_file_at,
-    regular_file_without_symlink_components, reject_symlink_components, resolve_beneath, rollback,
-    sha256_hex, validate_read_preconditions, validate_read_preconditions_except, write_journal,
+    absolute_lexical, canonical_directory, make_journal, persist_staged, preflight,
+    preflight_bytes, prepare_backup_root, prepare_file_at, regular_file_without_symlink_components,
+    reject_symlink_components, resolve_beneath, rollback, sha256_hex, validate_read_preconditions,
+    validate_read_preconditions_except, write_journal,
 };
 
 use std::collections::BTreeSet;
@@ -28,6 +28,7 @@ use tempfile::NamedTempFile;
 use thiserror::Error;
 
 const MAX_JOURNAL_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_UNDO_FILE_BYTES: u64 = 16 * 1024 * 1024;
 
 /// One validated file replacement.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -461,8 +462,10 @@ fn journal_file_is_intact(
     {
         return false;
     }
-    file_blake3(&source).is_ok_and(|digest| digest.to_hex().as_str() == file.replacement_blake3)
-        && file_sha256_hex(&backup).is_ok_and(|digest| digest == file.original_sha256)
+    read_regular_file_bounded(&source, MAX_UNDO_FILE_BYTES)
+        .is_ok_and(|bytes| blake3::hash(&bytes).to_hex().as_str() == file.replacement_blake3)
+        && read_regular_file_bounded(&backup, MAX_UNDO_FILE_BYTES)
+            .is_ok_and(|bytes| sha256_hex(&bytes) == file.original_sha256)
 }
 
 /// Restores a committed run only while every target still has the exact bytes
@@ -512,23 +515,28 @@ pub fn undo_run(
 }
 
 fn read_journal(path: &Path) -> io::Result<Journal> {
+    let bytes = read_regular_file_bounded(path, MAX_JOURNAL_BYTES)?;
+    serde_json::from_slice(&bytes).map_err(io::Error::other)
+}
+
+fn read_regular_file_bounded(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     let metadata = fs::symlink_metadata(path)?;
-    if !metadata.file_type().is_file() || metadata.len() > MAX_JOURNAL_BYTES {
+    if !metadata.file_type().is_file() || metadata.len() > limit {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "journal is not a bounded regular file",
+            "path is not a bounded regular file",
         ));
     }
     let capacity = usize::try_from(metadata.len())
-        .map_err(|_| io::Error::other("journal length does not fit in memory"))?;
+        .map_err(|_| io::Error::other("file length does not fit in memory"))?;
     let mut bytes = Vec::with_capacity(capacity);
     File::open(path)?
-        .take(MAX_JOURNAL_BYTES.saturating_add(1))
+        .take(limit.saturating_add(1))
         .read_to_end(&mut bytes)?;
     if u64::try_from(bytes.len()) != Ok(metadata.len()) {
-        return Err(io::Error::other("journal changed while it was being read"));
+        return Err(io::Error::other("file changed while it was being read"));
     }
-    serde_json::from_slice(&bytes).map_err(io::Error::other)
+    Ok(bytes)
 }
 
 fn validate_undo_journal(
@@ -611,21 +619,17 @@ fn validate_undo_source(
             "a journal source or one of its components is not a regular non-symlink file",
         ));
     }
-    if file_blake3(&source)
-        .map_err(|source_error| UndoError::Inspect {
-            path: source.clone(),
-            source: source_error,
-        })?
-        .to_hex()
-        .as_str()
-        != file.replacement_blake3
-    {
+    let bytes =
+        read_regular_file_bounded(&source, MAX_UNDO_FILE_BYTES).map_err(|source_error| {
+            UndoError::Inspect {
+                path: source.clone(),
+                source: source_error,
+            }
+        })?;
+    if blake3::hash(&bytes).to_hex().as_str() != file.replacement_blake3 {
         return Err(UndoError::ModifiedSinceRun(file.source.clone()));
     }
-    fs::read(&source).map_err(|source_error| UndoError::Inspect {
-        path: source,
-        source: source_error,
-    })
+    Ok(bytes)
 }
 
 fn validate_undo_backup(
@@ -648,17 +652,16 @@ fn validate_undo_backup(
             "a backup is duplicated, outside its run, or behind a symbolic link",
         ));
     }
-    if file_sha256_hex(&backup).map_err(|source| UndoError::Inspect {
-        path: backup.clone(),
-        source,
-    })? != file.original_sha256
-    {
+    let bytes = read_regular_file_bounded(&backup, MAX_UNDO_FILE_BYTES).map_err(|source| {
+        UndoError::Inspect {
+            path: backup.clone(),
+            source,
+        }
+    })?;
+    if sha256_hex(&bytes) != file.original_sha256 {
         return Err(UndoError::BackupIntegrity(backup));
     }
-    fs::read(&backup).map_err(|source| UndoError::Inspect {
-        path: backup,
-        source,
-    })
+    Ok(bytes)
 }
 
 struct UndoJournalLocation {

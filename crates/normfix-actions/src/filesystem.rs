@@ -685,20 +685,6 @@ pub(super) fn file_blake3(path: &Path) -> io::Result<blake3::Hash> {
     Ok(hasher.finalize())
 }
 
-pub(super) fn file_sha256_hex(path: &Path) -> io::Result<String> {
-    let mut input = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 16 * 1024];
-    loop {
-        let read = input.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
 pub(super) fn file_equals_bytes(path: &Path, expected: &[u8]) -> io::Result<bool> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.file_type().is_file()

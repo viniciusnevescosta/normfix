@@ -356,6 +356,43 @@ fn lists_and_undoes_the_latest_intact_transaction() {
 }
 
 #[test]
+fn listing_and_undo_refuse_an_oversized_backup_before_allocating_it() {
+    let project = TempDir::new().expect("project");
+    let backups = TempDir::new().expect("backups");
+    let source = project.path().join("main.c");
+    fs::write(&source, "old\n").expect("source");
+    let options = TransactionOptions {
+        project_root: project.path().to_path_buf(),
+        run_id: "run-oversized-backup".to_owned(),
+        backup_root: Some(backups.path().to_path_buf()),
+    };
+    commit_files(vec![plan(&source, b"new\n")], &options).expect("commit");
+    let run = list_undo_runs(backups.path(), project.path())
+        .expect("runs")
+        .pop()
+        .expect("run");
+    let journal = read_journal(&run.journal).expect("journal");
+    let backup = journal.files[0].backup.as_ref().expect("backup").clone();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&backup)
+        .expect("open backup")
+        .set_len(super::MAX_UNDO_FILE_BYTES + 1)
+        .expect("oversized sparse backup");
+
+    assert!(
+        list_undo_runs(backups.path(), project.path())
+            .expect("runs")
+            .is_empty()
+    );
+    assert!(matches!(
+        undo_run(&run, project.path(), backups.path()),
+        Err(UndoError::Inspect { path, .. }) if path == backup
+    ));
+    assert_eq!(fs::read(&source).expect("unchanged"), b"new\n");
+}
+
+#[test]
 fn undo_refuses_to_overwrite_changes_made_after_the_run() {
     let project = TempDir::new().expect("project");
     let backups = TempDir::new().expect("backups");
