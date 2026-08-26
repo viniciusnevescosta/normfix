@@ -1,8 +1,8 @@
 # Performance
 
-Chaque chiffre ici a été mesuré, et chacun est reproductible avec une commande
-que vous pouvez lancer vous-même. Là où un chiffre n'est pas impressionnant, le
-texte le dit et dit pourquoi.
+Chaque chiffre de benchmark ici a été mesuré, et les commandes reproductibles
+sont indiquées. Le relevé d’acceptation décrit aussi un corpus de terrain
+volontairement temporaire, sans prétendre qu’il s’agit d’un benchmark stable.
 
 ::: tip Il n'existe pas de `normfix bench`
 Les benchmarks sont un outil de développement, pas une partie de la surface de
@@ -34,6 +34,48 @@ Le résumé honnête d'une exécution à froid est donc : elle est dominée par 
 sous-processus par fichier. Optimiser le Rust de ce dépôt déplace ce chiffre de
 quelques pour cent. Le cache existe précisément parce que la solution au coût
 dominant est de ne pas refaire le travail deux fois.
+
+## Résultat d’acceptation : une Libft volontairement désordonnée
+
+Le candidat de la version 1.9.1 a aussi été exécuté sur une Libft adversariale
+temporaire : 11 fichiers analysés, un `normfix.toml` et un fichier texte
+inattendu. Elle mélangeait une garde d’en-tête erronée, des en-têtes officiels
+absents, une source Makefile inexistante, des espaces à la place des
+tabulations, des instructions compactées, des lignes longues, des commentaires
+invalides, une boucle `for`, un ternaire, des déclarations mal alignées et des
+fonctions dépassant les budgets de la Norme.
+
+| Opération | Résultat | Temps |
+|---|---|---:|
+| Passe en lecture seule, cache désactivé | 351 corrections sûres proposées dans 10 fichiers | 1,06 s |
+| Passe d’écriture autorisée, cache désactivé | 356 corrections écrites dans 10 fichiers ; 1 fichier inattendu mis en quarantaine | 1,30 s |
+| Vérification avec un cache neuf après formatage | 0 changement ; 7 constats manuels | 0,472 s |
+| Même vérification, cache chaud | médiane de cinq exécutions | 0,121 s |
+
+Le cache chaud était **3,9 fois plus rapide** sur ce petit corpus. Plus
+important que le temps, toutes les limites du résultat ont tenu :
+
+- `make` a construit `libft.a` avec `cc -Wall -Wextra -Werror` et `ar` ;
+- le même pilote d’assertions a réussi avant et après le formatage ;
+- les huit objets C optimisés étaient identiques octet pour octet avant et
+  après ;
+- toutes les lignes C, d’en-tête et du Makefile tenaient dans 80 colonnes
+  visuelles avec des tabulations de quatre colonnes ;
+- la Norminette officielle n’a ensuite signalé que les six problèmes
+  structurels délibérés : deux emplacements avec trop d’arguments, deux avec
+  trop de fonctions, une fonction longue et une fonction avec trop de
+  variables ;
+- normfix a ajouté un avertissement de liste d’autorisation pour l’appel
+  volontaire à `puts`, soit sept constats manuels au total ;
+- une seconde passe n’a proposé aucun changement, et `normfix undo` a restauré
+  exactement les dix fichiers écrits tandis que la note inattendue restait
+  récupérable dans la quarantaine.
+
+Mesuré le 2026-08-26 sur un MacBook Pro Apple M1 à 8 cœurs et 8 Go de RAM,
+macOS 26.5.2, Norminette 3.3.59 et le MSRV Rust 1.85. Les temps muraux varient
+selon le stockage, le démarrage de Python, la charge CPU et la forme du projet ;
+les vérifications de correction ci-dessus sont les critères d’acceptation, pas
+un seuil de temps.
 
 ## Ce que coûte le code propre à ce projet
 

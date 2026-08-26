@@ -1,8 +1,8 @@
 # Performance
 
-Every number here was measured, and every one is reproducible with a command
-you can run yourself. Where a number is not impressive, it says so and says
-why.
+Every benchmark number here was measured, and the repeatable commands are
+shown. The acceptance record also describes one deliberately temporary field
+fixture instead of pretending that fixture is a stable benchmark.
 
 ::: tip There is no `normfix bench`
 Benchmarks are a development tool, not part of the command surface. They run
@@ -34,6 +34,44 @@ So the honest summary of a cold run is: it is dominated by a subprocess per
 file. Optimizing the Rust in this repository moves that number by single-digit
 percentages. The cache exists precisely because the fix for the dominant cost
 is not to do the work twice.
+
+## Acceptance result: an intentionally messy Libft
+
+The 1.9.1 release candidate was also run against a temporary adversarial Libft:
+11 analyzed files, one `normfix.toml`, and one unexpected text file. It mixed a
+wrong header guard, missing official headers, a nonexistent Makefile source,
+spaces where tabs were required, packed instructions, long lines, invalid
+comments, a `for` loop, a ternary, misaligned declarations, and functions over
+the Norm budgets.
+
+| Operation | Result | Time |
+|---|---|---:|
+| Read-only pass, cache disabled | 351 safe fixes proposed in 10 files | 1.06 s |
+| Authorized write pass, cache disabled | 356 fixes written to 10 files; 1 unexpected file quarantined | 1.30 s |
+| Check with a fresh cache after formatting | 0 changes; 7 manual findings | 0.472 s |
+| Same check, warm cache | median of five runs | 0.121 s |
+
+The warm cache was **3.9 times faster** on this small fixture. More important
+than the timing, every result boundary held:
+
+- `make` built `libft.a` with `cc -Wall -Wextra -Werror` and `ar`;
+- the same assertion driver passed before and after formatting;
+- all eight optimized C object files were byte-identical before and after;
+- every C, header, and Makefile line fit within 80 display columns with
+  four-column tabs;
+- the official Norminette then reported only the six deliberately structural
+  findings: two excessive-argument locations, two excess-function locations,
+  one long function, and one function with too many variables;
+- normfix added one project-specific allowlist warning for the deliberate
+  `puts` call, so the final report contained seven manual findings;
+- a second pass proposed zero changes, and `normfix undo` restored all ten
+  written files exactly while the unexpected note remained recoverable in
+  quarantine.
+
+Measured on 2026-08-26 on an Apple M1 MacBook Pro with 8 cores and 8 GB RAM,
+macOS 26.5.2, Norminette 3.3.59, and the Rust 1.85 MSRV. Wall-clock times vary
+with storage, Python startup, CPU load, and project shape; the correctness
+checks above are the acceptance criteria, not a timing threshold.
 
 ## What this project's own code costs
 
