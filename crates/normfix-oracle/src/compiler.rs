@@ -250,11 +250,9 @@ impl CompilerValidator {
             ))
         })?;
         let mut command = Command::new(&self.executable);
-        command
-            .current_dir(&root)
-            .args(argv)
-            .arg("--")
-            .arg(relative);
+        command.current_dir(&root);
+        add_project_validation_arguments(&mut command, argv);
+        command.arg("--").arg(relative);
         configure_environment(&mut command);
         let output = run_bounded(&mut command, self.limits)?;
         let exit_code = output.exit_code.ok_or_else(|| {
@@ -340,7 +338,27 @@ fn configure_environment(command: &mut Command) {
         .env("GCC_COLORS", "")
         .env("CLICOLOR", "0")
         .env("CLICOLOR_FORCE", "0")
-        .env("NO_COLOR", "1");
+        .env("NO_COLOR", "1")
+        // These variables can make GCC/Clang execute a different helper, add
+        // implicit flags, or write dependency files even though this adapter
+        // requested a read-only validation. Include paths needed by a project
+        // are passed explicitly in `argv` by the caller.
+        .env_remove("CCC_OVERRIDE_OPTIONS")
+        .env_remove("COMPILER_PATH")
+        .env_remove("DEPENDENCIES_OUTPUT")
+        .env_remove("GCC_EXEC_PREFIX")
+        .env_remove("GCC_SPECS")
+        .env_remove("SUNPRO_DEPENDENCIES");
+}
+
+fn add_project_validation_arguments(command: &mut Command, argv: &[OsString]) {
+    command.args(argv);
+    let already_non_linking = argv
+        .iter()
+        .any(|argument| matches!(argument.to_str(), Some("-fsyntax-only" | "--analyze")));
+    if !already_non_linking {
+        command.arg("-fsyntax-only");
+    }
 }
 
 fn combined_output(output: &BoundedOutput) -> String {
@@ -363,7 +381,10 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::{CompilerConfig, CompilerError, CompilerValidator, ProcessError, ProcessLimits};
+    use super::{
+        CompilerConfig, CompilerError, CompilerValidator, ProcessError, ProcessLimits,
+        add_project_validation_arguments,
+    };
 
     /// The probe argument, answered by a guard ahead of every fake tool's body.
     const READINESS_PROBE: &str = "--normfix-readiness-probe";
@@ -662,6 +683,34 @@ done
         .expect_err("missing compiler");
 
         assert!(matches!(error, CompilerError::Unavailable(_)));
+    }
+
+    #[test]
+    fn project_validation_cannot_link_by_default() {
+        let mut command = std::process::Command::new("cc");
+        add_project_validation_arguments(&mut command, &[]);
+
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![std::ffi::OsStr::new("-fsyntax-only")]
+        );
+    }
+
+    #[test]
+    fn clang_static_analysis_is_not_disabled_by_syntax_only_mode() {
+        let mut command = std::process::Command::new("cc");
+        add_project_validation_arguments(
+            &mut command,
+            &[OsString::from("--analyze"), OsString::from("-Wall")],
+        );
+
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![
+                std::ffi::OsStr::new("--analyze"),
+                std::ffi::OsStr::new("-Wall")
+            ]
+        );
     }
 
     #[test]

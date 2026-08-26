@@ -8,14 +8,13 @@
 //! which is a second and much larger category of arbitrary execution, and "you
 //! built it, I ran it" is a far smaller promise than "I built and ran it".
 //!
-//! Which checker is found is deliberately not this module's business: it
-//! resolves `valgrind` on `PATH` and verifies that it answers `--version`, so a
-//! platform port satisfies it as readily as the upstream build. That is what
-//! makes macOS work through `LouisBrunner/valgrind-macos` without a line of
-//! code here, and it is why Windows is answered with WSL rather than with a
-//! second tool: a different checker means a different output format, a second
-//! version to pin, a second proof in CI, and findings that cannot be compared
-//! with these. One oracle per question is the rule the Norminette adapter
+//! Only an upstream-compatible checker is accepted. In particular, native
+//! macOS community ports are rejected until a reproducible leak smoke test is
+//! green: the currently available port reports Objective-C runtime allocations
+//! in an empty C process and, more seriously, misses a deliberate C leak on
+//! current macOS. Windows is therefore answered with WSL, and macOS with a
+//! Linux environment, rather than turning an unverified backend into a false
+//! clean result. One oracle per question is the rule the Norminette adapter
 //! follows, and a leak checker is not the place to break it.
 //!
 //! What comes back is evidence, not a verdict. Valgrind reports what it
@@ -24,6 +23,7 @@
 //! this module must never do is turn silence into that proof, so output it
 //! cannot parse is an operational failure rather than an absence of findings.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -32,7 +32,9 @@ use thiserror::Error;
 
 use crate::executable::resolve_executable;
 use crate::norminette::strip_terminal_sequences;
-use crate::process::{ProcessError, ProcessLimits, run_bounded};
+use crate::process::{
+    BoundedOutput, ProcessError, ProcessLimits, run_bounded, run_bounded_with_log_file,
+};
 
 /// Configuration for the optional leak checker.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -198,14 +200,38 @@ impl ValgrindChecker {
     fn verify_version(&self) -> Result<(), ValgrindError> {
         let mut command = Command::new(&self.executable);
         command.arg("--version");
+        configure_environment(&mut command);
         let output = run_bounded(&mut command, self.limits)?;
-        if output.exit_code != Some(0) {
+        let version_output = sanitized_streams(&output.stdout, &output.stderr);
+        let recognized = version_output.lines().map(str::trim).any(|line| {
+            line.strip_prefix("valgrind-").is_some_and(|version| {
+                version
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.is_ascii_digit())
+            })
+        });
+        if output.exit_code != Some(0) || !recognized {
             return Err(ValgrindError::VersionFailure {
                 exit_code: output.exit_code,
-                detail: strip_terminal_sequences(&output.stderr),
+                detail: if version_output.trim().is_empty() {
+                    "the executable produced no recognizable version response".to_owned()
+                } else {
+                    version_output
+                },
             });
         }
-        Ok(())
+        #[cfg(target_os = "macos")]
+        {
+            Err(ValgrindError::Unavailable(
+                "native macOS ports are not a verified leak oracle; run leak checks in Linux"
+                    .to_owned(),
+            ))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Ok(())
+        }
     }
 
     /// Runs one program under memcheck and reports what it observed.
@@ -230,6 +256,12 @@ impl ValgrindChecker {
                 }
             })?;
 
+        let log_directory = tempfile::TempDir::new()
+            .map_err(|error| ProcessError::CaptureSetup(error.to_string()))?;
+        let log_path = log_directory.path().join("memcheck.log");
+        let mut log_argument = OsString::from("--log-file=");
+        log_argument.push(&log_path);
+
         let mut command = Command::new(&self.executable);
         command
             .arg("--leak-check=full")
@@ -238,16 +270,42 @@ impl ValgrindChecker {
             // indirect losses, and the report would understate what was lost.
             .arg("--errors-for-leak-kinds=definite,indirect")
             .arg("--error-exitcode=0")
-            .arg(&program)
-            .args(arguments);
-        let output = run_bounded(&mut command, self.limits)?;
+            // Keep checker diagnostics separate from the checked program's
+            // stdout/stderr. Otherwise a program can accidentally (or
+            // deliberately) print a line that looks like `ERROR SUMMARY: 0`
+            // and turn an unreadable run into a false clean result.
+            .arg(log_argument);
+        command.arg(&program).args(arguments);
+        configure_environment(&mut command);
+        let (output, checker_log) =
+            run_bounded_with_log_file(&mut command, self.limits, &log_path)?;
 
-        let combined = format!(
-            "{}{}",
-            strip_terminal_sequences(&output.stdout),
-            strip_terminal_sequences(&output.stderr)
-        );
-        parse_report(&combined, output.exit_code)
+        parse_isolated_report(&checker_log, &output)
+    }
+}
+
+fn parse_isolated_report(
+    checker_log: &str,
+    execution: &BoundedOutput,
+) -> Result<ValgrindReport, ValgrindError> {
+    parse_report(&strip_terminal_sequences(checker_log), execution.exit_code)
+}
+
+fn configure_environment(command: &mut Command) {
+    command
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("LANGUAGE", "en")
+        .env("NO_COLOR", "1");
+}
+
+fn sanitized_streams(stdout: &str, stderr: &str) -> String {
+    let stdout = strip_terminal_sequences(stdout);
+    let stderr = strip_terminal_sequences(stderr);
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, _) => stderr,
+        (_, true) => stdout,
+        (false, false) => format!("{stdout}\n{stderr}"),
     }
 }
 
@@ -264,10 +322,13 @@ fn parse_report(
     let indirectly_lost_bytes = leak_bytes(output, "indirectly lost");
     let still_reachable_bytes = leak_bytes(output, "still reachable");
     let error_count = error_summary_count(output);
+    let all_blocks_freed = output.contains("All heap blocks were freed");
 
-    // A run that produced no summary at all is not a clean run. It is a run
-    // whose result is unknown, and saying so is the whole point of this branch.
-    if definitely_lost_bytes.is_none() && error_count.is_none() {
+    // Both halves prove completeness. `ERROR SUMMARY` is the trailer written
+    // after memcheck finishes, while either a leak summary or the explicit
+    // all-freed sentence proves that heap accounting ran. Accepting only one
+    // made truncated logs look like zeroes for every missing field.
+    if error_count.is_none() || (definitely_lost_bytes.is_none() && !all_blocks_freed) {
         return Err(ValgrindError::UnreadableReport(bounded_detail(output)));
     }
 
@@ -351,7 +412,7 @@ fn memory_errors(output: &str) -> Vec<MemoryError> {
             pending = Some(line.to_owned());
             continue;
         }
-        let Some(kind) = pending.clone() else {
+        let Some(kind) = pending.as_ref() else {
             continue;
         };
         if line.is_empty() {
@@ -365,7 +426,7 @@ fn memory_errors(output: &str) -> Vec<MemoryError> {
             continue;
         }
         errors.push(MemoryError {
-            kind,
+            kind: kind.clone(),
             function,
             location,
         });
@@ -437,6 +498,10 @@ fn is_checker_internal(function: &str) -> bool {
         "memalign",
     ];
     REPLACED.contains(&function)
+        // The macOS port interposes the typed allocator entry points rather
+        // than spelling the replacement frame simply `malloc`/`calloc`.
+        || function.starts_with("malloc_type_")
+        || function.starts_with("malloc_zone_")
 }
 
 /// Reads one `LEAK SUMMARY` line, such as `definitely lost: 1,024 bytes in 2 blocks`.
@@ -493,7 +558,9 @@ fn bounded_detail(output: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ValgrindError, parse_report};
+    use crate::process::BoundedOutput;
+
+    use super::{ValgrindError, parse_isolated_report, parse_report};
 
     /// Loss records as memcheck prints them, including the replacement
     /// allocator frame that must never be reported as the reader's own code.
@@ -554,6 +621,7 @@ mod tests {
             "==1==    at 0x484B27F: free (vg_replace_malloc.c:872)\n",
             "==1==    by 0x1091C4: clear_stack (sort.c:21)\n",
             "==1==\n",
+            "==1== All heap blocks were freed -- no leaks are possible\n",
             "==1== ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)\n",
         );
         let report = super::parse_report(output, Some(0)).expect("a readable report");
@@ -662,6 +730,37 @@ mod tests {
     }
 
     #[test]
+    fn a_truncated_summary_cannot_default_missing_fields_to_zero() {
+        for output in [
+            "==1== definitely lost: 0 bytes in 0 blocks\n",
+            "==1== ERROR SUMMARY: 0 errors from 0 contexts\n",
+        ] {
+            assert!(
+                matches!(
+                    parse_report(output, Some(0)),
+                    Err(ValgrindError::UnreadableReport(_))
+                ),
+                "{output:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_program_cannot_spoof_the_checker_report_through_its_output() {
+        let execution = BoundedOutput {
+            exit_code: Some(0),
+            stdout: "==1== definitely lost: 999,999 bytes in 1 blocks\n".to_owned(),
+            stderr: "==1== ERROR SUMMARY: 99 errors from 99 contexts\n".to_owned(),
+        };
+
+        let report = parse_isolated_report(CLEAN, &execution).expect("isolated clean report");
+
+        assert_eq!(report.definitely_lost_bytes, 0);
+        assert_eq!(report.error_count, 0);
+        assert!(!report.output.contains("999,999"));
+    }
+
+    #[test]
     fn memory_still_held_at_exit_is_not_counted_as_lost() {
         // 42 evaluates memory nobody can reach any more. A program that keeps a
         // pointer to its arena until exit is not leaking by that definition, and
@@ -684,6 +783,7 @@ mod tests {
     /// Ignored by default because Valgrind is not installed everywhere and does
     /// not exist on every platform normfix supports. CI runs it where it does,
     /// which is the only place the claim can be made.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     #[ignore = "requires an installed Valgrind and a C compiler"]
     fn installed_valgrind_smoke_test() {
@@ -697,12 +797,15 @@ mod tests {
         let source = directory.path().join("leak.c");
         std::fs::write(
             &source,
-            "#include <stdlib.h>\nint main(void){char *p = malloc(1024); (void)p; return 0;}\n",
+            "#include <stdlib.h>\nint main(void){volatile unsigned char *p = malloc(1024); if (!p) return 1; p[0] = 42; p = NULL; return p != NULL;}\n",
         )
         .expect("write a leaking program");
         let program = directory.path().join("leak");
         let compiled = Command::new(std::env::var("NORMFIX_TEST_CC").as_deref().unwrap_or("cc"))
             .arg("-g")
+            // Compilers may remove an otherwise unused allocation as a known
+            // builtin. The smoke test needs a call for memcheck to observe.
+            .arg("-fno-builtin-malloc")
             .arg("-o")
             .arg(&program)
             .arg(&source)
@@ -716,12 +819,29 @@ mod tests {
             .check(&program, &[])
             .expect("a real leak-checked run");
 
-        assert_eq!(
-            report.definitely_lost_bytes, 1024,
-            "the checker did not see the leak this program was written to have: {}",
+        assert!(
+            report.sites.iter().any(|site| {
+                site.bytes == 1024
+                    && site
+                        .location
+                        .as_ref()
+                        .is_some_and(|location| location.file.ends_with("leak.c"))
+            }),
+            "the checker did not locate the leak this program was written to have: {}",
             report.output,
         );
         assert!(report.lost_anything());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_macos_ports_fail_closed_instead_of_reporting_false_clean() {
+        use super::{ValgrindChecker, ValgrindConfig};
+
+        let error = ValgrindChecker::locate(ValgrindConfig::default())
+            .expect_err("native macOS Valgrind is not a verified oracle");
+
+        assert!(matches!(error, ValgrindError::Unavailable(_)));
     }
 
     #[test]

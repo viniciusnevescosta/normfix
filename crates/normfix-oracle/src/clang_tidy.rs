@@ -16,7 +16,7 @@ use thiserror::Error;
 
 use crate::executable::resolve_executable;
 use crate::norminette::strip_terminal_sequences;
-use crate::process::{ProcessError, ProcessLimits, run_bounded};
+use crate::process::{BoundedOutput, ProcessError, ProcessLimits, run_bounded};
 
 /// The checks this lens asks for.
 ///
@@ -105,8 +105,9 @@ impl ClangTidy {
             .map_err(ClangTidyError::Unavailable)?;
         let mut command = Command::new(&executable);
         command.arg("--version");
+        configure_environment(&mut command);
         let output = run_bounded(&mut command, limits)?;
-        let version_output = strip_terminal_sequences(&output.stdout).trim().to_owned();
+        let version_output = sanitized_combined_output(&output).trim().to_owned();
         if !output.success() || version_output.is_empty() {
             return Err(ClangTidyError::VersionFailure {
                 exit_code: output.exit_code,
@@ -145,17 +146,24 @@ impl ClangTidy {
     ///
     /// # Errors
     ///
-    /// Returns [`ClangTidyError`] when the process exceeds its bounds. A
-    /// non-zero exit is not an error: `clang-tidy` exits non-zero whenever it
-    /// found something.
+    /// Returns [`ClangTidyError`] when the process exceeds its bounds or exits
+    /// unsuccessfully. Findings are ordinary warning lines; a non-zero status
+    /// indicates that analysis was incomplete and must not be returned as a
+    /// false empty (or partial) result.
     pub fn analyze(
         &self,
         path: &Path,
         include_directories: &[PathBuf],
     ) -> Result<Vec<ClangTidyFinding>, ClangTidyError> {
+        // An absolute canonical path cannot be interpreted as a clang-tidy
+        // option even when the project file was named `--config-file=...`.
+        // It also makes a symlink visible here rather than leaving resolution
+        // to a later process invocation.
+        let path = canonical_source_path(path)?;
         let mut command = Command::new(&self.executable);
         command.arg(format!("--checks={CHECKS}"));
         command.arg("--quiet");
+        command.arg("--use-color=false");
         command.arg(path);
         command.arg("--");
         for directory in include_directories {
@@ -163,9 +171,66 @@ impl ClangTidy {
             flag.push(directory);
             command.arg(flag);
         }
+        configure_environment(&mut command);
         let output = run_bounded(&mut command, self.limits)?;
-        Ok(parse_findings(&strip_terminal_sequences(&output.stdout)))
+        parse_analysis_output(&output)
     }
+}
+
+fn canonical_source_path(path: &Path) -> Result<PathBuf, ClangTidyError> {
+    let path = path.canonicalize().map_err(|error| {
+        ProcessError::Spawn(format!(
+            "invalid clang-tidy source `{}`: {error}",
+            path.display()
+        ))
+    })?;
+    let metadata = std::fs::metadata(&path).map_err(|error| {
+        ProcessError::Spawn(format!(
+            "cannot inspect clang-tidy source `{}`: {error}",
+            path.display()
+        ))
+    })?;
+    if !metadata.is_file() {
+        return Err(ProcessError::Spawn(format!(
+            "clang-tidy source `{}` is not a regular file",
+            path.display()
+        ))
+        .into());
+    }
+    Ok(path)
+}
+
+fn configure_environment(command: &mut Command) {
+    command
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("LANGUAGE", "en")
+        .env("NO_COLOR", "1")
+        .env_remove("CLANG_FORCE_COLOR_DIAGNOSTICS");
+}
+
+fn sanitized_combined_output(output: &BoundedOutput) -> String {
+    let stdout = strip_terminal_sequences(&output.stdout);
+    let stderr = strip_terminal_sequences(&output.stderr);
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, _) => stderr,
+        (_, true) => stdout,
+        (false, false) => format!("{stdout}\n{stderr}"),
+    }
+}
+
+fn parse_analysis_output(output: &BoundedOutput) -> Result<Vec<ClangTidyFinding>, ClangTidyError> {
+    let combined = sanitized_combined_output(output);
+    let findings = parse_findings(&combined);
+    if !output.success() {
+        return Err(ProcessError::Wait(format!(
+            "clang-tidy analysis exited with {:?}: {}",
+            output.exit_code,
+            combined.trim()
+        ))
+        .into());
+    }
+    Ok(findings)
 }
 
 /// Reads the findings out of a `clang-tidy` report.
@@ -200,18 +265,26 @@ fn parse_finding(line: &str) -> Option<ClangTidyFinding> {
     let (location, message) = message.split_once(": warning: ")?;
     let (rest, column) = location.rsplit_once(':')?;
     let (path, line_number) = rest.rsplit_once(':')?;
+    let line = line_number.parse().ok()?;
+    let column = column.parse().ok()?;
+    let message = message.trim();
+    if line == 0 || column == 0 || path.is_empty() || message.is_empty() {
+        return None;
+    }
     Some(ClangTidyFinding {
         check: check.to_owned(),
-        message: message.trim().to_owned(),
+        message: message.to_owned(),
         path: path.to_owned(),
-        line: line_number.parse().ok()?,
-        column: column.parse().ok()?,
+        line,
+        column,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_findings;
+    use crate::process::BoundedOutput;
+
+    use super::{canonical_source_path, parse_analysis_output, parse_findings};
 
     #[test]
     fn a_finding_is_read_and_its_trace_is_not() {
@@ -258,5 +331,55 @@ mod tests {
         let output = "   12 |         value = table[index];\n";
 
         assert!(parse_findings(output).is_empty());
+    }
+
+    #[test]
+    fn findings_written_to_stderr_are_not_lost() {
+        let output = BoundedOutput {
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: "/p/leak.c:4:2: warning: Potential leak [clang-analyzer-unix.Malloc]\n"
+                .to_owned(),
+        };
+
+        let findings = parse_analysis_output(&output).expect("read stderr finding");
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].check, "clang-analyzer-unix.Malloc");
+    }
+
+    #[test]
+    fn a_failed_analysis_cannot_be_reported_as_no_findings() {
+        let output = BoundedOutput {
+            exit_code: Some(2),
+            stdout: String::new(),
+            stderr: "error: compilation database is corrupt\n".to_owned(),
+        };
+
+        assert!(parse_analysis_output(&output).is_err());
+    }
+
+    #[test]
+    fn a_failed_analysis_cannot_return_partial_findings() {
+        let output = BoundedOutput {
+            exit_code: Some(1),
+            stdout: "/p/a.c:3:2: warning: partial [clang-analyzer-core.CallAndMessage]\n"
+                .to_owned(),
+            stderr: "error: analysis aborted\n".to_owned(),
+        };
+
+        assert!(parse_analysis_output(&output).is_err());
+    }
+
+    #[test]
+    fn an_option_shaped_source_name_becomes_an_absolute_path() {
+        let directory = tempfile::TempDir::new().expect("temporary directory");
+        let source = directory.path().join("--config-file=attacker.c");
+        std::fs::write(&source, "int value(void);\n").expect("source");
+
+        let canonical = canonical_source_path(&source).expect("canonical source");
+
+        assert!(canonical.is_absolute());
+        assert_eq!(canonical.file_name(), source.file_name());
     }
 }

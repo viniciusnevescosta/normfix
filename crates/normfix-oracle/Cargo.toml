@@ -19,7 +19,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", default-features = false, features = ["process", "signal"] }
+nix = { version = "0.31", default-features = false, features = ["fs", "process", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
 # A safe wrapper over Windows job objects. This crate forbids `unsafe`, and the

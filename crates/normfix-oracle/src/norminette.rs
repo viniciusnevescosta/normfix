@@ -10,6 +10,11 @@ use thiserror::Error;
 use crate::executable::resolve_executable;
 use crate::process::{BoundedOutput, ProcessError, ProcessLimits, run_bounded};
 
+/// The memory cache is only a per-run accelerator. Bounding it prevents a
+/// large generated tree (or an oracle that emits thousands of diagnostics per
+/// file) from turning convenience caching into an unbounded memory sink.
+const MEMORY_CACHE_BYTES: usize = 8 * 1024 * 1024;
+
 /// Official Norminette version supported by this compatibility oracle.
 pub const SUPPORTED_NORMINETTE_VERSION: &str = "3.3.59";
 
@@ -144,7 +149,42 @@ pub struct NorminetteOracle {
     executable: PathBuf,
     fingerprint: NorminetteFingerprint,
     limits: ProcessLimits,
-    cache: Mutex<BTreeMap<[u8; 32], NorminetteReport>>,
+    cache: Mutex<ReportCache>,
+}
+
+#[derive(Debug, Default)]
+struct ReportCache {
+    entries: BTreeMap<[u8; 32], NorminetteReport>,
+    bytes: usize,
+}
+
+impl ReportCache {
+    fn get(&self, key: &[u8; 32]) -> Option<NorminetteReport> {
+        self.entries.get(key).cloned()
+    }
+
+    fn insert(&mut self, key: [u8; 32], report: NorminetteReport) {
+        let report_bytes = report_memory_bytes(&report);
+        if report_bytes > MEMORY_CACHE_BYTES {
+            return;
+        }
+        if let Some(replaced) = self.entries.remove(&key) {
+            self.bytes = self.bytes.saturating_sub(report_memory_bytes(&replaced));
+        }
+        while self.bytes.saturating_add(report_bytes) > MEMORY_CACHE_BYTES {
+            let Some((_, evicted)) = self.entries.pop_first() else {
+                break;
+            };
+            self.bytes = self.bytes.saturating_sub(report_memory_bytes(&evicted));
+        }
+        self.bytes = self.bytes.saturating_add(report_bytes);
+        self.entries.insert(key, report);
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.bytes = 0;
+    }
 }
 
 impl NorminetteOracle {
@@ -185,7 +225,7 @@ impl NorminetteOracle {
                 digest,
             },
             limits: config.limits,
-            cache: Mutex::new(BTreeMap::new()),
+            cache: Mutex::new(ReportCache::default()),
         })
     }
 
@@ -207,6 +247,7 @@ impl NorminetteOracle {
         self.cache
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entries
             .len()
     }
 
@@ -239,7 +280,6 @@ impl NorminetteOracle {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&cache_key)
-            .cloned()
         {
             return Ok(report);
         }
@@ -259,6 +299,35 @@ impl NorminetteOracle {
             .insert(cache_key, report.clone());
         Ok(report)
     }
+}
+
+fn report_memory_bytes(report: &NorminetteReport) -> usize {
+    // Include allocated capacities and a conservative map-node/key allowance,
+    // not only visible string lengths. Otherwise millions of tiny clean
+    // reports could stay below the nominal byte budget while their BTree
+    // nodes consumed far more memory.
+    std::mem::size_of::<NorminetteReport>()
+        .saturating_add(std::mem::size_of::<[u8; 32]>())
+        .saturating_add(64)
+        .saturating_add(report.file_name.capacity())
+        .saturating_add(
+            report
+                .diagnostics
+                .capacity()
+                .saturating_mul(std::mem::size_of::<NorminetteDiagnostic>()),
+        )
+        .saturating_add(
+            report
+                .diagnostics
+                .iter()
+                .map(|diagnostic| {
+                    diagnostic
+                        .rule_id
+                        .capacity()
+                        .saturating_add(diagnostic.message.capacity())
+                })
+                .fold(0usize, usize::saturating_add),
+        )
 }
 
 fn validated_basename(requested: &Path) -> Result<String, NorminetteError> {
@@ -341,20 +410,40 @@ pub(crate) fn strip_terminal_sequences(input: &str) -> String {
                         index += 1;
                     }
                 }
-                Some(_) => index += 1,
-                None => {}
+                // An ESC followed by an unknown byte is not a terminal
+                // sequence we can safely interpret. Drop only ESC. Dropping
+                // the following byte used to split a multi-byte UTF-8 scalar
+                // and panic in the conversion below (for example `ESC` +
+                // `é`), allowing tool output to crash normfix.
+                Some(_) | None => {}
             }
             continue;
         }
         let byte = bytes[index];
-        if byte.is_ascii_control() && !matches!(byte, b'\n' | b'\r' | b'\t') {
+        if byte.is_ascii_control() && !matches!(byte, b'\n' | b'\t') {
             index += 1;
             continue;
         }
         output.push(byte);
         index += 1;
     }
-    String::from_utf8(output).expect("removing ASCII control bytes preserves UTF-8")
+    String::from_utf8_lossy(&output)
+        .chars()
+        .filter(|character| {
+            !character.is_control()
+                && !matches!(
+                    character,
+                    // Directional formatting controls can reorder a file,
+                    // rule, or diagnostic on screen without being visible.
+                    '\u{061c}'
+                        | '\u{200e}'
+                        | '\u{200f}'
+                        | '\u{202a}'..='\u{202e}'
+                        | '\u{2066}'..='\u{2069}'
+                )
+                || matches!(character, '\n' | '\t')
+        })
+        .collect()
 }
 
 fn parse_version(output: &str) -> Result<String, NorminetteError> {
@@ -470,12 +559,21 @@ fn parse_diagnostic(line: &str) -> Option<NorminetteDiagnostic> {
     let location = rest.get(marker + "(line:".len()..)?;
     let (line_text, location) = location.split_once(", col:")?;
     let (column_text, message) = location.split_once("):")?;
+    let line = line_text.trim().parse().ok()?;
+    let column = column_text.trim().parse().ok()?;
+    if line == 0 || column == 0 {
+        return None;
+    }
+    let message = strip_terminal_sequences(message).trim().to_owned();
+    if message.is_empty() {
+        return None;
+    }
     Some(NorminetteDiagnostic {
         advisory,
-        line: line_text.trim().parse().ok()?,
-        column: column_text.trim().parse().ok()?,
+        line,
+        column,
         rule_id: rule_id.to_owned(),
-        message: strip_terminal_sequences(message).trim().to_owned(),
+        message,
     })
 }
 
@@ -527,6 +625,26 @@ mod tests {
 
         assert_eq!(report.diagnostics.len(), 2);
         assert!(!report.is_clean(), "an error is still an error");
+    }
+
+    #[test]
+    fn an_oversized_report_cannot_make_the_memory_cache_unbounded() {
+        let mut cache = super::ReportCache::default();
+        let report = super::NorminetteReport {
+            file_name: "large.c".to_owned(),
+            diagnostics: vec![super::NorminetteDiagnostic {
+                advisory: false,
+                line: 1,
+                column: 1,
+                rule_id: "TEST".to_owned(),
+                message: "x".repeat(super::MEMORY_CACHE_BYTES),
+            }],
+        };
+
+        cache.insert([1; 32], report);
+
+        assert!(cache.entries.is_empty());
+        assert_eq!(cache.bytes, 0);
     }
 
     use std::path::{Path, PathBuf};
@@ -876,6 +994,33 @@ echo "unexpected protocol text"
 
         assert_eq!(diagnostic.message, "Missing tab before variable name");
         assert!(!diagnostic.message.chars().any(char::is_control));
+    }
+
+    #[test]
+    fn an_unknown_escape_before_unicode_cannot_panic_or_corrupt_utf8() {
+        assert_eq!(
+            super::strip_terminal_sequences("before \x1bé after"),
+            "before é after"
+        );
+    }
+
+    #[test]
+    fn carriage_returns_and_bidi_overrides_cannot_spoof_a_diagnostic() {
+        assert_eq!(
+            super::strip_terminal_sequences("safe\rspoof\u{202e}txt"),
+            "safespooftxt"
+        );
+    }
+
+    #[test]
+    fn zero_locations_and_empty_messages_are_not_valid_diagnostics() {
+        for malformed in [
+            "Error: TEST (line: 0, col: 1): bad line",
+            "Error: TEST (line: 1, col: 0): bad column",
+            "Error: TEST (line: 1, col: 1): \t",
+        ] {
+            assert!(super::parse_diagnostic(malformed).is_none(), "{malformed}");
+        }
     }
 
     #[test]
