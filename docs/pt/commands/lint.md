@@ -13,6 +13,11 @@ Use quando quiser o diagnóstico sem o tratamento: na CI, em uma revisão, ou
 quando pretende corrigir algo à mão e não quer que a ferramenta se mexa por
 baixo de você.
 
+Como `lint` nunca planeja edições, ele rejeita flags de formatação, identidade
+do cabeçalho, backup, diff e remoção, indicando um comando compatível. Assim,
+nenhuma configuração parece funcionar enquanto é silenciosamente ignorada.
+Use `normfix check --diff` para ver as mudanças propostas.
+
 ## O que ele relata
 
 ```console

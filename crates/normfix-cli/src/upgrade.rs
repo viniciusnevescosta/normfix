@@ -6,8 +6,10 @@
 //! same one the installer documents: the archive is only accepted when its
 //! digest matches the published `SHA256SUMS`.
 
+use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -15,6 +17,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const REPO: &str = "viniciusnevescosta/normfix";
+const MAX_DOWNLOAD_BYTES: u64 = 128 * 1024 * 1024;
 
 /// How long a release check stays fresh.
 ///
@@ -43,6 +46,11 @@ fn archive_name() -> Result<&'static str, String> {
         ("linux", "aarch64") => Ok("normfix-aarch64-linux-gnu.tar.gz"),
         ("macos", "x86_64") => Ok("normfix-x86_64-macos.tar.gz"),
         ("macos", "aarch64") => Ok("normfix-aarch64-macos.tar.gz"),
+        ("freebsd", "x86_64") => Ok("normfix-x86_64-freebsd.tar.gz"),
+        ("windows", _) => Err(
+            "Windows cannot replace an executable while it is running; rerun the verified installer, or use `scoop update normfix` for a Scoop install"
+                .to_owned(),
+        ),
         (os, arch) => Err(format!(
             "no published archive for {os} {arch}; build from source instead"
         )),
@@ -70,7 +78,7 @@ fn run(program: &str, arguments: &[&OsStr]) -> Result<Vec<u8>, String> {
 }
 
 fn download(url: &str, target: &Path) -> Result<(), String> {
-    if which("curl").is_some() {
+    let result = if which("curl").is_some() {
         run(
             "curl",
             &[
@@ -78,6 +86,12 @@ fn download(url: &str, target: &Path) -> Result<(), String> {
                 OsStr::new("--proto"),
                 OsStr::new("=https"),
                 OsStr::new("--tlsv1.2"),
+                OsStr::new("--connect-timeout"),
+                OsStr::new("10"),
+                OsStr::new("--max-time"),
+                OsStr::new("120"),
+                OsStr::new("--max-filesize"),
+                OsStr::new("134217728"),
                 OsStr::new(url),
                 OsStr::new("-o"),
                 target.as_os_str(),
@@ -87,12 +101,32 @@ fn download(url: &str, target: &Path) -> Result<(), String> {
     } else if which("wget").is_some() {
         run(
             "wget",
-            &[OsStr::new("-qO"), target.as_os_str(), OsStr::new(url)],
+            &[
+                OsStr::new("-q"),
+                OsStr::new("-T"),
+                OsStr::new("120"),
+                OsStr::new("-t"),
+                OsStr::new("1"),
+                OsStr::new("-O"),
+                target.as_os_str(),
+                OsStr::new(url),
+            ],
         )
         .map(|_| ())
     } else {
         Err("upgrading needs curl or wget on PATH".to_owned())
+    };
+    result?;
+    let size = fs::metadata(target)
+        .map_err(|error| format!("could not inspect the download: {error}"))?
+        .len();
+    if size > MAX_DOWNLOAD_BYTES {
+        let _ = fs::remove_file(target);
+        return Err(format!(
+            "the download exceeded the {MAX_DOWNLOAD_BYTES}-byte safety limit"
+        ));
     }
+    Ok(())
 }
 
 fn fetch_text(url: &str) -> Result<String, String> {
@@ -128,6 +162,152 @@ struct GithubRelease {
     prerelease: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PrereleaseIdentifier {
+    Numeric(u64),
+    Text(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ReleaseVersion {
+    major: u64,
+    minor: u64,
+    patch: u64,
+    prerelease: Vec<PrereleaseIdentifier>,
+}
+
+impl Ord for ReleaseVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.major, self.minor, self.patch)
+            .cmp(&(other.major, other.minor, other.patch))
+            .then_with(
+                || match (self.prerelease.is_empty(), other.prerelease.is_empty()) {
+                    (true, false) => Ordering::Greater,
+                    (false, true) => Ordering::Less,
+                    _ => self
+                        .prerelease
+                        .iter()
+                        .zip(&other.prerelease)
+                        .find_map(|(left, right)| {
+                            let ordering = match (left, right) {
+                                (
+                                    PrereleaseIdentifier::Numeric(left),
+                                    PrereleaseIdentifier::Numeric(right),
+                                ) => left.cmp(right),
+                                (
+                                    PrereleaseIdentifier::Numeric(_),
+                                    PrereleaseIdentifier::Text(_),
+                                ) => Ordering::Less,
+                                (
+                                    PrereleaseIdentifier::Text(_),
+                                    PrereleaseIdentifier::Numeric(_),
+                                ) => Ordering::Greater,
+                                (
+                                    PrereleaseIdentifier::Text(left),
+                                    PrereleaseIdentifier::Text(right),
+                                ) => left.cmp(right),
+                            };
+                            (ordering != Ordering::Equal).then_some(ordering)
+                        })
+                        .unwrap_or_else(|| self.prerelease.len().cmp(&other.prerelease.len())),
+                },
+            )
+    }
+}
+
+impl PartialOrd for ReleaseVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn parse_release_version(value: &str) -> Result<ReleaseVersion, String> {
+    let value = value.strip_prefix('v').unwrap_or(value);
+    let (without_build, build) = value
+        .split_once('+')
+        .map_or((value, None), |(version, build)| (version, Some(build)));
+    if build.is_some_and(|build| !valid_identifiers(build, false)) || without_build.contains('+') {
+        return Err(format!("invalid release version `{value}`"));
+    }
+    let (core, prerelease) = without_build
+        .split_once('-')
+        .map_or((without_build, None), |(core, prerelease)| {
+            (core, Some(prerelease))
+        });
+    let mut numbers = core.split('.');
+    let major = parse_core_number(numbers.next(), value)?;
+    let minor = parse_core_number(numbers.next(), value)?;
+    let patch = parse_core_number(numbers.next(), value)?;
+    if numbers.next().is_some() {
+        return Err(format!("invalid release version `{value}`"));
+    }
+    let prerelease = prerelease.map_or_else(
+        || Ok(Vec::new()),
+        |prerelease| {
+            if !valid_identifiers(prerelease, true) {
+                return Err(format!("invalid release version `{value}`"));
+            }
+            prerelease
+                .split('.')
+                .map(|identifier| {
+                    if identifier.bytes().all(|byte| byte.is_ascii_digit()) {
+                        identifier
+                            .parse::<u64>()
+                            .map(PrereleaseIdentifier::Numeric)
+                            .map_err(|_| format!("invalid release version `{value}`"))
+                    } else {
+                        Ok(PrereleaseIdentifier::Text(identifier.to_owned()))
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()
+        },
+    )?;
+    Ok(ReleaseVersion {
+        major,
+        minor,
+        patch,
+        prerelease,
+    })
+}
+
+fn parse_core_number(number: Option<&str>, version: &str) -> Result<u64, String> {
+    let Some(number) = number else {
+        return Err(format!("invalid release version `{version}`"));
+    };
+    if number.is_empty()
+        || (number.len() > 1 && number.starts_with('0'))
+        || !number.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(format!("invalid release version `{version}`"));
+    }
+    number
+        .parse::<u64>()
+        .map_err(|_| format!("invalid release version `{version}`"))
+}
+
+fn valid_identifiers(value: &str, reject_numeric_leading_zero: bool) -> bool {
+    !value.is_empty()
+        && value.split('.').all(|identifier| {
+            !identifier.is_empty()
+                && identifier
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                && !(reject_numeric_leading_zero
+                    && identifier.len() > 1
+                    && identifier.starts_with('0')
+                    && identifier.bytes().all(|byte| byte.is_ascii_digit()))
+        })
+}
+
+fn published_version(tag: &str) -> Result<ReleaseVersion, String> {
+    if !tag.starts_with('v') {
+        return Err(format!(
+            "published release tag `{tag}` does not start with `v`"
+        ));
+    }
+    parse_release_version(tag)
+}
+
 fn update_channel(current_version: &str) -> UpdateChannel {
     let without_build = current_version
         .split_once('+')
@@ -153,6 +333,10 @@ fn stable_tag(body: &str) -> Result<String, String> {
     if release.draft || release.prerelease || release.tag_name.is_empty() {
         return Err("GitHub did not return a published stable release".to_owned());
     }
+    let version = published_version(&release.tag_name)?;
+    if !version.prerelease.is_empty() {
+        return Err("GitHub marked a SemVer pre-release as stable".to_owned());
+    }
     Ok(release.tag_name)
 }
 
@@ -160,8 +344,14 @@ fn newest_published_tag(body: &str) -> Result<String, String> {
     serde_json::from_str::<Vec<GithubRelease>>(body)
         .map_err(|error| format!("the release listing was invalid: {error}"))?
         .into_iter()
-        .find(|release| !release.draft && !release.tag_name.is_empty())
-        .map(|release| release.tag_name)
+        .filter(|release| !release.draft && !release.tag_name.is_empty())
+        .map(|release| {
+            published_version(&release.tag_name).map(|version| (version, release.tag_name))
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .max_by(|(left, _), (right, _)| left.cmp(right))
+        .map(|(_, tag)| tag)
         .ok_or_else(|| "the release listing contained no published tag".to_owned())
 }
 
@@ -230,11 +420,12 @@ fn staging_directory(parent: &Path) -> Result<tempfile::TempDir, String> {
 
 /// Downloads, verifies and installs the newest release over the running binary.
 pub(crate) fn upgrade(current_version: &str, check_only: bool) -> Result<Outcome, String> {
-    let archive = archive_name()?;
     let latest = newest_tag(current_version)?;
     let latest_version = latest.strip_prefix('v').unwrap_or(&latest);
+    let current_precedence = parse_release_version(current_version)?;
+    let latest_precedence = published_version(&latest)?;
 
-    if latest_version == current_version {
+    if latest_precedence <= current_precedence {
         return Ok(Outcome::Current(current_version.to_owned()));
     }
     if check_only {
@@ -247,6 +438,7 @@ pub(crate) fn upgrade(current_version: &str, check_only: bool) -> Result<Outcome
     let executable = std::env::current_exe()
         .map_err(|error| format!("could not locate the running binary: {error}"))?;
     reject_managed_install(&executable)?;
+    let archive = archive_name()?;
     let directory = executable
         .parent()
         .ok_or_else(|| "the running binary has no parent directory".to_owned())?;
@@ -270,13 +462,7 @@ fn install_into(staging: &Path, executable: &Path, tag: &str, archive: &str) -> 
     download(&format!("{base}/{archive}"), &archive_path)?;
     let sums = fetch_text(&format!("{base}/SHA256SUMS"))?;
 
-    let expected = sums
-        .lines()
-        .find_map(|line| {
-            let (digest, name) = line.split_once(char::is_whitespace)?;
-            (name.trim().trim_start_matches('*') == archive).then(|| digest.trim().to_owned())
-        })
-        .ok_or_else(|| format!("{archive} is not listed in SHA256SUMS"))?;
+    let expected = published_checksum(&sums, archive)?;
 
     let bytes = fs::read(&archive_path)
         .map_err(|error| format!("could not read the downloaded archive: {error}"))?;
@@ -287,6 +473,7 @@ fn install_into(staging: &Path, executable: &Path, tag: &str, archive: &str) -> 
         ));
     }
 
+    validate_archive_listing(&archive_path)?;
     run(
         "tar",
         &[
@@ -297,7 +484,9 @@ fn install_into(staging: &Path, executable: &Path, tag: &str, archive: &str) -> 
         ],
     )?;
     let extracted = staging.join("normfix");
-    if !extracted.is_file() {
+    let metadata = fs::symlink_metadata(&extracted)
+        .map_err(|_| "the archive did not contain a normfix binary".to_owned())?;
+    if !metadata.file_type().is_file() {
         return Err("the archive did not contain a normfix binary".to_owned());
     }
 
@@ -318,6 +507,41 @@ fn install_into(staging: &Path, executable: &Path, tag: &str, archive: &str) -> 
     })
 }
 
+fn published_checksum(sums: &str, archive: &str) -> Result<String, String> {
+    let matching = sums
+        .lines()
+        .filter_map(|line| {
+            let (digest, name) = line.split_once(char::is_whitespace)?;
+            (name.trim().trim_start_matches('*') == archive).then(|| digest.trim())
+        })
+        .collect::<Vec<_>>();
+    let [digest] = matching.as_slice() else {
+        return Err(format!(
+            "SHA256SUMS must list {archive} exactly once; found {} entries",
+            matching.len()
+        ));
+    };
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!("SHA256SUMS has an invalid digest for {archive}"));
+    }
+    Ok(digest.to_ascii_lowercase())
+}
+
+fn validate_archive_listing(archive: &Path) -> Result<(), String> {
+    let listing = run("tar", &[OsStr::new("-tzf"), archive.as_os_str()])?;
+    let listing = String::from_utf8(listing)
+        .map_err(|_| "the release archive contained a non-UTF-8 path".to_owned())?;
+    let mut entries = listing.lines().collect::<Vec<_>>();
+    entries.sort_unstable();
+    if entries != ["LICENSE", "README.md", "normfix"] {
+        return Err(format!(
+            "the release archive contained unexpected entries: {}",
+            entries.join(", ")
+        ));
+    }
+    Ok(())
+}
+
 /// Prints one line when a newer release exists.
 ///
 /// This is the only network access outside `normfix upgrade`, and it is
@@ -336,18 +560,44 @@ pub(crate) fn notify_if_outdated(current_version: &str) {
     }
     // Record the attempt first, so a network that never answers cannot make
     // every future run pay for the same lookup.
-    let _ = fs::create_dir_all(state.parent().unwrap_or(&state));
-    let _ = fs::write(&state, now_seconds().to_string());
+    record_check_attempt(&state);
 
     let Ok(latest) = newest_tag(current_version) else {
         return;
     };
     let latest_version = latest.strip_prefix('v').unwrap_or(&latest);
-    if latest_version != current_version {
-        eprintln!(
-            "\nnormfix {latest_version} is available; this is {current_version}. Run `normfix upgrade`."
-        );
+    let newer = published_version(&latest)
+        .and_then(|latest| parse_release_version(current_version).map(|current| latest > current))
+        .unwrap_or(false);
+    if newer {
+        if cfg!(windows) {
+            eprintln!(
+                "\nnormfix {latest_version} is available; this is {current_version}. Update with Scoop, or rerun the verified installer."
+            );
+        } else {
+            eprintln!(
+                "\nnormfix {latest_version} is available; this is {current_version}. Run `normfix upgrade`."
+            );
+        }
     }
+}
+
+fn record_check_attempt(state: &Path) {
+    let Some(parent) = state.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    // Write through a random create-new file and rename it into place. A
+    // pre-existing symbolic link at the cache path is replaced, never followed.
+    let Ok(mut temporary) = tempfile::NamedTempFile::new_in(parent) else {
+        return;
+    };
+    if write!(temporary, "{}", now_seconds()).is_err() || temporary.as_file().sync_all().is_err() {
+        return;
+    }
+    let _ = temporary.persist(state);
 }
 
 fn now_seconds() -> u64 {
@@ -376,9 +626,51 @@ fn is_stale(state: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        UpdateChannel, newest_published_tag, reject_managed_install, release_metadata_url,
-        stable_tag, staging_directory, update_channel,
+        UpdateChannel, newest_published_tag, parse_release_version, published_checksum,
+        record_check_attempt, reject_managed_install, release_metadata_url, stable_tag,
+        staging_directory, update_channel,
     };
+
+    #[test]
+    fn release_versions_follow_semver_precedence_and_reject_ambiguous_tags() {
+        let ordered = [
+            "1.0.0-alpha",
+            "1.0.0-alpha.1",
+            "1.0.0-alpha.beta",
+            "1.0.0-beta",
+            "1.0.0-beta.2",
+            "1.0.0-beta.11",
+            "1.0.0-rc.1",
+            "1.0.0",
+        ];
+        for pair in ordered.windows(2) {
+            assert!(
+                parse_release_version(pair[0]).expect("left version")
+                    < parse_release_version(pair[1]).expect("right version"),
+                "{} must precede {}",
+                pair[0],
+                pair[1]
+            );
+        }
+        assert_eq!(
+            parse_release_version("1.0.0+first").expect("build metadata"),
+            parse_release_version("v1.0.0+second").expect("build metadata")
+        );
+        for invalid in [
+            "1.0",
+            "01.0.0",
+            "1.0.0-01",
+            "1.0.0-",
+            "1.0.0+",
+            "1.0.0/asset",
+            "18446744073709551616.0.0",
+        ] {
+            assert!(
+                parse_release_version(invalid).is_err(),
+                "{invalid} must be rejected"
+            );
+        }
+    }
 
     #[test]
     fn a_binary_a_package_manager_owns_is_never_replaced() {
@@ -486,6 +778,71 @@ mod tests {
             {"tag_name":"v1.0.0-rc.1","draft":false,"prerelease":true}
         ]"#;
         assert_eq!(newest_published_tag(body).expect("published tag"), "v1.0.0");
+    }
+
+    #[test]
+    fn preview_feed_selects_semantic_newest_even_when_api_order_is_unhelpful() {
+        let body = r#"[
+            {"tag_name":"v1.9.0","draft":false,"prerelease":false},
+            {"tag_name":"v2.0.0-rc.1","draft":false,"prerelease":true},
+            {"tag_name":"v1.10.0","draft":false,"prerelease":false}
+        ]"#;
+        assert_eq!(
+            newest_published_tag(body).expect("newest tag"),
+            "v2.0.0-rc.1"
+        );
+    }
+
+    #[test]
+    fn checksum_manifest_requires_one_well_formed_entry() {
+        let digest = "a".repeat(64);
+        let line = format!("{digest}  normfix-x86_64-linux-gnu.tar.gz\n");
+        assert_eq!(
+            published_checksum(&line, "normfix-x86_64-linux-gnu.tar.gz").expect("valid checksum"),
+            digest
+        );
+        assert!(
+            published_checksum(&format!("{line}{line}"), "normfix-x86_64-linux-gnu.tar.gz")
+                .is_err()
+        );
+        assert!(
+            published_checksum(
+                "xyz  normfix-x86_64-linux-gnu.tar.gz\n",
+                "normfix-x86_64-linux-gnu.tar.gz"
+            )
+            .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn update_check_timestamp_replaces_a_symlink_without_following_it() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::TempDir::new().expect("temporary directory");
+        let victim = directory.path().join("victim");
+        let state = directory.path().join("last-update-check");
+        std::fs::write(&victim, "do not overwrite").expect("write victim");
+        symlink(&victim, &state).expect("create state symlink");
+
+        record_check_attempt(&state);
+
+        assert_eq!(
+            std::fs::read_to_string(&victim).expect("read victim"),
+            "do not overwrite"
+        );
+        assert!(
+            std::fs::symlink_metadata(&state)
+                .expect("state metadata")
+                .file_type()
+                .is_file()
+        );
+        assert!(
+            std::fs::read_to_string(&state)
+                .expect("state timestamp")
+                .parse::<u64>()
+                .is_ok()
+        );
     }
 
     #[test]

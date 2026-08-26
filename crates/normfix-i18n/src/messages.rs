@@ -90,6 +90,8 @@ pub struct Messages {
     pub backups_directory: &'static str,
     /// Ordinary writes are not backed up.
     pub backups_disabled: &'static str,
+    /// Backups are irrelevant because the selected workflow cannot write.
+    pub backups_read_only: &'static str,
     /// No verified identity is available for official headers.
     pub identity_unavailable: &'static str,
     /// Per-file checker timeout. Placeholder: `{seconds}`.
@@ -303,6 +305,7 @@ const ENGLISH: Messages = Messages {
     backups_automatic: "automatic external backup",
     backups_directory: "external directory {path}",
     backups_disabled: "disabled for ordinary writes",
+    backups_read_only: "not used (read-only run)",
     identity_unavailable: "unavailable (headers will be reported)",
     timeout_per_file: "{seconds}s per file",
     scope_recursive: "{directory} (recursive)",
@@ -426,6 +429,7 @@ const PORTUGUESE: Messages = Messages {
     backups_automatic: "backup externo automático",
     backups_directory: "diretório externo {path}",
     backups_disabled: "desativado para gravações comuns",
+    backups_read_only: "não usado (execução somente leitura)",
     identity_unavailable: "indisponível (os cabeçalhos serão apenas reportados)",
     timeout_per_file: "{seconds}s por arquivo",
     scope_recursive: "{directory} (recursivo)",
@@ -549,6 +553,7 @@ const SPANISH: Messages = Messages {
     backups_automatic: "copia de seguridad externa automática",
     backups_directory: "directorio externo {path}",
     backups_disabled: "desactivadas para escrituras normales",
+    backups_read_only: "no se usa (ejecución de solo lectura)",
     identity_unavailable: "no disponible (las cabeceras solo se informarán)",
     timeout_per_file: "{seconds}s por archivo",
     scope_recursive: "{directory} (recursivo)",
@@ -672,6 +677,7 @@ const FRENCH: Messages = Messages {
     backups_automatic: "sauvegarde externe automatique",
     backups_directory: "répertoire externe {path}",
     backups_disabled: "désactivées pour les écritures ordinaires",
+    backups_read_only: "non utilisée (exécution en lecture seule)",
     identity_unavailable: "indisponible (les en-têtes seront seulement signalés)",
     timeout_per_file: "{seconds}s par fichier",
     scope_recursive: "{directory} (récursif)",
@@ -806,6 +812,7 @@ mod tests {
             ("backups_automatic", messages.backups_automatic),
             ("backups_directory", messages.backups_directory),
             ("backups_disabled", messages.backups_disabled),
+            ("backups_read_only", messages.backups_read_only),
             ("identity_unavailable", messages.identity_unavailable),
             ("timeout_per_file", messages.timeout_per_file),
             ("scope_recursive", messages.scope_recursive),

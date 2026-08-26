@@ -19,13 +19,16 @@ normfix 1.0.0-rc.1 is already the newest release.
    GitHub's `/releases/latest` endpoint for the newest stable release. A
    pre-release follows the complete release feed, so it can advance to a newer
    release candidate or to the eventual stable release.
-2. Stops if you already run it.
-3. Refuses if the binary is managed by Homebrew, and tells you the command that
-   does the right thing there.
-4. Downloads the archive for your platform and the published `SHA256SUMS`.
-5. **Verifies the digest.** A mismatch aborts and prints both values; nothing
-   is written.
-6. Extracts into a staging directory *inside* the destination, so the final
+2. Compares Semantic Versioning precedence and stops if the published release
+   is equal to or older than the running build. An update never downgrades.
+3. Refuses if the binary is managed by Homebrew or Scoop, and tells you the
+   package-manager command that keeps the installation consistent.
+4. Downloads the archive for your platform and the published `SHA256SUMS`, with
+   bounded connection time, total time, and file size.
+5. **Verifies the digest.** A missing, duplicate, malformed, or mismatched
+   entry aborts before extraction; nothing is written.
+6. Accepts only `normfix`, `README.md`, and `LICENSE` in the archive, then
+   extracts into a private staging directory *inside* the destination. The final
    step is a rename on the same filesystem: the binary is either replaced or
    left exactly as it was.
 
@@ -42,8 +45,9 @@ into a pre-release remains an explicit install-time choice.
 |---|---|
 | Installed by Homebrew | Points you at `brew upgrade viniciusnevescosta/normfix/normfix` |
 | Installed by Scoop | Points you at `scoop update normfix` |
+| Direct install on Windows | `--check` works; installation asks you to rerun the verified installer because a running `.exe` cannot replace itself |
 | No write permission | Names the path and says to check ownership; it never asks for `sudo` |
-| Checksum mismatch | Prints both digests and installs nothing |
+| Invalid checksum manifest or mismatch | Names the invalid entry or prints both digests and installs nothing |
 | No `curl` or `wget` | Says which tool is missing |
 | Unsupported platform | Suggests building from source or using the playground |
 

@@ -24,6 +24,10 @@ Summary: files: 1 | proposed: 0 | written: 0 | fixes: 0 | remaining: 14 | info: 
 
 Budget rows are informational and never change the exit code on their own.
 
+`budget` diagnoses the bytes already on disk and never plans edits. Formatting,
+header-identity, backup, diff, and removal flags are therefore rejected instead
+of being silently ignored. Use `normfix check` to preview repairs.
+
 ## Why headroom matters
 
 A function at 24 of 25 lines is Norm-compliant and one defense-day question

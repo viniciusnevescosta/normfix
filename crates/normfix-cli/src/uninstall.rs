@@ -44,9 +44,15 @@ impl Plan {
 /// the machine back in a consistent state.
 fn reject_managed_install(executable: &Path) -> Result<(), String> {
     let path = executable.to_string_lossy();
-    if path.contains("/Cellar/") || path.contains("/homebrew/") || path.contains("/linuxbrew/") {
+    if path.contains("/Cellar/") || path.contains("/homebrew/") || path.contains("linuxbrew/") {
         return Err(format!(
             "{path} is managed by Homebrew; uninstall it with `brew uninstall viniciusnevescosta/normfix/normfix`"
+        ));
+    }
+    let lowered = path.to_lowercase().replace('\\', "/");
+    if lowered.contains("/scoop/apps/") || lowered.contains("/scoop/shims/") {
+        return Err(format!(
+            "{path} is managed by Scoop; uninstall it with `scoop uninstall normfix`"
         ));
     }
     Ok(())
@@ -202,15 +208,35 @@ mod tests {
     }
 
     #[test]
-    fn a_homebrew_managed_binary_is_refused_with_the_command_that_works() {
-        let error = reject_managed_install(&PathBuf::from(
-            "/opt/homebrew/Cellar/normfix/1.0.0/bin/normfix",
-        ))
-        .expect_err("a managed install must be refused");
-        // The message must survive terminal escaping, which turns a newline
-        // into a literal `\n` in the middle of the sentence.
-        assert!(error.contains("`brew uninstall viniciusnevescosta/normfix/normfix`"));
-        assert!(!error.contains('\n'));
+    fn package_manager_owned_binaries_are_refused_with_the_command_that_works() {
+        for (path, manager, command) in [
+            (
+                "/opt/homebrew/Cellar/normfix/1.0.0/bin/normfix",
+                "Homebrew",
+                "brew uninstall",
+            ),
+            (
+                "/home/student/.linuxbrew/Cellar/normfix/1.0.0/bin/normfix",
+                "Homebrew",
+                "brew uninstall",
+            ),
+            (
+                r"C:\Users\student\scoop\apps\normfix\current\normfix.exe",
+                "Scoop",
+                "scoop uninstall normfix",
+            ),
+            (
+                r"C:\Users\student\scoop\shims\normfix.exe",
+                "Scoop",
+                "scoop uninstall normfix",
+            ),
+        ] {
+            let error = reject_managed_install(&PathBuf::from(path))
+                .expect_err("a managed install must be refused");
+            assert!(error.contains(manager), "{path}: {error}");
+            assert!(error.contains(command), "{path}: {error}");
+            assert!(!error.contains('\n'));
+        }
 
         assert!(reject_managed_install(&PathBuf::from("/usr/local/bin/normfix")).is_ok());
     }

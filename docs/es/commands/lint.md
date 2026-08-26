@@ -13,6 +13,11 @@ normfix lint src
 cuando piensas arreglar algo a mano y no quieres que la herramienta se mueva
 debajo de ti.
 
+Como `lint` nunca planifica ediciones, rechaza las opciones de formato,
+identidad de cabecera, copia de seguridad, diff y eliminación, e indica un
+comando compatible. Así ninguna opción parece funcionar mientras se ignora en
+silencio. Usa `normfix check --diff` para ver los cambios propuestos.
+
 ## Qué informa
 
 ```console

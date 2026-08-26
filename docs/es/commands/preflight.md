@@ -49,7 +49,7 @@ normfix · starting
   timeout      5s per file
   cache        enabled
   gitignore    not applied
-  backups      automatic external backup
+  backups      not used (read-only run)
   destructive  none
   force        no
 ```

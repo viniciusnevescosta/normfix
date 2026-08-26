@@ -13,6 +13,12 @@ Utilisez-le quand vous voulez le diagnostic sans le traitement : en CI, pendant
 une relecture, ou quand vous comptez corriger quelque chose à la main et ne
 voulez pas que l'outil bouge sous vos pieds.
 
+Comme `lint` ne planifie jamais de modification, il refuse les options de mise
+en forme, d'identité d'en-tête, de sauvegarde, de diff et de suppression, puis
+indique une commande compatible. Aucune option ne semble ainsi fonctionner
+tout en étant ignorée silencieusement. Utilisez `normfix check --diff` pour
+voir les changements proposés.
+
 ## Ce qu'il signale
 
 ```console

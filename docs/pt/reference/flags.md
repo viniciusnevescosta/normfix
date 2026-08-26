@@ -139,6 +139,10 @@ Pula os backups retidos para gravações comuns de formatação.
 normfix --no-backup
 ```
 
+Flags de backup se aplicam apenas a uma execução que grava. `check`, `lint`,
+`budget`, `preflight`, `--check` e `--diff` as rejeitam porque essas execuções
+não podem criar um backup.
+
 Ele **não** pula a recuperação de uma remoção destrutiva. Essas sempre exigem
 armazenamento externo e falham fechadas sem ele. Pular os backups significa que
 o [`undo`](/pt/commands/undo) não tem nada a restaurar daquela execução.

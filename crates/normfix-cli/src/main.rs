@@ -2,289 +2,41 @@
 
 #![forbid(unsafe_code)]
 
+mod cli;
+mod commands;
 mod execution;
+mod identity;
+mod interaction;
+mod presentation;
 mod rules;
 mod scope_guard;
 mod uninstall;
 mod upgrade;
 
-use std::collections::BTreeMap;
 use std::env;
-use std::io::{self, IsTerminal, Write as _};
+use std::io::{self, IsTerminal as _};
 use std::path::PathBuf;
-
-use camino::Utf8PathBuf;
 use std::process::ExitCode;
-use std::time::Duration;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use normfix_actions::{UndoRun, list_undo_runs, undo_run};
-use normfix_destructive::{DestructiveAuthorization, DestructiveCapability, DestructiveRequest};
-use normfix_engine::{BackupPolicy, FixOptions, WriteApproval, run_fixes};
-use normfix_header::{
-    IdentityResolution, RunClock, identity_from_email, persist_identity, resolve_identity,
-};
+use clap::Parser;
+use normfix_engine::{BackupPolicy, FixOptions, run_fixes};
+use normfix_header::IdentityResolution;
 use normfix_project::{
     GitScope, GitScopeOptions, ProjectFileKind, is_project_control_file, resolve_git_scope,
 };
-use normfix_report::{
-    FileReport, RenderOptions, ReportMode, RunReport, render_human, unified_diff,
+use normfix_report::ReportMode;
+
+#[cfg(test)]
+use crate::cli::Command;
+use crate::cli::{Cli, OutputFormat, Workflow, selected_workflow};
+use crate::execution::ExecutionStart;
+#[cfg(test)]
+use crate::identity::identity_prompt_allowed;
+use crate::identity::resolve_run_identity;
+use crate::interaction::{authorize_destructive, run_interactive};
+use crate::presentation::{
+    cli_locale, cli_messages, print_run_error, render_report, report_mode_name, workflow_name,
 };
-
-use crate::execution::{ExecutionStart, terminal_safe_inline};
-
-// Clap represents independent switches as booleans; replacing them with one
-// state enum would incorrectly make compatible command-line flags exclusive.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Parser)]
-#[command(name = "normfix")]
-#[command(version)]
-#[command(about = "Safe automatic fixes and actionable diagnostics for the 42 Norm v4.1")]
-#[command(subcommand_precedence_over_arg = true)]
-#[command(after_help = "With no COMMAND or PATH, the current directory is fixed recursively.")]
-struct Cli {
-    /// Files or directories; accepts zero, one or many paths.
-    paths: Vec<PathBuf>,
-
-    /// Focused workflows; the commandless interface remains backward compatible.
-    #[command(subcommand)]
-    command: Option<Command>,
-
-    /// Report changes without writing files.
-    #[arg(long, global = true, conflicts_with = "diff")]
-    check: bool,
-
-    /// Print unified diffs without writing files.
-    #[arg(long, global = true)]
-    diff: bool,
-
-    /// Respect .gitignore while recursively discovering directory inputs.
-    #[arg(long, global = true)]
-    use_gitignore: bool,
-
-    /// Verified 42 login; the email remains the source of truth.
-    #[arg(long, global = true)]
-    login: Option<String>,
-
-    /// Verified 42 student email used by official headers.
-    #[arg(long, global = true)]
-    email: Option<String>,
-
-    /// Do not retain external backups for ordinary formatting writes.
-    #[arg(long, global = true, conflicts_with = "backup_dir")]
-    no_backup: bool,
-
-    /// External backup base directory.
-    #[arg(long, global = true, value_name = "PATH")]
-    backup_dir: Option<PathBuf>,
-
-    /// Select polished terminal output or stable JSON.
-    #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Human)]
-    format: OutputFormat,
-
-    /// Language for human output: en, pt, es, or fr.
-    ///
-    /// JSON, rule IDs, flags, and exit codes stay language-neutral. Without
-    /// this flag the process locale is used, falling back to English.
-    #[arg(long, global = true, value_name = "CODE")]
-    lang: Option<String>,
-
-    /// Disable ANSI colors even on an interactive terminal.
-    #[arg(long, global = true)]
-    no_color: bool,
-
-    /// Show every accepted fix in human output.
-    #[arg(long, short, global = true)]
-    verbose: bool,
-
-    /// Preview and approve each changed file before a second validated run writes it.
-    #[arg(long, global = true)]
-    interactive: bool,
-
-    /// Process unstaged tracked changes and untracked, non-ignored files.
-    #[arg(long, global = true, conflicts_with = "staged")]
-    changed: bool,
-
-    /// Process only files currently recorded in the Git index.
-    #[arg(long, global = true)]
-    staged: bool,
-
-    /// Per-file official Norminette timeout in seconds.
-    #[arg(long, global = true, default_value = "5", value_parser = parse_timeout)]
-    timeout: Duration,
-
-    /// Number of parallel workers; defaults to available hardware.
-    #[arg(long, global = true, value_parser = parse_worker_count)]
-    threads: Option<usize>,
-
-    /// Delete only comments rejected at exact official locations.
-    #[arg(long, global = true)]
-    remove_invalid_comments: bool,
-
-    /// Remove only unreachable static functions proven in the complete project.
-    #[arg(long, global = true)]
-    remove_unused: bool,
-
-    /// Move unexpected regular files to external recoverable quarantine.
-    #[arg(long, global = true)]
-    remove_unexpected: bool,
-
-    /// Enable comment/NULL cleanup, stale Makefile cleanup, unused-static
-    /// removal, and unexpected-file quarantine.
-    #[arg(long = "unsafe", global = true)]
-    unsafe_mode: bool,
-
-    /// Confirm destructive operations or acknowledge a protected system scope.
-    #[arg(long, global = true)]
-    force: bool,
-
-    /// Legacy no-op: README formatting is enabled by default.
-    #[arg(long, global = true, hide = true)]
-    format_markdown: bool,
-
-    /// Leave README documents unchanged.
-    #[arg(long, global = true, conflicts_with = "format_markdown")]
-    no_format_markdown: bool,
-
-    /// Leave contiguous include blocks in their current order.
-    #[arg(long, global = true)]
-    no_reorder_includes: bool,
-
-    /// Disable the external content-addressed analysis cache.
-    #[arg(long, global = true)]
-    no_cache: bool,
-
-    /// Use this exact Norminette executable.
-    #[arg(long, global = true, value_name = "PATH")]
-    norminette: Option<PathBuf>,
-
-    /// Deprecated no-op: untested Norminette releases now run with an advisory.
-    #[arg(
-        long,
-        global = true,
-        hide = true,
-        conflicts_with = "strict_norminette_version"
-    )]
-    allow_untested_norminette: bool,
-
-    /// Refuse Norminette releases this normfix version has not verified.
-    #[arg(long, global = true)]
-    strict_norminette_version: bool,
-
-    /// Disable `cc -fsyntax-only -Wall -Wextra -Werror` diagnostics.
-    #[arg(long, global = true)]
-    no_compiler_preflight: bool,
-
-    /// Use this exact C compiler for strict preflight and optional analysis.
-    #[arg(long, global = true, value_name = "PATH")]
-    cc: Option<PathBuf>,
-
-    /// Use this exact clang-tidy for the optional preflight lens.
-    #[arg(long, global = true, value_name = "PATH")]
-    clang_tidy: Option<PathBuf>,
-
-    /// Run GCC `-fanalyzer` as a slower informational check.
-    #[arg(long, global = true)]
-    analyzer: bool,
-
-    /// Maximum fixed-point passes for the native formatter.
-    #[arg(long, global = true, hide = true, default_value_t = 100, value_parser = parse_pass_count)]
-    max_passes: usize,
-}
-
-#[derive(Debug, Subcommand)]
-enum Command {
-    /// Apply the canonical layout printer and proven safe fixes.
-    Format(PathArguments),
-    /// Report source and project problems without proposing edits.
-    Lint(PathArguments),
-    /// Preview formatting and lint together without writing files.
-    Check(PathArguments),
-    /// Show function line/variable/parameter headroom.
-    Budget(PathArguments),
-    /// Run the read-only checks useful immediately before a 42 evaluation.
-    Preflight(PathArguments),
-    /// Explain one Norm or native rule offline.
-    Explain(ExplainArguments),
-    /// Restore an intact backed-up run without overwriting later edits.
-    Undo(UndoArguments),
-    /// Replace this binary with the newest published release.
-    Upgrade(UpgradeArguments),
-    /// Remove this binary, and optionally the data it created.
-    Uninstall(UninstallArguments),
-    /// Run a program you already built under a leak checker.
-    ///
-    /// This is the one command that executes your code rather than reading it,
-    /// so it asks first. normfix never builds the program: point it at one.
-    Leaks(LeaksArguments),
-}
-
-#[derive(Debug, Args)]
-struct LeaksArguments {
-    /// The already-built program to run.
-    program: PathBuf,
-
-    /// Arguments passed to your program, not to the checker.
-    #[arg(last = true)]
-    program_arguments: Vec<String>,
-}
-
-#[derive(Debug, Args)]
-struct UninstallArguments {
-    /// Also remove configuration, cache, backups, and quarantined files.
-    #[arg(long)]
-    purge: bool,
-
-    /// Show exactly what would be removed and stop.
-    #[arg(long)]
-    dry_run: bool,
-}
-
-#[derive(Debug, Args)]
-struct UpgradeArguments {
-    /// Report whether a newer release exists without installing it.
-    #[arg(long)]
-    check: bool,
-}
-
-#[derive(Debug, Args)]
-struct PathArguments {
-    /// Files or directories; defaults to the current directory.
-    paths: Vec<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-struct ExplainArguments {
-    /// Rule identifier, for example `TOO_MANY_LINES`.
-    rule: String,
-}
-
-#[derive(Debug, Args)]
-struct UndoArguments {
-    /// List recovery points without restoring anything.
-    #[arg(long, conflicts_with = "run")]
-    list: bool,
-
-    /// Restore this exact run instead of the newest intact run.
-    #[arg(long, value_name = "RUN_ID", conflicts_with = "list")]
-    run: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-enum OutputFormat {
-    Human,
-    Json,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Workflow {
-    Default,
-    Format,
-    Lint,
-    Check,
-    Budget,
-    Preflight,
-}
 
 /// Recoverable removals requested for one run.
 // Clap exposes independent destructive switches; each may be enabled together.
@@ -330,28 +82,7 @@ fn main() -> ExitCode {
     run(&Cli::parse())
 }
 
-/// Handles the subcommands that never discover or format a project.
-///
-/// They share nothing with the analysis pipeline beyond the command line, so
-/// keeping them out of `run` leaves that function about one thing.
-fn run_standalone_command(cli: &Cli, cwd: &std::path::Path) -> Option<ExitCode> {
-    match &cli.command {
-        Some(Command::Explain(arguments)) => Some(run_explain(
-            cli.format,
-            cli_locale(cli),
-            cli_messages(cli),
-            &arguments.rule,
-        )),
-        Some(Command::Undo(arguments)) => Some(run_undo(cli, arguments, cwd)),
-        Some(Command::Upgrade(arguments)) => {
-            Some(run_upgrade(cli.format, cli_messages(cli), arguments.check))
-        }
-        Some(Command::Uninstall(arguments)) => Some(run_uninstall(cli, arguments)),
-        Some(Command::Leaks(arguments)) => Some(run_leaks(cli, arguments)),
-        _ => None,
-    }
-}
-
+/// Resolves one filesystem-backed workflow and hands it to the engine.
 fn run(cli: &Cli) -> ExitCode {
     let cwd = match env::current_dir() {
         Ok(cwd) => cwd,
@@ -372,7 +103,7 @@ fn run(cli: &Cli) -> ExitCode {
         );
         return ExitCode::from(2);
     }
-    if let Some(exit) = run_standalone_command(cli, &cwd) {
+    if let Some(exit) = commands::run_standalone_command(cli, &cwd) {
         return exit;
     }
     let (mut paths, workflow) = selected_workflow(cli);
@@ -474,459 +205,6 @@ fn finish_run(cli: &Cli, paths: &[PathBuf], options: &FixOptions, workflow: Work
 /// The plan is printed before anything is deleted, for the same reason a run
 /// announces its scope: the destructive step must be visible while it can still
 /// be refused.
-fn run_uninstall(cli: &Cli, arguments: &UninstallArguments) -> ExitCode {
-    let messages = cli_messages(cli);
-    let plan = match uninstall::plan(arguments.purge) {
-        Ok(plan) => plan,
-        Err(message) => {
-            print_run_error(cli.format, messages, &message);
-            return ExitCode::from(2);
-        }
-    };
-
-    if cli.format == OutputFormat::Json {
-        print_json_outcome(
-            "uninstall",
-            if arguments.dry_run {
-                "planned"
-            } else {
-                "success"
-            },
-            &serde_json::json!({
-                "dry_run": arguments.dry_run,
-                "purge": arguments.purge,
-                "removes_recovery_data": plan.removes_recovery_data(),
-                "plan": uninstall::describe(&plan),
-            }),
-        );
-    } else {
-        eprint!("{}", uninstall::describe(&plan));
-        if plan.removes_recovery_data() {
-            eprintln!("{}", messages.uninstall_recovery_warning);
-        }
-    }
-    if arguments.dry_run {
-        return ExitCode::SUCCESS;
-    }
-
-    if let Err(message) = confirm_uninstall(cli, messages) {
-        print_run_error(cli.format, messages, &message);
-        return ExitCode::from(2);
-    }
-
-    match uninstall::remove(&plan) {
-        Ok(()) => {
-            if cli.format != OutputFormat::Json {
-                eprintln!("{}", messages.uninstall_done);
-            }
-            ExitCode::SUCCESS
-        }
-        Err(message) => {
-            print_run_error(cli.format, messages, &message);
-            ExitCode::from(2)
-        }
-    }
-}
-
-fn confirm_uninstall(cli: &Cli, messages: &normfix_i18n::Messages) -> Result<(), String> {
-    if cli.force {
-        return Ok(());
-    }
-    if cli.format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal()
-    {
-        return Err(messages.uninstall_needs_confirmation.to_owned());
-    }
-    eprint!("{}", messages.uninstall_prompt);
-    let _ = io::stderr().flush();
-    let mut answer = String::new();
-    // `y` is the accepted answer in every language; see `confirm_undo`.
-    let confirmed = io::stdin()
-        .read_line(&mut answer)
-        .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
-    confirmed
-        .then_some(())
-        .ok_or_else(|| messages.uninstall_cancelled.to_owned())
-}
-
-/// Runs a program the student already built, under the leak checker.
-///
-/// The confirmation is not ceremony. Every other command reads source, and
-/// reading source cannot delete a file or open a socket; this one executes a
-/// binary, which can do both. So it says which program, and waits — unless
-/// `--force` was given, which is how a script says it meant it.
-fn run_leaks(cli: &Cli, arguments: &LeaksArguments) -> ExitCode {
-    let messages = cli_messages(cli);
-    let checker =
-        match normfix_oracle::ValgrindChecker::locate(normfix_oracle::ValgrindConfig::default()) {
-            Ok(checker) => checker,
-            Err(error) => {
-                print_run_error(
-                    cli.format,
-                    messages,
-                    &format!(
-                        "{} {} ({error})",
-                        messages.leaks_unavailable,
-                        leaks_install_hint(messages)
-                    ),
-                );
-                return ExitCode::from(2);
-            }
-        };
-
-    if let Err(refusal) = confirm_leaks(cli, messages, &arguments.program) {
-        print_run_error(cli.format, messages, &refusal);
-        return ExitCode::from(2);
-    }
-
-    let report = match checker.check(&arguments.program, &arguments.program_arguments) {
-        Ok(report) => report,
-        Err(error) => {
-            print_run_error(cli.format, messages, &error.to_string());
-            return ExitCode::from(2);
-        }
-    };
-
-    if cli.format == OutputFormat::Json {
-        match serde_json::to_value(&report) {
-            Ok(payload) => print_json_outcome(
-                "leaks",
-                if report.lost_anything() {
-                    "findings"
-                } else {
-                    "success"
-                },
-                &payload,
-            ),
-            Err(error) => {
-                print_run_error(cli.format, messages, &error.to_string());
-                return ExitCode::from(2);
-            }
-        }
-    } else {
-        if report.lost_anything() {
-            println!(
-                "{}",
-                normfix_i18n::fill(
-                    messages.leaks_lost,
-                    &[
-                        ("definite", &report.definitely_lost_bytes.to_string()),
-                        ("indirect", &report.indirectly_lost_bytes.to_string()),
-                    ],
-                )
-            );
-        } else {
-            println!("{}", messages.leaks_none);
-        }
-        print_leak_findings(&report, cli, messages);
-        // The checker's own total can exceed what could be placed in a file,
-        // and repeating a number the list above already showed reads as a
-        // second finding.
-        let unlisted = report
-            .error_count
-            .saturating_sub(report.errors.len().try_into().unwrap_or(u64::MAX));
-        if unlisted > 0 {
-            println!(
-                "{}",
-                normfix_i18n::fill_plural(
-                    cli_locale(cli),
-                    unlisted,
-                    messages.leaks_errors_one,
-                    messages.leaks_errors_other,
-                    &[("count", &unlisted.to_string())],
-                )
-            );
-        }
-        println!("{}", messages.leaks_not_a_proof);
-    }
-
-    // A leak is a finding about the project, which is what exit 1 means
-    // everywhere else in this tool. It is not an operational failure.
-    if report.lost_anything() {
-        ExitCode::from(1)
-    } else {
-        ExitCode::SUCCESS
-    }
-}
-
-/// Shows every finding under the line of source that produced it.
-///
-/// The checker names a file and a line; this reads that file and hands the
-/// finding to the same renderer every other diagnostic goes through, so a leak
-/// gets the caret a Norm error gets. A file the checker named but this process
-/// cannot read falls back to the plain list rather than losing the finding.
-fn print_leak_findings(
-    report: &normfix_oracle::ValgrindReport,
-    cli: &Cli,
-    messages: &normfix_i18n::Messages,
-) {
-    let mut sources: std::collections::BTreeMap<Utf8PathBuf, String> =
-        std::collections::BTreeMap::new();
-    let mut diagnostics: Vec<(Utf8PathBuf, normfix_core::Diagnostic)> = Vec::new();
-    let mut unplaced = Vec::new();
-
-    for site in &report.sites {
-        let text = normfix_i18n::fill(
-            if site.indirect {
-                messages.leaks_site_indirect
-            } else {
-                messages.leaks_site_direct
-            },
-            &[
-                ("bytes", &site.bytes.to_string()),
-                ("function", &site.function),
-            ],
-        );
-        match leak_diagnostic(
-            site.location.as_ref(),
-            if site.indirect {
-                "LEAK_INDIRECTLY_LOST"
-            } else {
-                "LEAK_DEFINITELY_LOST"
-            },
-            &text,
-            messages.leaks_site_help,
-            &mut sources,
-        ) {
-            Some(placed) => diagnostics.push(placed),
-            None => unplaced.push(text),
-        }
-    }
-    for error in &report.errors {
-        let text = normfix_i18n::fill(
-            messages.leaks_error_at,
-            &[("kind", &error.kind), ("function", &error.function)],
-        );
-        match leak_diagnostic(
-            error.location.as_ref(),
-            "MEMORY_ERROR",
-            &text,
-            messages.leaks_error_help,
-            &mut sources,
-        ) {
-            Some(placed) => diagnostics.push(placed),
-            None => unplaced.push(text),
-        }
-    }
-
-    if diagnostics.is_empty() && unplaced.is_empty() {
-        return;
-    }
-    if !unplaced.is_empty() {
-        println!("{}", messages.leaks_sites);
-    }
-    if !diagnostics.is_empty() {
-        let files = sources
-            .into_iter()
-            .map(|(path, source)| normfix_report::FileReport {
-                budget: Vec::new(),
-                after: diagnostics
-                    .iter()
-                    .filter(|(owner, _)| *owner == path)
-                    .map(|(_, diagnostic)| diagnostic.clone())
-                    .collect(),
-                original: Some(std::sync::Arc::from(source.as_str())),
-                path,
-                changed: false,
-                written: false,
-                backup: None,
-                failure: None,
-                fixes: Vec::new(),
-                before: Vec::new(),
-                fixed: None,
-            })
-            .collect::<Vec<_>>();
-        print!(
-            "{}",
-            normfix_report::render_findings(
-                &files,
-                normfix_report::RenderOptions {
-                    color: !cli.no_color
-                        && env::var_os("NO_COLOR").is_none()
-                        && io::stdout().is_terminal(),
-                    verbose: false,
-                    show_diff: false,
-                    locale: resolve_locale(cli).locale,
-                },
-            )
-        );
-    }
-    for line in &unplaced {
-        println!("  {line}");
-    }
-    if report.sites.iter().all(|site| site.location.is_none())
-        && report.errors.iter().all(|error| error.location.is_none())
-    {
-        println!("{}", messages.leaks_no_debug_info);
-    }
-}
-
-/// Builds a diagnostic pointing at the line the checker named.
-fn leak_diagnostic(
-    location: Option<&normfix_oracle::LeakLocation>,
-    rule_id: &str,
-    message: &str,
-    help: &str,
-    sources: &mut std::collections::BTreeMap<Utf8PathBuf, String>,
-) -> Option<(Utf8PathBuf, normfix_core::Diagnostic)> {
-    let location = location?;
-    let path = Utf8PathBuf::from(&location.file);
-    if !sources.contains_key(&path) {
-        let text = std::fs::read_to_string(&path).ok()?;
-        sources.insert(path.clone(), text);
-    }
-    let source = sources.get(&path)?;
-    let range = line_range(source, location.line)?;
-    Some((
-        path.clone(),
-        normfix_core::Diagnostic {
-            rule_id: rule_id.to_owned(),
-            path,
-            range,
-            severity: normfix_core::Severity::Error,
-            message: message.to_owned(),
-            source: normfix_core::DiagnosticSource::LeakChecker,
-            notes: Vec::new(),
-            help: Some(help.to_owned()),
-            localized: None,
-        },
-    ))
-}
-
-/// The range covering one one-based line, without its leading whitespace.
-fn line_range(source: &str, line: u32) -> Option<normfix_core::TextRange> {
-    let mut offset = 0_usize;
-    for (index, text) in source.split_inclusive('\n').enumerate() {
-        if u32::try_from(index).ok()? + 1 == line {
-            let lead = text.len() - text.trim_start().len();
-            let content = text.trim_end();
-            let start = u32::try_from(offset + lead).ok()?;
-            let end = u32::try_from(offset + content.len().max(lead)).ok()?;
-            return normfix_core::TextRange::new(
-                normfix_core::TextSize::new(start),
-                normfix_core::TextSize::new(end.max(start)),
-            );
-        }
-        offset += text.len();
-    }
-    None
-}
-
-/// What to tell a reader whose platform has no checker.
-///
-/// The answer is different in kind on each one: a package manager away on Linux
-/// and FreeBSD, a community port on macOS because upstream does not build
-/// there, and another operating system on Windows because Valgrind does not
-/// exist for it at all. One generic sentence would be wrong on two of the three.
-const fn leaks_install_hint(messages: &normfix_i18n::Messages) -> &'static str {
-    if cfg!(target_os = "macos") {
-        messages.leaks_install_hint_macos
-    } else if cfg!(windows) {
-        messages.leaks_install_hint_windows
-    } else {
-        messages.leaks_install_hint
-    }
-}
-
-fn confirm_leaks(
-    cli: &Cli,
-    messages: &normfix_i18n::Messages,
-    program: &std::path::Path,
-) -> Result<(), String> {
-    if cli.force {
-        return Ok(());
-    }
-    if cli.format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal()
-    {
-        return Err(messages.leaks_needs_confirmation.to_owned());
-    }
-    eprint!(
-        "{}",
-        normfix_i18n::fill(
-            messages.leaks_prompt,
-            &[("program", &program.display().to_string())],
-        )
-    );
-    let _ = io::stderr().flush();
-    let mut answer = String::new();
-    // `y` is the accepted answer in every language; see `confirm_undo`.
-    let confirmed = io::stdin()
-        .read_line(&mut answer)
-        .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
-    confirmed
-        .then_some(())
-        .ok_or_else(|| messages.leaks_cancelled.to_owned())
-}
-
-fn run_upgrade(
-    format: OutputFormat,
-    messages: &normfix_i18n::Messages,
-    check_only: bool,
-) -> ExitCode {
-    let json = format == OutputFormat::Json;
-    match upgrade::upgrade(env!("CARGO_PKG_VERSION"), check_only) {
-        Ok(upgrade::Outcome::Current(version)) => {
-            if json {
-                print_json_outcome(
-                    "upgrade",
-                    "success",
-                    &serde_json::json!({
-                        "state": "current",
-                        "current_version": version,
-                        "latest_version": version,
-                        "installed": false,
-                    }),
-                );
-            } else {
-                println!("normfix {version} is already the newest release.");
-            }
-            ExitCode::SUCCESS
-        }
-        Ok(upgrade::Outcome::Available { current, latest }) => {
-            if json {
-                print_json_outcome(
-                    "upgrade",
-                    "success",
-                    &serde_json::json!({
-                        "state": "available",
-                        "current_version": current,
-                        "latest_version": latest,
-                        "installed": false,
-                    }),
-                );
-            } else {
-                println!("normfix {latest} is available; this is {current}.");
-                println!("Install it with: normfix upgrade");
-            }
-            ExitCode::SUCCESS
-        }
-        Ok(upgrade::Outcome::Installed {
-            previous,
-            installed,
-        }) => {
-            if json {
-                print_json_outcome(
-                    "upgrade",
-                    "success",
-                    &serde_json::json!({
-                        "state": "installed",
-                        "current_version": previous,
-                        "latest_version": installed,
-                        "installed": true,
-                    }),
-                );
-            } else {
-                println!("Upgraded normfix {previous} to {installed}.");
-            }
-            ExitCode::SUCCESS
-        }
-        Err(message) => {
-            print_run_error(format, messages, &message);
-            ExitCode::from(2)
-        }
-    }
-}
-
-/// Splits a Git scope into processable project files and unexpected files.
 fn git_scoped_paths(
     cwd: &std::path::Path,
     staged: bool,
@@ -956,14 +234,69 @@ fn invalid_invocation(
     workflow: Workflow,
     destructive: DestructiveFlags,
     protected_scope: bool,
-) -> Option<&'static str> {
+) -> Option<String> {
+    let diagnostic_only = match workflow {
+        Workflow::Lint => Some("lint"),
+        Workflow::Budget => Some("budget"),
+        _ => None,
+    };
+    if let Some(command) = diagnostic_only {
+        if cli.check {
+            return Some(format!(
+                "`normfix {command}` is already read-only; remove the redundant --check flag"
+            ));
+        }
+        if cli.diff {
+            return Some(format!(
+                "`normfix {command}` never proposes edits, so --diff has nothing to show; use `normfix check --diff` to preview proven changes"
+            ));
+        }
+        if cli.login.is_some() || cli.email.is_some() {
+            return Some(format!(
+                "`normfix {command}` does not create headers; remove --login/--email, or use `normfix check` to preview the official header"
+            ));
+        }
+        if cli.remove_invalid_comments
+            || destructive.any()
+            || cli.no_format_markdown
+            || cli.no_reorder_includes
+            || cli.max_passes != 100
+        {
+            return Some(format!(
+                "`normfix {command}` diagnoses the bytes on disk and never plans edits; remove formatting/removal flags, or use `normfix check` to preview changes"
+            ));
+        }
+    }
+    let read_only = cli.check
+        || cli.diff
+        || matches!(
+            workflow,
+            Workflow::Lint | Workflow::Check | Workflow::Budget | Workflow::Preflight
+        );
+    if read_only && (cli.no_backup || cli.backup_dir.is_some()) {
+        return Some(
+            "this is a read-only run, so backup flags would have no effect; remove --no-backup/--backup-dir"
+                .to_owned(),
+        );
+    }
+    if cli.check && matches!(workflow, Workflow::Check | Workflow::Preflight) {
+        return Some(format!(
+            "`normfix {}` is already read-only; remove the redundant --check flag",
+            if workflow == Workflow::Check {
+                "check"
+            } else {
+                "preflight"
+            }
+        ));
+    }
     if workflow == Workflow::Preflight && cli.no_compiler_preflight {
         return Some(
-            "preflight includes the strict compiler check; remove --no-compiler-preflight",
+            "preflight includes the strict compiler check; remove --no-compiler-preflight"
+                .to_owned(),
         );
     }
     if cli.force && !destructive.any() && !protected_scope {
-        return Some(cli_messages(cli).force_without_target);
+        return Some(cli_messages(cli).force_without_target.to_owned());
     }
     if cli.interactive
         && (cli.format != OutputFormat::Human
@@ -974,7 +307,8 @@ fn invalid_invocation(
             || destructive.any())
     {
         return Some(
-            "--interactive is limited to the default or `format` fixing workflow and cannot be combined with --check, --diff, --unsafe, or destructive removal flags",
+            "--interactive is limited to the default or `format` fixing workflow and cannot be combined with --check, --diff, --unsafe, or destructive removal flags"
+                .to_owned(),
         );
     }
     None
@@ -990,7 +324,7 @@ fn validate_run_scope(
 ) -> Result<(), String> {
     let protected = scope_guard::sensitive_scope(cwd, paths, git_scoped);
     if let Some(message) = invalid_invocation(cli, workflow, destructive, protected.is_some()) {
-        return Err(message.to_owned());
+        return Err(message);
     }
     if let Some(protected) = protected.as_ref().filter(|_| !cli.force) {
         let messages = cli_messages(cli);
@@ -1057,72 +391,6 @@ fn build_fix_options(cli: &Cli, cwd: PathBuf, input: OptionsInput) -> FixOptions
     options
 }
 
-fn scope_may_need_identity(paths: &[PathBuf], git_scoped: bool) -> bool {
-    if paths.is_empty() {
-        return !git_scoped;
-    }
-    paths.iter().any(|path| {
-        if path.is_dir() {
-            return true;
-        }
-        matches!(
-            ProjectFileKind::from_path(path),
-            Some(ProjectFileKind::CSource | ProjectFileKind::CHeader | ProjectFileKind::Makefile)
-        )
-    })
-}
-
-const fn identity_prompt_allowed(
-    format: OutputFormat,
-    stdin_is_terminal: bool,
-    stderr_is_terminal: bool,
-) -> bool {
-    matches!(format, OutputFormat::Human) && stdin_is_terminal && stderr_is_terminal
-}
-
-fn resolve_run_identity(
-    cli: &Cli,
-    paths: &[PathBuf],
-    git_scoped: bool,
-    workflow: Workflow,
-    cwd: &std::path::Path,
-) -> (IdentityResolution, Option<String>) {
-    let mut identity = resolve_identity(cli.login.as_deref(), cli.email.as_deref(), cwd);
-    if identity.identity.is_none()
-        && scope_may_need_identity(paths, git_scoped)
-        && !matches!(workflow, Workflow::Lint | Workflow::Budget)
-        && identity_prompt_allowed(
-            cli.format,
-            io::stdin().is_terminal(),
-            io::stderr().is_terminal(),
-        )
-    {
-        identity = prompt_for_identity(cli.login.as_deref(), identity);
-    }
-    let persistence = persist_requested_identity(cli, &identity);
-    (identity, persistence)
-}
-
-fn persist_requested_identity(cli: &Cli, resolution: &IdentityResolution) -> Option<String> {
-    let supplied_or_prompted = cli.email.is_some()
-        || cli.login.is_some()
-        || resolution
-            .identity
-            .as_ref()
-            .is_some_and(|identity| identity.source == "interactive terminal");
-    if !supplied_or_prompted {
-        return None;
-    }
-    let identity = resolution.identity.as_ref()?;
-    Some(match persist_identity(identity) {
-        Ok(path) => format!(
-            "42 identity saved with private file permissions for future runs at {}",
-            path.display()
-        ),
-        Err(error) => format!("42 identity is valid for this run but could not be saved: {error}"),
-    })
-}
-
 fn announce_execution(
     cli: &Cli,
     workflow: Workflow,
@@ -1139,13 +407,14 @@ fn announce_execution(
         || messages.identity_unavailable.to_owned(),
         |identity| identity.email.clone(),
     );
-    let backups = match &options.backup {
-        BackupPolicy::Automatic => messages.backups_automatic.to_owned(),
-        BackupPolicy::Directory(path) => normfix_i18n::fill(
+    let backups = match (options.mode, &options.backup) {
+        (ReportMode::Check | ReportMode::Diff, _) => messages.backups_read_only.to_owned(),
+        (ReportMode::Fix, BackupPolicy::Automatic) => messages.backups_automatic.to_owned(),
+        (ReportMode::Fix, BackupPolicy::Directory(path)) => normfix_i18n::fill(
             messages.backups_directory,
             &[("path", &path.display().to_string())],
         ),
-        BackupPolicy::Disabled => messages.backups_disabled.to_owned(),
+        (ReportMode::Fix, BackupPolicy::Disabled) => messages.backups_disabled.to_owned(),
     };
     let event = ExecutionStart {
         event: "execution_start",
@@ -1264,742 +533,6 @@ fn destructive_description(options: &FixOptions, messages: &normfix_i18n::Messag
         messages.destructive_none.to_owned()
     } else {
         destructive.join(", ")
-    }
-}
-
-/// Resolves the human-output language from `--lang`, then the process locale.
-fn resolve_locale(cli: &Cli) -> normfix_i18n::Resolution {
-    normfix_i18n::resolve(cli.lang.as_deref(), |name| std::env::var(name).ok())
-}
-
-/// Returns the language this invocation's human output uses.
-///
-/// JSON is machine output and stays English whatever the reader's language is.
-fn cli_locale(cli: &Cli) -> normfix_i18n::Locale {
-    match cli.format {
-        OutputFormat::Human => resolve_locale(cli).locale,
-        OutputFormat::Json => normfix_i18n::Locale::English,
-    }
-}
-
-/// Returns the catalogue for this invocation's output.
-fn cli_messages(cli: &Cli) -> &'static normfix_i18n::Messages {
-    normfix_i18n::messages(cli_locale(cli))
-}
-
-const fn workflow_name(cli: &Cli, workflow: Workflow) -> &'static str {
-    match workflow {
-        Workflow::Default | Workflow::Format if cli.diff => "diff",
-        Workflow::Default | Workflow::Format if cli.check => "check",
-        Workflow::Default | Workflow::Format => "format",
-        Workflow::Lint => "lint",
-        Workflow::Check => "check",
-        Workflow::Budget => "budget",
-        Workflow::Preflight => "preflight",
-    }
-}
-
-const fn report_mode_name(mode: ReportMode, messages: &normfix_i18n::Messages) -> &'static str {
-    match mode {
-        ReportMode::Fix => messages.mode_write,
-        ReportMode::Check => messages.mode_check,
-        ReportMode::Diff => messages.mode_diff,
-    }
-}
-
-fn render_report(cli: &Cli, report: &RunReport, workflow: Workflow) -> Result<(), String> {
-    match cli.format {
-        OutputFormat::Human => {
-            let color =
-                !cli.no_color && env::var_os("NO_COLOR").is_none() && io::stdout().is_terminal();
-            print!(
-                "{}",
-                render_human(
-                    report,
-                    RenderOptions {
-                        color,
-                        verbose: cli.verbose,
-                        show_diff: cli.diff,
-                        locale: resolve_locale(cli).locale,
-                    },
-                )
-            );
-            Ok(())
-        }
-        OutputFormat::Json => {
-            let mut value = serde_json::to_value(report)
-                .map_err(|error| format!("Could not serialize the run report: {error}"))?;
-            // Asking for a diff and being handed a mode label is not an answer.
-            // The report leaves diffs out by default because they double its
-            // size for a reader who did not ask; `--diff` is the reader asking.
-            if cli.diff {
-                attach_unified_diffs(&mut value, report);
-            }
-            attach_command(&mut value, cli, workflow);
-            attach_granted_capabilities(&mut value, cli);
-            attach_scope(&mut value, cli);
-            let json = serde_json::to_string_pretty(&value)
-                .map_err(|error| format!("Could not serialize the run report: {error}"))?;
-            println!("{json}");
-            Ok(())
-        }
-    }
-}
-
-/// Puts each file's unified diff beside its entry, when one was asked for.
-fn attach_unified_diffs(value: &mut serde_json::Value, report: &RunReport) {
-    let Some(files) = value
-        .get_mut("files")
-        .and_then(serde_json::Value::as_array_mut)
-    else {
-        return;
-    };
-    for (entry, file) in files.iter_mut().zip(&report.files) {
-        let Some(object) = entry.as_object_mut() else {
-            continue;
-        };
-        object.insert(
-            "diff".to_owned(),
-            normfix_report::unified_diff(file).map_or(serde_json::Value::Null, |diff| {
-                serde_json::Value::String(diff)
-            }),
-        );
-    }
-}
-
-/// Names which command produced this answer.
-///
-/// `mode` says whether a run wrote, checked, or diffed; it does not say whether
-/// `budget` or `lint` asked. A caller holding a payload should be able to tell
-/// what produced it without having kept the command line that did.
-fn attach_command(value: &mut serde_json::Value, cli: &Cli, workflow: Workflow) {
-    if let Some(object) = value.as_object_mut() {
-        object.insert(
-            "command".to_owned(),
-            serde_json::Value::String(workflow_name(cli, workflow).to_owned()),
-        );
-    }
-}
-
-/// Names how the run chose the files it worked on.
-///
-/// The file list alone does not say whether Git selected it or a directory
-/// walk did, and the two mean different things to a caller deciding what a
-/// clean result covers. The human banner has always said this; the JSON is
-/// where a caller reads it.
-fn attach_scope(value: &mut serde_json::Value, cli: &Cli) {
-    let Some(object) = value.as_object_mut() else {
-        return;
-    };
-    let selection = if cli.staged {
-        "git_staged"
-    } else if cli.changed {
-        "git_changed"
-    } else if cli.paths.is_empty() && cli.command.is_none() {
-        "working_directory"
-    } else {
-        "explicit_paths"
-    };
-    object.insert(
-        "scope".to_owned(),
-        serde_json::json!({
-            "selection": selection,
-            "respects_gitignore": cli.use_gitignore,
-        }),
-    );
-}
-
-/// Names the destructive capabilities this run was granted.
-///
-/// A caller deciding whether to trust a result has to know what the run was
-/// allowed to do, and reading that back from the flags it passed is only
-/// possible for the caller that passed them. An empty list is the answer for
-/// an ordinary run, and is present rather than omitted so its absence never
-/// has to be interpreted.
-fn attach_granted_capabilities(value: &mut serde_json::Value, cli: &Cli) {
-    let Some(object) = value.as_object_mut() else {
-        return;
-    };
-    let mut granted = Vec::new();
-    if cli.unsafe_mode {
-        granted.push("unsafe");
-    }
-    if cli.remove_invalid_comments {
-        granted.push("remove_invalid_comments");
-    }
-    if cli.remove_unused {
-        granted.push("remove_unused");
-    }
-    if cli.remove_unexpected {
-        granted.push("remove_unexpected");
-    }
-    if cli.force {
-        granted.push("force");
-    }
-    object.insert(
-        "granted_capabilities".to_owned(),
-        serde_json::Value::Array(
-            granted
-                .into_iter()
-                .map(|name| serde_json::Value::String(name.to_owned()))
-                .collect(),
-        ),
-    );
-}
-
-fn run_interactive(cli: &Cli, paths: &[PathBuf], options: &FixOptions) -> ExitCode {
-    if cli.format != OutputFormat::Human
-        || !io::stdin().is_terminal()
-        || !io::stdout().is_terminal()
-        || !io::stderr().is_terminal()
-    {
-        print_run_error(
-            cli.format,
-            cli_messages(cli),
-            "--interactive requires a human terminal on standard input, output, and error",
-        );
-        return ExitCode::from(2);
-    }
-    if options.mode != ReportMode::Fix || options.lint_only {
-        print_run_error(
-            cli.format,
-            cli_messages(cli),
-            "--interactive is available with the default or `format` workflow, without --check or --diff",
-        );
-        return ExitCode::from(2);
-    }
-    if options.remove_invalid_comments
-        || options.remove_unused_variables
-        || options.compact_null_checks
-        || options.remove_missing_makefile_sources
-        || options.remove_unused_static
-        || options.quarantine_unexpected
-    {
-        print_run_error(
-            cli.format,
-            cli_messages(cli),
-            "--interactive cannot be combined with destructive or --unsafe operations",
-        );
-        return ExitCode::from(2);
-    }
-
-    let mut preview_options = options.clone();
-    preview_options.mode = ReportMode::Check;
-    preview_options.write_approvals = None;
-    preview_options.run_clock = match RunClock::from_process_environment() {
-        Ok(clock) => Some(clock),
-        Err(error) => {
-            print_run_error(
-                cli.format,
-                cli_messages(cli),
-                &format!("Could not capture the interactive run clock: {error}"),
-            );
-            return ExitCode::from(2);
-        }
-    };
-    let preview = match run_fixes(paths, &preview_options) {
-        Ok(report) => report,
-        Err(error) => {
-            print_run_error(cli.format, cli_messages(cli), &error.to_string());
-            return ExitCode::from(2);
-        }
-    };
-    if let Err(message) = render_report(cli, &preview, Workflow::Check) {
-        print_run_error(cli.format, cli_messages(cli), &message);
-        return ExitCode::from(2);
-    }
-    let candidates = preview
-        .files
-        .iter()
-        .filter(|file| file.changed && file.failure.is_none() && unified_diff(file).is_some())
-        .collect::<Vec<_>>();
-    if candidates.is_empty() {
-        return ExitCode::from(preview.exit_code());
-    }
-
-    let Some(selected) = prompt_for_approvals(&candidates, &options.cwd) else {
-        return ExitCode::from(130);
-    };
-    if selected.is_empty() {
-        eprintln!("No files were approved; no files were changed.");
-        return ExitCode::from(preview.exit_code().max(1));
-    }
-
-    let declined = selected.len() < candidates.len();
-    let mut final_options = options.clone();
-    final_options.write_approvals = Some(selected);
-    final_options.run_clock = preview_options.run_clock;
-    let report = match run_fixes(paths, &final_options) {
-        Ok(report) => report,
-        Err(error) => {
-            print_run_error(cli.format, cli_messages(cli), &error.to_string());
-            return ExitCode::from(2);
-        }
-    };
-    if let Err(message) = render_report(cli, &report, Workflow::Default) {
-        print_run_error(cli.format, cli_messages(cli), &message);
-        return ExitCode::from(2);
-    }
-    let code = report.exit_code();
-    ExitCode::from(if code == 0 && declined { 1 } else { code })
-}
-
-/// Collects per-file approvals, or `None` when the run was cancelled.
-fn prompt_for_approvals(
-    candidates: &[&FileReport],
-    cwd: &std::path::Path,
-) -> Option<BTreeMap<PathBuf, WriteApproval>> {
-    let mut selected = BTreeMap::new();
-    'files: for (index, file) in candidates.iter().enumerate() {
-        if let Some(diff) = unified_diff(file) {
-            println!("\n{diff}");
-        }
-        loop {
-            eprint!(
-                "Apply the validated change to {}? [y/N/a(all)/q(cancel)] ",
-                terminal_safe_inline(file.path.as_str())
-            );
-            let _ = io::stderr().flush();
-            let mut answer = String::new();
-            if io::stdin().read_line(&mut answer).is_err() {
-                eprintln!("Interactive run cancelled; no files were changed.");
-                return None;
-            }
-            match answer.trim().to_ascii_lowercase().as_str() {
-                "y" | "yes" => {
-                    if let Some((path, approval)) = interactive_approval(cwd, file) {
-                        selected.insert(path, approval);
-                    }
-                    break;
-                }
-                "" | "n" | "no" => break,
-                "a" | "all" => {
-                    selected.extend(
-                        candidates[index..]
-                            .iter()
-                            .filter_map(|candidate| interactive_approval(cwd, candidate)),
-                    );
-                    break 'files;
-                }
-                "q" | "quit" | "cancel" => {
-                    eprintln!("Interactive run cancelled; no files were changed.");
-                    return None;
-                }
-                _ => eprintln!("Please enter y, n, a, or q."),
-            }
-        }
-    }
-    Some(selected)
-}
-
-fn interactive_absolute_path(cwd: &std::path::Path, path: &std::path::Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        cwd.join(path)
-    }
-}
-
-fn interactive_approval(
-    cwd: &std::path::Path,
-    file: &normfix_report::FileReport,
-) -> Option<(PathBuf, WriteApproval)> {
-    let original = file.original.as_deref()?;
-    let fixed = file.fixed.as_deref()?;
-    Some((
-        interactive_absolute_path(cwd, file.path.as_std_path()),
-        WriteApproval::new(original.as_bytes(), fixed.as_bytes()),
-    ))
-}
-
-fn selected_workflow(cli: &Cli) -> (Vec<PathBuf>, Workflow) {
-    match &cli.command {
-        Some(Command::Format(arguments)) => (arguments.paths.clone(), Workflow::Format),
-        Some(Command::Lint(arguments)) => (arguments.paths.clone(), Workflow::Lint),
-        Some(Command::Check(arguments)) => (arguments.paths.clone(), Workflow::Check),
-        Some(Command::Budget(arguments)) => (arguments.paths.clone(), Workflow::Budget),
-        Some(Command::Preflight(arguments)) => (arguments.paths.clone(), Workflow::Preflight),
-        Some(
-            Command::Explain(_)
-            | Command::Undo(_)
-            | Command::Upgrade(_)
-            | Command::Uninstall(_)
-            | Command::Leaks(_),
-        ) => (Vec::new(), Workflow::Default),
-        None => (cli.paths.clone(), Workflow::Default),
-    }
-}
-
-fn run_explain(
-    format: OutputFormat,
-    locale: normfix_i18n::Locale,
-    messages: &normfix_i18n::Messages,
-    rule: &str,
-) -> ExitCode {
-    let canonical = rule.trim().to_ascii_uppercase();
-    let Some(explanation) = rules::explain(&canonical, locale, messages) else {
-        print_run_error(
-            format,
-            messages,
-            &normfix_i18n::fill(messages.explain_unknown_rule, &[("rule", &canonical)]),
-        );
-        return ExitCode::from(2);
-    };
-    match format {
-        OutputFormat::Human => print!("{explanation}"),
-        OutputFormat::Json => print_json_outcome(
-            "explain",
-            "success",
-            &serde_json::json!({
-                "rule_id": canonical,
-                "explanation": explanation,
-            }),
-        ),
-    }
-    ExitCode::SUCCESS
-}
-
-fn run_undo(cli: &Cli, arguments: &UndoArguments, cwd: &std::path::Path) -> ExitCode {
-    let runs = match collect_undo_runs(cli.backup_dir.as_deref(), cwd) {
-        Ok(runs) => runs,
-        Err(message) => {
-            print_run_error(cli.format, cli_messages(cli), &message);
-            return ExitCode::from(2);
-        }
-    };
-    if arguments.list {
-        render_undo_list(cli.format, &runs);
-        return ExitCode::SUCCESS;
-    }
-    let selected = arguments.run.as_ref().map_or_else(
-        || runs.last(),
-        |run_id| runs.iter().rev().find(|run| &run.run_id == run_id),
-    );
-    let Some(selected) = selected else {
-        let detail = arguments.run.as_ref().map_or_else(
-            || "No intact backup run exists for this project.".to_owned(),
-            |run_id| format!("No intact backup run named `{run_id}` exists for this project."),
-        );
-        print_run_error(cli.format, cli_messages(cli), &detail);
-        return ExitCode::from(2);
-    };
-    if !cli.force {
-        if let Err(message) = confirm_undo(selected, cli) {
-            print_run_error(cli.format, cli_messages(cli), &message);
-            return ExitCode::from(2);
-        }
-    }
-    let Some(backup_root) = selected.journal.parent().and_then(std::path::Path::parent) else {
-        print_run_error(
-            cli.format,
-            cli_messages(cli),
-            "The selected recovery journal has no backup root.",
-        );
-        return ExitCode::from(2);
-    };
-    match undo_run(selected, cwd, backup_root) {
-        Ok(report) => {
-            match cli.format {
-                OutputFormat::Human => {
-                    println!(
-                        "normfix undo\nRestored {} file(s) from {}.",
-                        report.files.len(),
-                        report.restored_run_id
-                    );
-                    for path in &report.files {
-                        println!("  {}", path.display());
-                    }
-                    if let Some(journal) = report.journal {
-                        println!(
-                            "The displaced bytes remain recoverable through {}.",
-                            journal.display()
-                        );
-                    }
-                }
-                OutputFormat::Json => println!(
-                    "{}",
-                    serde_json::to_string_pretty(&report)
-                        .expect("undo report JSON is serializable")
-                ),
-            }
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            print_run_error(cli.format, cli_messages(cli), &error.to_string());
-            ExitCode::from(2)
-        }
-    }
-}
-
-fn collect_undo_runs(
-    explicit: Option<&std::path::Path>,
-    project_root: &std::path::Path,
-) -> Result<Vec<UndoRun>, String> {
-    let mut runs = Vec::new();
-    for root in backup_roots(explicit) {
-        runs.extend(list_undo_runs(&root, project_root).map_err(|error| error.to_string())?);
-    }
-    runs.sort_by(|left, right| {
-        let left_time = std::fs::metadata(&left.journal)
-            .and_then(|metadata| metadata.modified())
-            .unwrap_or(std::time::UNIX_EPOCH);
-        let right_time = std::fs::metadata(&right.journal)
-            .and_then(|metadata| metadata.modified())
-            .unwrap_or(std::time::UNIX_EPOCH);
-        left_time
-            .cmp(&right_time)
-            .then_with(|| left.run_id.cmp(&right.run_id))
-    });
-    runs.dedup_by(|left, right| left.journal == right.journal);
-    Ok(runs)
-}
-
-/// The user-owned data directory this platform reports.
-///
-/// Windows resolves through `LOCALAPPDATA`, which is where the cache already
-/// looks and whose ACL is already restricted to that user. Without a branch
-/// here the undo listing would look in a directory that does not exist on the
-/// platform, and report no recoverable runs when there are some.
-#[cfg(windows)]
-fn platform_data_base() -> Option<PathBuf> {
-    env::var_os("LOCALAPPDATA")
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-}
-
-#[cfg(not(windows))]
-fn platform_data_base() -> Option<PathBuf> {
-    env::var_os("HOME")
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .map(|home| home.join(".local/share"))
-}
-
-fn backup_roots(explicit: Option<&std::path::Path>) -> Vec<PathBuf> {
-    if let Some(path) = explicit {
-        return vec![path.to_path_buf()];
-    }
-    let base = env::var_os("XDG_DATA_HOME")
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .or_else(platform_data_base);
-    base.map_or_else(Vec::new, |base| {
-        vec![
-            base.join("normfix/backups"),
-            base.join("norminette-fix/backups"),
-        ]
-    })
-}
-
-fn render_undo_list(format: OutputFormat, runs: &[UndoRun]) {
-    match format {
-        OutputFormat::Human => {
-            println!("normfix undo: {} recovery point(s)", runs.len());
-            for run in runs.iter().rev() {
-                println!("  {}  {} file(s)", run.run_id, run.files.len());
-            }
-        }
-        OutputFormat::Json => print_json_outcome(
-            "undo",
-            "success",
-            &serde_json::json!({
-                "recovery_points": runs,
-                "count": runs.len(),
-            }),
-        ),
-    }
-}
-
-fn confirm_undo(run: &UndoRun, cli: &Cli) -> Result<(), String> {
-    let messages = cli_messages(cli);
-    if cli.format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal()
-    {
-        return Err(messages.undo_needs_confirmation.to_owned());
-    }
-    eprintln!(
-        "{}",
-        normfix_i18n::fill_plural(
-            cli_locale(cli),
-            run.files.len() as u64,
-            messages.undo_question_one,
-            messages.undo_question_other,
-            &[
-                ("count", &run.files.len().to_string()),
-                ("run", &run.run_id),
-            ],
-        )
-    );
-    eprint!("{}", messages.undo_prompt);
-    let _ = io::stderr().flush();
-    let mut answer = String::new();
-    // The accepted answer stays `y` in every language: it is a protocol token,
-    // like a flag. A prompt that offered a translated letter and then rejected
-    // it would be a trap in exactly the place that must not have one.
-    let confirmed = io::stdin()
-        .read_line(&mut answer)
-        .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
-    confirmed
-        .then_some(())
-        .ok_or_else(|| messages.undo_cancelled.to_owned())
-}
-
-fn authorize_destructive(
-    destructive: DestructiveFlags,
-    force: bool,
-    messages: &normfix_i18n::Messages,
-    format: OutputFormat,
-) -> Result<Option<DestructiveAuthorization>, String> {
-    let mut capabilities = Vec::new();
-    if destructive.remove_unused {
-        capabilities.push(DestructiveCapability::RemoveUnreferencedStaticFunctions);
-    }
-    if destructive.remove_missing_makefile_sources {
-        capabilities.push(DestructiveCapability::RemoveMissingMakefileSources);
-    }
-    if destructive.remove_orphan_prototypes {
-        capabilities.push(DestructiveCapability::RemoveOrphanPrototypes);
-    }
-    if destructive.remove_unexpected {
-        capabilities.push(DestructiveCapability::QuarantineUnexpectedFiles);
-    }
-    if capabilities.is_empty() {
-        return Ok(None);
-    }
-    let request = DestructiveRequest::new(capabilities).map_err(|error| error.to_string())?;
-    if force {
-        return request
-            .authorize_forced(true, true)
-            .map(Some)
-            .map_err(|error| error.to_string());
-    }
-    if format == OutputFormat::Json || !io::stdin().is_terminal() || !io::stderr().is_terminal() {
-        return Err(messages.destructive_needs_confirmation.to_owned());
-    }
-    eprintln!("{}", messages.destructive_warning);
-    eprint!("{}", messages.destructive_prompt);
-    let _ = io::stderr().flush();
-    let mut answer = String::new();
-    // `y` is the accepted answer in every language; see `confirm_undo`.
-    let confirmed = io::stdin()
-        .read_line(&mut answer)
-        .is_ok_and(|_| answer.trim().eq_ignore_ascii_case("y"));
-    request
-        .authorize_yes(confirmed)
-        .map(Some)
-        .map_err(|_| messages.destructive_cancelled.to_owned())
-}
-
-fn prompt_for_identity(
-    requested_login: Option<&str>,
-    fallback: IdentityResolution,
-) -> IdentityResolution {
-    loop {
-        eprint!(
-            "No verified 42 student email was found.\n\
-             Enter your 42 email (Enter, cancel, or q to skip the header): "
-        );
-        let _ = io::stderr().flush();
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input).is_err() {
-            eprintln!("\nHeader skipped; all other safe fixes will continue.");
-            return fallback;
-        }
-        let value = input.trim();
-        if value.is_empty()
-            || value.eq_ignore_ascii_case("cancel")
-            || value.eq_ignore_ascii_case("q")
-        {
-            eprintln!("Header skipped; its absence will be included in the report.");
-            return fallback;
-        }
-        let resolution = identity_from_email(value, requested_login, "interactive terminal");
-        if resolution.identity.is_some() {
-            return resolution;
-        }
-        eprintln!(
-            "{}. Use an address such as login@student.42.fr, or cancel.",
-            terminal_safe_inline(&resolution.source)
-        );
-    }
-}
-
-fn parse_worker_count(value: &str) -> Result<usize, String> {
-    let workers = value
-        .parse::<usize>()
-        .map_err(|_| "worker count must be a positive integer".to_owned())?;
-    (workers > 0)
-        .then_some(workers)
-        .ok_or_else(|| "worker count must be at least one".to_owned())
-}
-
-fn parse_pass_count(value: &str) -> Result<usize, String> {
-    let passes = value
-        .parse::<usize>()
-        .map_err(|_| "pass count must be a positive integer".to_owned())?;
-    (passes > 0)
-        .then_some(passes)
-        .ok_or_else(|| "pass count must be at least one".to_owned())
-}
-
-fn parse_timeout(value: &str) -> Result<Duration, String> {
-    let seconds = value
-        .parse::<f64>()
-        .map_err(|_| "timeout must be a positive number of seconds".to_owned())?;
-    if !seconds.is_finite() || seconds <= 0.0 {
-        return Err("timeout must be finite and greater than zero".to_owned());
-    }
-    Duration::try_from_secs_f64(seconds)
-        .map_err(|_| "timeout is outside the supported range".to_owned())
-}
-
-/// Prints one command's answer as the object a caller can rely on.
-///
-/// Every command that speaks JSON says the same three things before saying
-/// anything of its own: which schema this is, which command answered, and
-/// whether it succeeded. A caller reading `outcome` never has to infer failure
-/// from a field that happens to be absent, and a bare array — which is what
-/// `undo --list` used to return — cannot carry any of it.
-///
-/// It goes to standard output, always. Prose belongs on standard error so a
-/// human can watch a run; a machine-readable answer is the result, and a result
-/// a caller has to fish out of the diagnostic stream is not an interface.
-fn print_json_outcome(command: &str, outcome: &str, payload: &serde_json::Value) {
-    let value = serde_json::json!({
-        "schema_version": normfix_report::REPORT_SCHEMA_VERSION,
-        "command": command,
-        "outcome": outcome,
-        "result": payload,
-    });
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&value).expect("the command outcome schema is serializable")
-    );
-}
-
-fn print_run_error(format: OutputFormat, messages: &normfix_i18n::Messages, message: &str) {
-    match format {
-        OutputFormat::Human => {
-            eprintln!("normfix");
-            eprintln!("error: {}", terminal_safe_inline(message));
-            eprintln!("{}", messages.error_nothing_written);
-        }
-        OutputFormat::Json => {
-            // The same envelope a successful command answers with, so a caller
-            // reads `outcome` in one place instead of learning two shapes.
-            let value = serde_json::json!({
-                "schema_version": normfix_report::REPORT_SCHEMA_VERSION,
-                "outcome": "failure",
-                "error": {
-                    "code": "run_error",
-                    "message": message,
-                }
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&value)
-                    .expect("the static error schema is serializable")
-            );
-        }
     }
 }
 
@@ -2154,6 +687,63 @@ mod tests {
             .expect("no destructive request")
             .is_none()
         );
+    }
+
+    #[test]
+    fn diagnostic_only_commands_reject_flags_that_cannot_affect_their_result() {
+        for (arguments, workflow, expected) in [
+            (
+                vec!["normfix", "lint", "--diff"],
+                Workflow::Lint,
+                "never proposes edits",
+            ),
+            (
+                vec!["normfix", "budget", "--unsafe", "--force"],
+                Workflow::Budget,
+                "never plans edits",
+            ),
+            (
+                vec!["normfix", "lint", "--email", "student@student.42.fr"],
+                Workflow::Lint,
+                "does not create headers",
+            ),
+            (
+                vec!["normfix", "budget", "--no-reorder-includes"],
+                Workflow::Budget,
+                "never plans edits",
+            ),
+        ] {
+            let cli = Cli::try_parse_from(arguments).expect("the grammar remains compatible");
+            let error = invalid_invocation(&cli, workflow, DestructiveFlags::from_cli(&cli), false)
+                .expect("ignored flags must be rejected");
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+
+    #[test]
+    fn read_only_commands_reject_backup_flags_and_redundant_check() {
+        for (arguments, workflow, expected) in [
+            (
+                vec!["normfix", "check", "--no-backup"],
+                Workflow::Check,
+                "backup flags would have no effect",
+            ),
+            (
+                vec!["normfix", "preflight", "--backup-dir", "saved"],
+                Workflow::Preflight,
+                "backup flags would have no effect",
+            ),
+            (
+                vec!["normfix", "check", "--check"],
+                Workflow::Check,
+                "already read-only",
+            ),
+        ] {
+            let cli = Cli::try_parse_from(arguments).expect("the grammar remains compatible");
+            let error = invalid_invocation(&cli, workflow, DestructiveFlags::from_cli(&cli), false)
+                .expect("ignored flags must be rejected");
+            assert!(error.contains(expected), "{error}");
+        }
     }
 
     #[test]

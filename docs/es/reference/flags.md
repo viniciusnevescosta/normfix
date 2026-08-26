@@ -138,6 +138,10 @@ Omite las copias retenidas para escrituras corrientes de formateo.
 normfix --no-backup
 ```
 
+Las opciones de copia de seguridad solo se aplican a una ejecución que escribe.
+`check`, `lint`, `budget`, `preflight`, `--check` y `--diff` las rechazan porque
+esas ejecuciones no pueden crear una copia.
+
 **No** omite la recuperación de una eliminación destructiva. Esas siempre exigen
 almacenamiento externo y fallan cerradas sin él. Omitir las copias significa que
 [`undo`](/es/commands/undo) no tiene nada que restaurar de esa ejecución.

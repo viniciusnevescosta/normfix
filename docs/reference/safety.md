@@ -20,7 +20,7 @@ normfix · starting
   timeout      5s per file
   cache        enabled
   gitignore    not applied
-  backups      automatic external backup
+  backups      not used (read-only run)
   destructive  invalid comments, NULL-check compaction, missing or trivia-only Makefile entries, orphan header prototypes, unreachable static functions, unexpected-file quarantine
   force        acknowledged
 ```

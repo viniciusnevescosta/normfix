@@ -26,6 +26,11 @@ Summary: fichiers : 1 | proposés : 0 | écrits : 0 | corrections : 0 | restants
 Les lignes de budget sont informatives et ne changent jamais à elles seules le
 code de sortie.
 
+`budget` diagnostique les octets déjà présents sur le disque et ne planifie
+jamais de modification. Il refuse donc les options de mise en forme, d'identité
+d'en-tête, de sauvegarde, de diff et de suppression au lieu de les ignorer
+silencieusement. Utilisez `normfix check` pour prévisualiser les corrections.
+
 ## Pourquoi la marge compte
 
 Une fonction à 24 lignes sur 25 respecte la Norme et se trouve à une question du

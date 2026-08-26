@@ -13,6 +13,11 @@ Use it when you want the diagnosis without the treatment: in CI, in a review,
 or when you intend to fix something by hand and do not want the tool to move
 under you.
 
+Because `lint` never plans edits, it rejects formatting, header-identity,
+backup, diff, and removal flags with a command that does support the requested
+operation. This prevents a green-looking invocation from silently ignoring a
+setting. Use `normfix check --diff` when you want to see proposed changes.
+
 ## What it reports
 
 ```console

@@ -140,6 +140,10 @@ Saute les sauvegardes conservées pour les écritures ordinaires de mise en form
 normfix --no-backup
 ```
 
+Les options de sauvegarde ne s'appliquent qu'à une exécution qui écrit.
+`check`, `lint`, `budget`, `preflight`, `--check` et `--diff` les refusent car
+ces exécutions ne peuvent pas créer de sauvegarde.
+
 Elle ne saute **pas** la récupération d'une suppression destructive. Celles-ci
 exigent toujours un stockage externe et échouent fermées sans lui. Sauter les
 sauvegardes signifie que [`undo`](/fr/commands/undo) n'a rien à restaurer pour

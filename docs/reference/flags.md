@@ -135,6 +135,10 @@ Skip retained backups for ordinary formatting writes.
 normfix --no-backup
 ```
 
+Backup flags apply only to a writing run. `check`, `lint`, `budget`,
+`preflight`, `--check`, and `--diff` reject them because those runs cannot
+create a backup.
+
 It does **not** skip recovery for a destructive removal. Those always require
 external storage, and refuse to run without it. Skipping backups means
 [`undo`](/commands/undo) has nothing to restore for that run.
@@ -492,4 +496,3 @@ which of them was used to produce it.
 A refusal answers in the same envelope, with `outcome: "failure"` and an `error`
 object, so a flag combination the tool rejects is read the same way as any other
 outcome.
-

@@ -26,6 +26,11 @@ Summary: archivos: 1 | propuestos: 0 | escritos: 0 | correcciones: 0 | pendiente
 Las filas de presupuesto son informativas y nunca cambian por sí solas el código
 de salida.
 
+`budget` diagnostica los bytes que ya están en disco y nunca planifica
+ediciones. Por eso rechaza las opciones de formato, identidad de cabecera,
+copia de seguridad, diff y eliminación en vez de ignorarlas en silencio. Usa
+`normfix check` para previsualizar correcciones.
+
 ## Por qué importa el margen
 
 Una función con 24 de 25 líneas cumple la Norma y está a una pregunta del día de

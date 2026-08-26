@@ -26,6 +26,11 @@ Summary: arquivos: 1 | propostos: 0 | gravados: 0 | correções: 0 | pendentes: 
 As linhas de orçamento são informativas e nunca alteram o código de saída por
 si só.
 
+`budget` diagnostica os bytes já no disco e nunca planeja edições. Por isso,
+flags de formatação, identidade do cabeçalho, backup, diff e remoção são
+rejeitadas em vez de ignoradas silenciosamente. Use `normfix check` para prever
+correções.
+
 ## Por que a folga importa
 
 Uma função com 24 de 25 linhas está de acordo com a Norm e está a uma pergunta
