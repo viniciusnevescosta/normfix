@@ -83,6 +83,30 @@ interface DirectoryEntryLike extends FileSystemEntryLike {
 }
 
 /**
+ * Takes entry handles while the drop event still owns them.
+ *
+ * Some browsers expose only `DataTransfer.files`, and compatibility shells can
+ * advertise the item API without implementing its non-standard entry method.
+ * Both cases deliberately return no entries so the caller can use the plain
+ * file fallback instead of losing the drop to a `TypeError`.
+ */
+export function captureDroppedEntries(items: Iterable<DataTransferItem>): FileSystemEntry[] {
+  const entries: FileSystemEntry[] = [];
+  for (const item of items) {
+    const getEntry = (item as Partial<DataTransferItem>).webkitGetAsEntry;
+    if (typeof getEntry !== "function") continue;
+    let entry: FileSystemEntry | null = null;
+    try {
+      entry = getEntry.call(item);
+    } catch {
+      // Fall back to DataTransfer.files when the compatibility API refuses.
+    }
+    if (entry !== null) entries.push(entry);
+  }
+  return entries;
+}
+
+/**
  * Reads a drop into importable files.
  *
  * The entries must be taken from the event synchronously — the browser

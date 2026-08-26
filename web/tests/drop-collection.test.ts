@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { collectDroppedFiles } from "../src/project/drop";
+import { captureDroppedEntries, collectDroppedFiles } from "../src/project/drop";
 import { MAX_UNSUPPORTED_FILES } from "../src/project/files";
 
 test("a single huge dropped directory stops at the global scan budget", async () => {
@@ -31,4 +31,20 @@ test("a single huge dropped directory stops at the global scan budget", async ()
   assert.equal(selection.files.length, 0);
   assert.equal(selection.unsupported.length, MAX_UNSUPPORTED_FILES);
   assert.ok(selection.skipped > 0, "the cutoff is reported rather than silently discarded");
+});
+
+test("a browser without the entry extension falls back to plain dropped files", () => {
+  const entry = { name: "main.c" } as FileSystemEntry;
+  assert.deepEqual(captureDroppedEntries([{} as DataTransferItem]), []);
+  assert.deepEqual(
+    captureDroppedEntries([
+      { webkitGetAsEntry: () => entry } as unknown as DataTransferItem,
+      {
+        webkitGetAsEntry: () => {
+          throw new Error("not implemented");
+        },
+      } as unknown as DataTransferItem,
+    ]),
+    [entry],
+  );
 });
