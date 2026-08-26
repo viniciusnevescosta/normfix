@@ -57,16 +57,17 @@ fn archive_name() -> Result<&'static str, String> {
     }
 }
 
-fn run(program: &str, arguments: &[&OsStr]) -> Result<Vec<u8>, String> {
+fn run(program: &Path, arguments: &[&OsStr]) -> Result<Vec<u8>, String> {
     let output = Command::new(program)
         .args(arguments)
         .output()
-        .map_err(|error| format!("could not run `{program}`: {error}"))?;
+        .map_err(|error| format!("could not run `{}`: {error}", program.display()))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr);
         let detail = detail.trim();
         return Err(format!(
-            "`{program}` failed{}",
+            "`{}` failed{}",
+            program.display(),
             if detail.is_empty() {
                 String::new()
             } else {
@@ -78,9 +79,9 @@ fn run(program: &str, arguments: &[&OsStr]) -> Result<Vec<u8>, String> {
 }
 
 fn download(url: &str, target: &Path) -> Result<(), String> {
-    let result = if which("curl").is_some() {
+    let result = if let Some(curl) = which("curl") {
         run(
-            "curl",
+            &curl,
             &[
                 OsStr::new("-fsSL"),
                 OsStr::new("--proto"),
@@ -98,9 +99,9 @@ fn download(url: &str, target: &Path) -> Result<(), String> {
             ],
         )
         .map(|_| ())
-    } else if which("wget").is_some() {
+    } else if let Some(wget) = which("wget") {
         run(
-            "wget",
+            &wget,
             &[
                 OsStr::new("-q"),
                 OsStr::new("-T"),
@@ -144,8 +145,34 @@ fn fetch_text(url: &str) -> Result<String, String> {
 
 fn which(program: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|directory| directory.join(program))
+    which_in_path(program, &path)
+}
+
+fn which_in_path(program: &str, path: &OsStr) -> Option<PathBuf> {
+    std::env::split_paths(path)
+        .filter(|directory| directory.is_absolute())
+        .find_map(|directory| executable_candidate(&directory, program))
+}
+
+#[cfg(not(windows))]
+fn executable_candidate(directory: &Path, program: &str) -> Option<PathBuf> {
+    let candidate = directory.join(program);
+    candidate.is_file().then_some(candidate)
+}
+
+#[cfg(windows)]
+fn executable_candidate(directory: &Path, program: &str) -> Option<PathBuf> {
+    let direct = directory.join(program);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    let extensions = std::env::var_os("PATHEXT")
+        .unwrap_or_else(|| OsStr::new(".COM;.EXE;.BAT;.CMD").to_os_string());
+    extensions
+        .to_string_lossy()
+        .split(';')
+        .filter(|extension| !extension.is_empty())
+        .map(|extension| directory.join(format!("{program}{extension}")))
         .find(|candidate| candidate.is_file())
 }
 
@@ -473,9 +500,10 @@ fn install_into(staging: &Path, executable: &Path, tag: &str, archive: &str) -> 
         ));
     }
 
-    validate_archive_listing(&archive_path)?;
+    let tar_executable = which("tar").ok_or_else(|| "upgrading needs tar on PATH".to_owned())?;
+    validate_archive_listing(&archive_path, &tar_executable)?;
     run(
-        "tar",
+        &tar_executable,
         &[
             OsStr::new("-xzf"),
             archive_path.as_os_str(),
@@ -527,8 +555,8 @@ fn published_checksum(sums: &str, archive: &str) -> Result<String, String> {
     Ok(digest.to_ascii_lowercase())
 }
 
-fn validate_archive_listing(archive: &Path) -> Result<(), String> {
-    let listing = run("tar", &[OsStr::new("-tzf"), archive.as_os_str()])?;
+fn validate_archive_listing(archive: &Path, tar: &Path) -> Result<(), String> {
+    let listing = run(tar, &[OsStr::new("-tzf"), archive.as_os_str()])?;
     let listing = String::from_utf8(listing)
         .map_err(|_| "the release archive contained a non-UTF-8 path".to_owned())?;
     let mut entries = listing.lines().collect::<Vec<_>>();
@@ -628,8 +656,20 @@ mod tests {
     use super::{
         UpdateChannel, newest_published_tag, parse_release_version, published_checksum,
         record_check_attempt, reject_managed_install, release_metadata_url, stable_tag,
-        staging_directory, update_channel,
+        staging_directory, update_channel, which_in_path,
     };
+
+    #[test]
+    fn executable_discovery_ignores_relative_path_entries() {
+        let trusted = tempfile::TempDir::new().expect("trusted directory");
+        let executable = trusted.path().join("normfix-test-tool");
+        std::fs::write(&executable, "fixture").expect("executable fixture");
+        let path =
+            std::env::join_paths([std::path::Path::new("."), trusted.path()]).expect("test PATH");
+
+        assert_eq!(which_in_path("normfix-test-tool", &path), Some(executable));
+        assert!(which_in_path("normfix-test-tool", std::ffi::OsStr::new(".")).is_none());
+    }
 
     #[test]
     fn release_versions_follow_semver_precedence_and_reject_ambiguous_tags() {
