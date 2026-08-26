@@ -1,28 +1,25 @@
 //! Ambiguity-safe 42 identity discovery.
 
-use std::collections::{BTreeMap, BTreeSet};
+mod config;
+mod discovery;
+mod file;
+mod git;
+mod validation;
+
+use std::collections::BTreeMap;
 use std::env;
-use std::fs::{self, OpenOptions};
-#[cfg(not(target_arch = "wasm32"))]
-use std::io::Read as _;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
-#[cfg(not(target_arch = "wasm32"))]
-use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 use std::time::Duration;
 
-use regex::Regex;
-use thiserror::Error;
-#[cfg(not(target_arch = "wasm32"))]
-use wait_timeout::ChildExt;
-
-#[cfg(unix)]
-use std::fs::File;
-#[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
-
 use crate::{ByteRange, Issue};
+
+pub use config::{IdentityConfigError, persist_identity};
+pub use validation::{canonical_42_email, identity_from_email};
+
+use config::configured_identity;
+use discovery::saved_editor_emails;
+use git::git_config_email;
+use validation::{identity_from_candidate, select_saved_email};
 
 const SETTINGS_SIZE_LIMIT: u64 = 1_000_000;
 const GIT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -78,38 +75,8 @@ pub struct IdentityResolution {
     pub issue: Option<Issue>,
 }
 
-/// A failure to locate or securely persist the global 42 identity.
-#[derive(Debug, Error)]
-pub enum IdentityConfigError {
-    /// No supported per-user configuration directory was available.
-    #[error("no per-user configuration directory is available; set NORMFIX_CONFIG explicitly")]
-    LocationUnavailable,
-    /// The supplied identity no longer satisfies the canonical invariant.
-    #[error("refusing to persist an invalid 42 identity")]
-    InvalidIdentity,
-    /// The destination is not safe to replace as a regular configuration file.
-    #[error("unsafe identity configuration path `{path}`: {reason}")]
-    UnsafePath {
-        /// Rejected path.
-        path: PathBuf,
-        /// Refusal reason.
-        reason: String,
-    },
-    /// A filesystem operation failed.
-    #[error("could not {operation} `{path}`: {source}")]
-    Io {
-        /// Short operation description.
-        operation: &'static str,
-        /// Affected path.
-        path: PathBuf,
-        /// Underlying operating-system error.
-        #[source]
-        source: std::io::Error,
-    },
-}
-
 impl IdentityResolution {
-    fn available(identity: Identity42) -> Self {
+    pub(super) fn available(identity: Identity42) -> Self {
         let source = identity.source.clone();
         Self {
             identity: Some(identity),
@@ -118,7 +85,7 @@ impl IdentityResolution {
         }
     }
 
-    fn unavailable(code: &'static str, source: String) -> Self {
+    pub(super) fn unavailable(code: &'static str, source: String) -> Self {
         Self {
             identity: None,
             source: source.clone(),
@@ -160,6 +127,8 @@ impl IdentityResolver {
             "USERPROFILE",
             "APPDATA",
             "XDG_CONFIG_HOME",
+            "PATH",
+            "PATHEXT",
             CONFIG_ENV,
             LOGIN_ENV,
             EMAIL_ENV,
@@ -187,7 +156,7 @@ impl IdentityResolver {
 
     /// Creates an isolated resolver that performs no Git lookup.
     #[must_use]
-    pub fn isolated(home: Option<PathBuf>) -> Self {
+    pub const fn isolated(home: Option<PathBuf>) -> Self {
         Self {
             environment: BTreeMap::new(),
             home,
@@ -229,7 +198,6 @@ impl IdentityResolver {
         let env_email = self
             .environment_value(EMAIL_ENV)
             .or_else(|| self.environment_value(LEGACY_EMAIL_ENV));
-        let (config_login, config_email) = self.configured_identity();
 
         if let Some(email) = cli_email {
             return identity_from_candidate(email, cli_login, "command line", false);
@@ -237,6 +205,7 @@ impl IdentityResolver {
         if let Some(email) = env_email {
             return identity_from_candidate(email, cli_login.or(env_login), "environment", false);
         }
+        let (config_login, config_email) = configured_identity(self);
         if let Some(email) = config_email.as_deref() {
             return identity_from_candidate(
                 email,
@@ -249,8 +218,13 @@ impl IdentityResolver {
         let requested_login = cli_login.or(env_login).or(config_login.as_deref());
         let mut rejected_sources = Vec::new();
         if self.query_git {
-            let git_email = git_config_email(cwd, self.git_timeout)
-                .filter(|email| canonical_42_email(email).is_some());
+            let git_email = git_config_email(
+                cwd,
+                self.git_timeout,
+                self.environment_value("PATH"),
+                self.environment_value("PATHEXT"),
+            )
+            .filter(|email| canonical_42_email(email).is_some());
             if let Some(email) = git_email {
                 let resolution =
                     identity_from_candidate(&email, requested_login, "Git config", true);
@@ -273,7 +247,7 @@ impl IdentityResolver {
             rejected_sources.push(resolution.source);
         }
 
-        let candidates = self.saved_editor_emails();
+        let candidates = self.home().map(saved_editor_emails).unwrap_or_default();
         let selected = select_saved_email(&candidates, requested_login);
         let Some(email) = selected else {
             let reason = if !candidates.is_empty() {
@@ -294,108 +268,15 @@ impl IdentityResolver {
         identity_from_candidate(&email, requested_login, &sources, true)
     }
 
-    fn environment_value(&self, key: &str) -> Option<&str> {
+    pub(super) fn environment_value(&self, key: &str) -> Option<&str> {
         self.environment
             .get(key)
             .map(String::as_str)
             .filter(|value| !value.is_empty())
     }
 
-    fn configured_identity(&self) -> (Option<String>, Option<String>) {
-        let candidates = self.configuration_candidates();
-        let Some(path) = candidates
-            .iter()
-            .find(|candidate| candidate.is_file())
-            .or_else(|| candidates.first())
-        else {
-            return (None, None);
-        };
-        parse_header_ini(path).unwrap_or((None, None))
-    }
-
-    fn configuration_candidates(&self) -> Vec<PathBuf> {
-        if let Some(configured) = self
-            .environment_value(CONFIG_ENV)
-            .or_else(|| self.environment_value(LEGACY_CONFIG_ENV))
-        {
-            return vec![expand_home(configured, self.home.as_deref())];
-        }
-
-        let bases = self.default_configuration_bases();
-        let mut candidates = bases
-            .iter()
-            .map(|base| base.join("normfix/config.ini"))
-            .collect::<Vec<_>>();
-        candidates.extend(
-            bases
-                .iter()
-                .map(|base| base.join("norminette-fix/config.ini")),
-        );
-        candidates
-    }
-
-    fn preferred_configuration_path(&self) -> Option<PathBuf> {
-        self.configuration_candidates().into_iter().next()
-    }
-
-    fn default_configuration_bases(&self) -> Vec<PathBuf> {
-        if let Some(xdg) = self.environment_value("XDG_CONFIG_HOME") {
-            return vec![PathBuf::from(xdg)];
-        }
-
-        #[cfg(windows)]
-        if let Some(app_data) = self.environment_value("APPDATA") {
-            return vec![PathBuf::from(app_data)];
-        }
-
-        let Some(home) = self.home.as_ref() else {
-            return Vec::new();
-        };
-        #[cfg(target_os = "macos")]
-        {
-            vec![
-                home.join("Library/Application Support"),
-                home.join(".config"),
-            ]
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            vec![home.join(".config")]
-        }
-    }
-
-    fn saved_editor_emails(&self) -> BTreeMap<String, BTreeSet<String>> {
-        let Some(home) = self.home.as_deref() else {
-            return BTreeMap::new();
-        };
-        let locations = editor_locations(home);
-        let mut candidates = BTreeMap::<String, BTreeSet<String>>::new();
-        for (path, pattern, source) in locations {
-            let Ok(metadata) = fs::metadata(&path) else {
-                continue;
-            };
-            if !metadata.is_file() || metadata.len() > SETTINGS_SIZE_LIMIT {
-                continue;
-            }
-            let Ok(bytes) = fs::read(&path) else {
-                continue;
-            };
-            let content = String::from_utf8_lossy(&bytes);
-            let regex = Regex::new(pattern).expect("editor email regex is constant");
-            for captures in regex.captures_iter(&content) {
-                let Some(value) = captures.get(1) else {
-                    continue;
-                };
-                let Some(email) = canonical_42_email(value.as_str()) else {
-                    continue;
-                };
-                candidates
-                    .entry(email)
-                    .or_default()
-                    .insert(source.to_owned());
-            }
-        }
-        candidates
+    pub(super) fn home(&self) -> Option<&Path> {
+        self.home.as_deref()
     }
 }
 
@@ -409,797 +290,5 @@ pub fn resolve_identity(
     IdentityResolver::from_process().resolve(login, email, cwd)
 }
 
-/// Persists a validated identity in the platform's per-user configuration.
-///
-/// `NORMFIX_CONFIG` takes precedence. Otherwise this uses
-/// `$XDG_CONFIG_HOME`, `%APPDATA%` on Windows, `~/Library/Application Support`
-/// on macOS, or `~/.config` on other Unix platforms. The destination is
-/// replaced atomically where the platform permits, with owner-only file and
-/// application-directory permissions on Unix.
-///
-/// # Errors
-///
-/// Returns an error when the identity is invalid, no user configuration
-/// directory can be located, the destination is a symbolic link or non-file,
-/// or secure persistence fails.
-pub fn persist_identity(identity: &Identity42) -> Result<PathBuf, IdentityConfigError> {
-    let resolver = IdentityResolver::from_process();
-    let uses_default_directory = resolver.environment_value(CONFIG_ENV).is_none()
-        && resolver.environment_value(LEGACY_CONFIG_ENV).is_none();
-    let path = resolver
-        .preferred_configuration_path()
-        .ok_or(IdentityConfigError::LocationUnavailable)?;
-    if !path.is_absolute() {
-        return Err(IdentityConfigError::UnsafePath {
-            path,
-            reason: "the global configuration path must be absolute".to_owned(),
-        });
-    }
-    persist_identity_with_directory_policy(identity, &path, uses_default_directory)?;
-    Ok(path)
-}
-
 #[cfg(test)]
-fn persist_identity_at(identity: &Identity42, path: &Path) -> Result<(), IdentityConfigError> {
-    persist_identity_with_directory_policy(identity, path, true)
-}
-
-fn persist_identity_with_directory_policy(
-    identity: &Identity42,
-    path: &Path,
-    secure_existing_parent: bool,
-) -> Result<(), IdentityConfigError> {
-    if !identity.is_valid() {
-        return Err(IdentityConfigError::InvalidIdentity);
-    }
-    let parent = identity_config_parent(path)?;
-    prepare_identity_config_directory(&parent, secure_existing_parent)?;
-    ensure_regular_config_destination(path, "the existing destination is not a regular file")?;
-    let contents = format!(
-        "[header]\nlogin = {}\nemail = {}\n",
-        identity.login, identity.email
-    );
-    let temporary = write_temporary_identity_config(&parent, contents.as_bytes())?;
-    install_identity_config(&temporary, path, &parent)
-}
-
-fn identity_config_parent(path: &Path) -> Result<PathBuf, IdentityConfigError> {
-    let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    else {
-        return Err(IdentityConfigError::UnsafePath {
-            path: path.to_path_buf(),
-            reason: "the file has no parent directory".to_owned(),
-        });
-    };
-    Ok(parent.to_path_buf())
-}
-
-fn ensure_regular_config_destination(
-    path: &Path,
-    reason: &'static str,
-) -> Result<(), IdentityConfigError> {
-    if let Ok(metadata) = fs::symlink_metadata(path) {
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return Err(IdentityConfigError::UnsafePath {
-                path: path.to_path_buf(),
-                reason: reason.to_owned(),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn prepare_identity_config_directory(
-    parent: &Path,
-    secure_existing_parent: bool,
-) -> Result<(), IdentityConfigError> {
-    let parent_existed = parent.exists();
-    #[cfg(not(unix))]
-    let _ = (parent_existed, secure_existing_parent);
-    fs::create_dir_all(parent).map_err(|source| IdentityConfigError::Io {
-        operation: "create identity configuration directory",
-        path: parent.to_path_buf(),
-        source,
-    })?;
-    let parent_metadata =
-        fs::symlink_metadata(parent).map_err(|source| IdentityConfigError::Io {
-            operation: "inspect identity configuration directory",
-            path: parent.to_path_buf(),
-            source,
-        })?;
-    if parent_metadata.file_type().is_symlink() || !parent_metadata.is_dir() {
-        return Err(IdentityConfigError::UnsafePath {
-            path: parent.to_path_buf(),
-            reason: "the destination parent is not a real directory".to_owned(),
-        });
-    }
-
-    #[cfg(unix)]
-    if !parent_existed || secure_existing_parent {
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(|source| {
-            IdentityConfigError::Io {
-                operation: "secure identity configuration directory",
-                path: parent.to_path_buf(),
-                source,
-            }
-        })?;
-    }
-    Ok(())
-}
-
-fn write_temporary_identity_config(
-    parent: &Path,
-    contents: &[u8],
-) -> Result<PathBuf, IdentityConfigError> {
-    let mut temporary = None;
-    for attempt in 0..32_u8 {
-        let candidate = parent.join(format!(
-            ".config.ini.normfix-{}-{attempt}.tmp",
-            std::process::id()
-        ));
-        let mut builder = OpenOptions::new();
-        builder.write(true).create_new(true);
-        #[cfg(unix)]
-        builder.mode(0o600);
-        match builder.open(&candidate) {
-            Ok(mut file) => {
-                if let Err(source) = file.write_all(contents) {
-                    drop(file);
-                    let _ = fs::remove_file(&candidate);
-                    return Err(IdentityConfigError::Io {
-                        operation: "write temporary identity configuration",
-                        path: candidate.clone(),
-                        source,
-                    });
-                }
-                if let Err(source) = file.sync_all() {
-                    drop(file);
-                    let _ = fs::remove_file(&candidate);
-                    return Err(IdentityConfigError::Io {
-                        operation: "synchronize temporary identity configuration",
-                        path: candidate.clone(),
-                        source,
-                    });
-                }
-                temporary = Some(candidate);
-                break;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(source) => {
-                return Err(IdentityConfigError::Io {
-                    operation: "create temporary identity configuration",
-                    path: candidate,
-                    source,
-                });
-            }
-        }
-    }
-    let temporary = temporary.ok_or_else(|| IdentityConfigError::UnsafePath {
-        path: parent.to_path_buf(),
-        reason: "could not reserve a private temporary filename".to_owned(),
-    })?;
-    Ok(temporary)
-}
-
-fn install_identity_config(
-    temporary: &Path,
-    path: &Path,
-    parent: &Path,
-) -> Result<(), IdentityConfigError> {
-    #[cfg(not(unix))]
-    let _ = parent;
-    if let Err(error) = ensure_regular_config_destination(
-        path,
-        "the destination changed before it could be replaced",
-    ) {
-        let _ = fs::remove_file(temporary);
-        return Err(error);
-    }
-    if let Err(source) = fs::rename(temporary, path) {
-        let _ = fs::remove_file(temporary);
-        return Err(IdentityConfigError::Io {
-            operation: "install identity configuration",
-            path: path.to_path_buf(),
-            source,
-        });
-    }
-    #[cfg(unix)]
-    {
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|source| {
-            IdentityConfigError::Io {
-                operation: "secure identity configuration",
-                path: path.to_path_buf(),
-                source,
-            }
-        })?;
-        File::open(parent)
-            .and_then(|directory| directory.sync_all())
-            .map_err(|source| IdentityConfigError::Io {
-                operation: "synchronize identity configuration directory",
-                path: parent.to_path_buf(),
-                source,
-            })?;
-    }
-    Ok(())
-}
-
-/// Validates and canonicalizes a supported 42 student email.
-///
-/// # Panics
-///
-/// Caller input cannot cause a panic. Initialization would panic only if the
-/// built-in regular-expression literal were invalid.
-#[must_use]
-pub fn canonical_42_email(value: &str) -> Option<String> {
-    static EMAIL: OnceLock<Regex> = OnceLock::new();
-    let regex = EMAIL.get_or_init(|| {
-        Regex::new(
-            r"(?i)^([A-Za-z0-9][A-Za-z0-9._-]*)@(42\.fr|student\.42[A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+)$",
-        )
-        .expect("42 email regex is constant")
-    });
-    let captures = regex.captures(value.trim())?;
-    Some(format!(
-        "{}@{}",
-        captures.get(1)?.as_str().to_ascii_lowercase(),
-        captures.get(2)?.as_str().to_ascii_lowercase()
-    ))
-}
-
-/// Validates one supplied email and derives its matching 42 login.
-///
-/// This pure helper is suitable for interactive terminal input: it performs no
-/// environment, filesystem or Git lookup.
-#[must_use]
-pub fn identity_from_email(
-    email: &str,
-    requested_login: Option<&str>,
-    source: &str,
-) -> IdentityResolution {
-    identity_from_candidate(email, requested_login, source, false)
-}
-
-fn identity_from_candidate(
-    email: &str,
-    requested_login: Option<&str>,
-    source: &str,
-    inferred: bool,
-) -> IdentityResolution {
-    let Some(canonical) = canonical_42_email(email) else {
-        return IdentityResolution::unavailable(
-            "IDENTITY_INVALID_EMAIL",
-            format!("{source} does not contain a valid 42 student email"),
-        );
-    };
-    let email_login = canonical
-        .split_once('@')
-        .map_or(canonical.as_str(), |(login, _)| login);
-    if requested_login.is_some_and(|login| !login.eq_ignore_ascii_case(email_login)) {
-        return IdentityResolution::unavailable(
-            "IDENTITY_LOGIN_MISMATCH",
-            format!(
-                "{source} contains {canonical}, which does not match the configured login {}",
-                requested_login.unwrap_or_default()
-            ),
-        );
-    }
-    IdentityResolution::available(Identity42 {
-        login: email_login.to_owned(),
-        email: canonical,
-        source: source.to_owned(),
-        inferred_login: inferred && requested_login.is_none(),
-        inferred_email: inferred,
-    })
-}
-
-fn select_saved_email(
-    candidates: &BTreeMap<String, BTreeSet<String>>,
-    requested_login: Option<&str>,
-) -> Option<String> {
-    if let Some(login) = requested_login {
-        let mut matches = candidates.keys().filter(|email| {
-            email
-                .split_once('@')
-                .is_some_and(|(local, _)| local.eq_ignore_ascii_case(login))
-        });
-        let selected = matches.next()?.clone();
-        return matches.next().is_none().then_some(selected);
-    }
-    (candidates.len() == 1)
-        .then(|| candidates.keys().next().cloned())
-        .flatten()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn git_config_email(cwd: &Path, timeout: Duration) -> Option<String> {
-    let mut child = Command::new("git")
-        .args(["config", "--get", "user.email"])
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-    let Some(status) = child.wait_timeout(timeout).ok()? else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return None;
-    };
-    if !status.success() {
-        return None;
-    }
-    let mut output = String::new();
-    child
-        .stdout
-        .take()?
-        .take(4096)
-        .read_to_string(&mut output)
-        .ok()?;
-    let value = output.trim();
-    (!value.is_empty()).then(|| value.to_owned())
-}
-
-#[cfg(target_arch = "wasm32")]
-fn git_config_email(_cwd: &Path, _timeout: Duration) -> Option<String> {
-    None
-}
-
-fn parse_header_ini(path: &Path) -> Option<(Option<String>, Option<String>)> {
-    let metadata = fs::metadata(path).ok()?;
-    if !metadata.is_file() || metadata.len() > SETTINGS_SIZE_LIMIT {
-        return None;
-    }
-    let content = fs::read_to_string(path).ok()?;
-    let mut section = None::<String>;
-    let mut seen_sections = BTreeSet::new();
-    let mut seen_options = BTreeSet::new();
-    let mut header_seen = false;
-    let mut default_login = None;
-    let mut default_email = None;
-    let mut header_login = None;
-    let mut header_email = None;
-    for (index, raw) in content.lines().enumerate() {
-        let line = if index == 0 {
-            raw.trim_start_matches('\u{feff}').trim()
-        } else {
-            raw.trim()
-        };
-        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
-            continue;
-        }
-        if line.starts_with('[') {
-            let close = line.find(']')?;
-            let trailing = line[close + 1..].trim();
-            if !trailing.is_empty() && !trailing.starts_with('#') && !trailing.starts_with(';') {
-                return None;
-            }
-            let name = line[1..close].trim();
-            if name.is_empty() {
-                return None;
-            }
-            let canonical = name.to_ascii_lowercase();
-            if !seen_sections.insert(canonical.clone()) {
-                return None;
-            }
-            header_seen |= canonical == "header";
-            section = Some(canonical);
-            continue;
-        }
-        let current_section = section.as_deref()?;
-        let separator = line.find(['=', ':'])?;
-        let key = line[..separator].trim().to_ascii_lowercase();
-        let value = line[separator + 1..].trim();
-        if key.is_empty() || !seen_options.insert((current_section.to_owned(), key.clone())) {
-            return None;
-        }
-        let target = match (current_section, key.as_str()) {
-            ("default", "login") => Some(&mut default_login),
-            ("default", "email") => Some(&mut default_email),
-            ("header", "login") => Some(&mut header_login),
-            ("header", "email") => Some(&mut header_email),
-            _ => None,
-        };
-        if let Some(target) = target {
-            *target = (!value.is_empty()).then(|| value.to_owned());
-        }
-    }
-    header_seen.then(|| {
-        (
-            header_login.or(default_login),
-            header_email.or(default_email),
-        )
-    })
-}
-
-fn expand_home(value: &str, home: Option<&Path>) -> PathBuf {
-    if value == "~" {
-        return home.map_or_else(|| PathBuf::from(value), Path::to_path_buf);
-    }
-    let remainder = value
-        .strip_prefix("~/")
-        .or_else(|| value.strip_prefix("~\\"));
-    if let (Some(remainder), Some(home)) = (remainder, home) {
-        return home.join(remainder);
-    }
-    PathBuf::from(value)
-}
-
-fn editor_locations(home: &Path) -> Vec<(PathBuf, &'static str, &'static str)> {
-    let vim = r#"\bg:mail42\s*=\s*['"]([^'"]+)['"]"#;
-    let lua = r#"\bvim\.g\.mail42\s*=\s*['"]([^'"]+)['"]"#;
-    let shell = r#"(?m)^[ \t]*(?:export[ \t]+)?MAIL\s*=\s*['"]?([^'"\s#]+)"#;
-    let json = r#""42header\.email"\s*:\s*"([^"]+)""#;
-    vec![
-        (home.join(".vimrc"), vim, "Vim settings"),
-        (home.join(".config/nvim/init.vim"), vim, "Neovim settings"),
-        (home.join(".config/nvim/init.lua"), lua, "Neovim settings"),
-        (home.join(".zshrc"), shell, "shell settings"),
-        (home.join(".zprofile"), shell, "shell settings"),
-        (home.join(".bashrc"), shell, "shell settings"),
-        (home.join(".bash_profile"), shell, "shell settings"),
-        (
-            home.join("Library/Application Support/Code/User/settings.json"),
-            json,
-            "VS Code settings",
-        ),
-        (
-            home.join("Library/Application Support/Cursor/User/settings.json"),
-            json,
-            "Cursor settings",
-        ),
-        (
-            home.join(".config/Code/User/settings.json"),
-            json,
-            "VS Code settings",
-        ),
-        (
-            home.join(".config/VSCodium/User/settings.json"),
-            json,
-            "VSCodium settings",
-        ),
-        (
-            home.join(".config/Cursor/User/settings.json"),
-            json,
-            "Cursor settings",
-        ),
-    ]
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    #[cfg(unix)]
-    use std::os::unix::fs::{PermissionsExt as _, symlink};
-
-    use tempfile::TempDir;
-
-    use super::{IdentityResolver, canonical_42_email, identity_from_email, persist_identity_at};
-
-    fn identity() -> super::Identity42 {
-        identity_from_email("student-a@student.42.fr", Some("student-a"), "test")
-            .identity
-            .expect("valid identity")
-    }
-
-    #[test]
-    fn validates_supported_campus_domains_and_canonicalizes_case() {
-        assert_eq!(
-            canonical_42_email("Student-A@Student.42Berlin.DE"),
-            Some("student-a@student.42berlin.de".to_owned())
-        );
-        assert!(canonical_42_email("student@example.com").is_none());
-        assert!(canonical_42_email("bad%login@student.42.fr").is_none());
-    }
-
-    #[test]
-    fn explicit_email_has_precedence_and_must_match_explicit_login() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMFIX_EMAIL", "env@student.42.fr");
-        let resolution = resolver.resolve(Some("cli"), Some("cli@student.42.fr"), temporary.path());
-        let identity = resolution.identity.expect("valid identity");
-        assert_eq!(identity.login, "cli");
-        assert!(!identity.inferred());
-    }
-
-    #[test]
-    fn invalid_explicit_email_never_falls_through_to_a_lower_precedence_source() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMFIX_EMAIL", "valid@student.42.fr");
-        let resolution = resolver.resolve(None, Some("not-a-42-address"), temporary.path());
-        assert!(!resolution.is_available());
-        assert_eq!(
-            resolution.issue.expect("invalid email issue").code,
-            "IDENTITY_INVALID_EMAIL"
-        );
-    }
-
-    #[test]
-    fn config_precedes_editor_settings() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let config = temporary.path().join("config.ini");
-        fs::write(
-            &config,
-            "[header]\nlogin = configured\nemail = configured@student.42.fr\n",
-        )
-        .expect("config");
-        fs::write(
-            temporary.path().join(".vimrc"),
-            "let g:mail42 = 'editor@student.42.fr'\n",
-        )
-        .expect("vimrc");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMFIX_CONFIG", config.to_string_lossy());
-
-        let resolution = resolver.resolve(None, None, temporary.path());
-
-        assert_eq!(
-            resolution.identity.expect("configured identity").login,
-            "configured"
-        );
-    }
-
-    #[test]
-    fn ambiguous_duplicate_config_values_are_rejected_as_a_unit() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let config = temporary.path().join("config.ini");
-        fs::write(
-            &config,
-            concat!(
-                "[header]\n",
-                "email = first@student.42.fr\n",
-                "email = second@student.42.fr\n"
-            ),
-        )
-        .expect("config");
-        fs::write(
-            temporary.path().join(".vimrc"),
-            "let g:mail42 = 'editor@student.42.fr'\n",
-        )
-        .expect("vimrc");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMFIX_CONFIG", config.to_string_lossy());
-
-        let resolution = resolver.resolve(None, None, temporary.path());
-
-        assert_eq!(
-            resolution
-                .identity
-                .expect("unambiguous editor identity")
-                .email,
-            "editor@student.42.fr"
-        );
-    }
-
-    #[test]
-    fn canonical_environment_has_precedence_over_legacy_aliases() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMFIX_LOGIN", "canonical")
-            .with_environment("NORMFIX_EMAIL", "canonical@student.42.fr")
-            .with_environment("NORMINETTE_FIX_LOGIN", "legacy")
-            .with_environment("NORMINETTE_FIX_EMAIL", "legacy@student.42.fr");
-
-        let resolution = resolver.resolve(None, None, temporary.path());
-
-        let identity = resolution.identity.expect("canonical environment");
-        assert_eq!(identity.login, "canonical");
-        assert_eq!(identity.email, "canonical@student.42.fr");
-    }
-
-    #[test]
-    fn legacy_environment_aliases_remain_supported() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMINETTE_FIX_LOGIN", "legacy")
-            .with_environment("NORMINETTE_FIX_EMAIL", "legacy@student.42.fr");
-
-        let resolution = resolver.resolve(None, None, temporary.path());
-
-        let identity = resolution.identity.expect("legacy environment");
-        assert_eq!(identity.login, "legacy");
-        assert_eq!(identity.email, "legacy@student.42.fr");
-    }
-
-    #[test]
-    fn default_config_prefers_normfix_and_falls_back_to_the_legacy_directory() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let config_base = temporary.path().join("config");
-        let legacy = config_base.join("norminette-fix/config.ini");
-        fs::create_dir_all(legacy.parent().expect("legacy config parent"))
-            .expect("legacy config directory");
-        fs::write(
-            &legacy,
-            "[header]\nlogin = legacy\nemail = legacy@student.42.fr\n",
-        )
-        .expect("legacy config");
-        let legacy_resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("XDG_CONFIG_HOME", config_base.to_string_lossy());
-
-        let legacy_identity = legacy_resolver
-            .resolve(None, None, temporary.path())
-            .identity
-            .expect("legacy default config");
-        assert_eq!(legacy_identity.login, "legacy");
-
-        let canonical = config_base.join("normfix/config.ini");
-        fs::create_dir_all(canonical.parent().expect("canonical config parent"))
-            .expect("canonical config directory");
-        fs::write(
-            canonical,
-            "[header]\nlogin = canonical\nemail = canonical@student.42.fr\n",
-        )
-        .expect("canonical config");
-
-        let canonical_identity = legacy_resolver
-            .resolve(None, None, temporary.path())
-            .identity
-            .expect("canonical default config");
-        assert_eq!(canonical_identity.login, "canonical");
-    }
-
-    #[test]
-    fn persisted_identity_is_resolved_on_the_next_run() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let config = temporary.path().join("normfix/config.ini");
-
-        persist_identity_at(&identity(), &config).expect("persist identity");
-
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("NORMFIX_CONFIG", config.to_string_lossy());
-        let result = resolver.resolve(None, None, temporary.path());
-        assert_eq!(
-            result.identity.expect("saved identity").email,
-            "student-a@student.42.fr"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn persisted_identity_uses_owner_only_permissions() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let config = temporary.path().join("normfix/config.ini");
-
-        persist_identity_at(&identity(), &config).expect("persist identity");
-
-        let file_mode = fs::metadata(&config)
-            .expect("config metadata")
-            .permissions()
-            .mode();
-        let directory_mode = fs::metadata(config.parent().expect("config parent"))
-            .expect("directory metadata")
-            .permissions()
-            .mode();
-        assert_eq!(file_mode & 0o777, 0o600);
-        assert_eq!(directory_mode & 0o777, 0o700);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn explicit_config_does_not_change_permissions_of_a_shared_parent() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let shared = temporary.path().join("shared");
-        fs::create_dir(&shared).expect("shared parent");
-        fs::set_permissions(&shared, fs::Permissions::from_mode(0o755))
-            .expect("shared permissions");
-        let config = shared.join("identity.ini");
-
-        super::persist_identity_with_directory_policy(&identity(), &config, false)
-            .expect("persist explicit config");
-
-        let directory_mode = fs::metadata(shared)
-            .expect("directory metadata")
-            .permissions()
-            .mode();
-        assert_eq!(directory_mode & 0o777, 0o755);
-        assert_eq!(
-            fs::metadata(config)
-                .expect("config metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn persistence_refuses_a_symbolic_link_destination() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let outside = temporary.path().join("outside.ini");
-        let config = temporary.path().join("config.ini");
-        fs::write(&outside, "untouched\n").expect("outside file");
-        symlink(&outside, &config).expect("config symlink");
-
-        let error = persist_identity_at(&identity(), &config).expect_err("must reject symlink");
-
-        assert!(error.to_string().contains("not a regular file"));
-        assert_eq!(
-            fs::read_to_string(outside).expect("outside contents"),
-            "untouched\n"
-        );
-    }
-
-    #[test]
-    fn ambiguous_editor_emails_are_never_guessed() {
-        let temporary = TempDir::new().expect("temporary directory");
-        fs::write(
-            temporary.path().join(".vimrc"),
-            "let g:mail42 = 'first@student.42.fr'\n",
-        )
-        .expect("vimrc");
-        let settings = temporary
-            .path()
-            .join("Library/Application Support/Code/User/settings.json");
-        fs::create_dir_all(settings.parent().expect("settings parent")).expect("settings dir");
-        fs::write(settings, r#"{"42header.email":"second@student.42.fr"}"#).expect("settings");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()));
-
-        let resolution = resolver.resolve(None, None, temporary.path());
-
-        assert!(!resolution.is_available());
-        assert!(resolution.source.contains("multiple 42 student emails"));
-    }
-
-    #[test]
-    fn requested_login_selects_one_of_multiple_saved_emails() {
-        let temporary = TempDir::new().expect("temporary directory");
-        fs::write(
-            temporary.path().join(".vimrc"),
-            "let g:mail42 = 'first@student.42.fr'\n",
-        )
-        .expect("vimrc");
-        let settings = temporary
-            .path()
-            .join("Library/Application Support/Code/User/settings.json");
-        fs::create_dir_all(settings.parent().expect("settings parent")).expect("settings dir");
-        fs::write(settings, r#"{"42header.email":"second@student.42.fr"}"#).expect("settings");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()));
-
-        let resolution = resolver.resolve(Some("second"), None, temporary.path());
-
-        assert_eq!(
-            resolution.identity.expect("matched identity").email,
-            "second@student.42.fr"
-        );
-    }
-
-    #[test]
-    fn injected_home_and_lossy_editor_read_are_supported() {
-        let temporary = TempDir::new().expect("temporary directory");
-        let mut vimrc = b"let g:mail42 = 'lossy@student.42.fr'\n".to_vec();
-        vimrc.extend_from_slice(&[0xff, b'\n']);
-        fs::write(temporary.path().join(".vimrc"), vimrc).expect("vimrc");
-        let resolver = IdentityResolver::isolated(None)
-            .with_environment("HOME", temporary.path().to_string_lossy());
-
-        let resolution = resolver.resolve(None, None, temporary.path());
-
-        assert_eq!(
-            resolution.identity.expect("editor identity").email,
-            "lossy@student.42.fr"
-        );
-    }
-
-    #[test]
-    fn mail_environment_precedes_saved_editor_settings() {
-        let temporary = TempDir::new().expect("temporary directory");
-        fs::write(
-            temporary.path().join(".vimrc"),
-            "let g:mail42 = 'editor@student.42.fr'\n",
-        )
-        .expect("vimrc");
-        let resolver = IdentityResolver::isolated(Some(temporary.path().to_path_buf()))
-            .with_environment("MAIL", "mail@student.42.fr");
-
-        let resolution = resolver.resolve(None, None, temporary.path());
-
-        let identity = resolution.identity.expect("MAIL identity");
-        assert_eq!(identity.email, "mail@student.42.fr");
-        assert_eq!(identity.source, "MAIL environment variable");
-    }
-}
+mod tests;
