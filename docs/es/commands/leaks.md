@@ -94,9 +94,11 @@ normfix leaks --force ./libft_test
 | Sistema | Cómo |
 |---|---|
 | Linux, FreeBSD | Valgrind, desde el gestor de paquetes |
-| macOS | [`LouisBrunner/valgrind-macos`](https://github.com/LouisBrunner/valgrind-macos), ya que Valgrind oficial no compila en macOS. Su soporte para Apple Silicon es limitado |
+| macOS | Usa un entorno Linux o WSL en otra máquina. Los ports comunitarios nativos no se aceptan como backend de resultado limpio porque una prueba real mostró que uno podía omitir una fuga C conocida |
 | Windows | Ejecuta normfix dentro de [WSL](https://learn.microsoft.com/windows/wsl/install), donde el verificador de Linux funciona con normalidad |
 
-normfix localiza `valgrind` en el `PATH` y lo verifica con su propio
-`--version`, así que cualquier compilación funcional le sirve. Cuando no
-encuentra ninguno, lo dice y nombra la ruta para el sistema en el que estás.
+normfix localiza un `valgrind` compatible en el `PATH`, verifica su identidad y
+exige un informe completo que pueda interpretar. Los ports comunitarios nativos
+de macOS fallan de forma cerrada en vez de declarar una ejecución limpia. Cuando
+no encuentra un verificador compatible, normfix lo indica y muestra la ruta
+admitida para ese sistema.

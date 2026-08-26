@@ -156,8 +156,9 @@ un détecteur de fuites localisé dans le `PATH` et vérifié par son propre
 `--version`. Ce qu’elle rapporte est ce qu’une exécution a observé sur un
 chemin, jamais une preuve qu’un programme ne fuit pas, et une sortie qu’elle ne
 peut pas lire comme un résumé de fuites est une erreur, pas un résultat propre.
-Valgrind couvre Linux et FreeBSD directement, macOS via un port communautaire à
-la prise en charge limitée d’Apple Silicon, et Windows via WSL.
+Valgrind couvre Linux et FreeBSD directement et Windows via WSL. Les ports
+communautaires natifs de macOS sont refusés pour les résultats propres après
+qu’un test réel a montré que l’un d’eux pouvait manquer une fuite C connue.
 
 ## Compatibilité navigateur
 

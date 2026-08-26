@@ -26,16 +26,16 @@ Chaque limite ci-dessous est délibérée. Les lire est le moyen le plus rapide 
   fichiers n'offre pas un renommage atomique unique couvrant plusieurs fichiers ;
   la restauration est la stratégie d'échec inter-fichiers.
 
-## Analyseurs qui ne sont pas intégrés
+## Analyseurs que preflight n’exécute pas
 
 `--analyzer` utilise ce que le compilateur fournit déjà : `-fanalyzer` sur GCC,
 l'analyseur statique de Clang sinon. Les autres outils vous sont délibérément
-laissés, car chacun demande une compilation ou une exécution que `normfix`
+laissés, car chacun demande une compilation ou une exécution que preflight
 refuse d'effectuer :
 
 | Outil | Pourquoi il n'est pas exécuté |
 |---|---|
-| `valgrind`, `leaks` | Outils d'exécution. Ils demandent un binaire lié et une charge de travail, et `normfix` ne compile ni n'exécute jamais votre programme. |
+| `valgrind`, `leaks` | Outils d'exécution. Ils demandent un binaire lié et une charge de travail. La commande séparée et explicite [`normfix leaks`](/fr/commands/leaks) exécute le binaire indiqué ; preflight ne le fait jamais. |
 | [AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html), [LeakSanitizer](https://clang.llvm.org/docs/LeakSanitizer.html), UBSan | Compilations instrumentées, pour la même raison. `preflight` donne une recette séparée de compilation de débogage sans modifier le Makefile rendu. |
 | [clang-tidy](https://clang.llvm.org/extra/clang-tidy/index.html) | Il lui faut la vraie base de compilation du projet, les chemins d'includes, les définitions et les options de cible. `preflight` indique s'il est disponible, mais ne devine pas une commande. |
 | `cppcheck`, `scan-build` | Installations séparées avec leur propre configuration de projet ; les intégrer reviendrait à deviner votre compilation. |

@@ -154,9 +154,10 @@ compila uno: ejecuta un binario al que se le apunta, bajo un verificador de
 fugas localizado en el `PATH` y verificado con su propio `--version`. Lo que
 informa es lo que observó una ejecución en un camino, nunca una prueba de que el
 programa no tenga fugas, y una salida que no puede leer como resumen de fugas es
-un error, no un resultado limpio. Valgrind cubre Linux y FreeBSD directamente,
-macOS mediante un port de la comunidad con soporte limitado para Apple Silicon,
-y Windows a través de WSL.
+un error, no un resultado limpio. Valgrind cubre Linux y FreeBSD directamente y
+Windows a través de WSL. Los ports comunitarios nativos de macOS se rechazan
+para resultados limpios después de que una prueba real mostrara que uno podía
+omitir una fuga C conocida.
 
 ## Compatibilidad con navegadores
 

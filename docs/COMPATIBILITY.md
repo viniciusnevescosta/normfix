@@ -140,8 +140,9 @@ builds one — it runs a binary it is pointed at, under a leak checker located o
 `PATH` and verified by its own `--version`. What it reports is what one run
 observed on one path, never a proof that a program does not leak, and output it
 cannot read as a leak summary is an error rather than a clean result. Valgrind
-covers Linux and FreeBSD directly, macOS through a community port with limited
-Apple Silicon support, and Windows through WSL.
+covers Linux and FreeBSD directly and Windows through WSL. Native macOS
+community ports are rejected for clean-result reporting after a real smoke test
+showed that one could miss a known C leak.
 
 ## Browser compatibility
 

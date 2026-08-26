@@ -149,8 +149,9 @@ de vazamentos localizado no `PATH` e verificado pelo próprio `--version`. O que
 ele relata é o que uma execução observou em um caminho, nunca prova de que o
 programa não vaza, e uma saída que ele não consegue ler como sumário de
 vazamentos é erro, não resultado limpo. O Valgrind cobre Linux e FreeBSD
-diretamente, o macOS por um port da comunidade com suporte limitado a Apple
-Silicon, e o Windows pelo WSL.
+diretamente e o Windows pelo WSL. Ports comunitários nativos do macOS são
+recusados para resultados limpos depois que um teste real mostrou que um deles
+podia deixar passar um leak C conhecido.
 
 ## Compatibilidade com navegadores
 

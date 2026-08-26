@@ -20,15 +20,15 @@ Every limit below is deliberate. Reading them is the fastest way to understand w
   provide a single atomic rename spanning multiple files; rollback is the
   cross-file failure strategy.
 
-## Analyzers that are not wired in
+## Analyzers that preflight does not run
 
 `--analyzer` uses what the compiler already ships: `-fanalyzer` on GCC, the
 Clang static analyzer otherwise. Other tools are deliberately left to you,
-because each needs a build or a run that `normfix` refuses to perform:
+because each needs a build or a run that preflight refuses to perform:
 
 | Tool | Why it is not run |
 |---|---|
-| `valgrind`, `leaks` | Runtime tools. They need a linked binary and a workload, and `normfix` never builds or executes your program. |
+| `valgrind`, `leaks` | Runtime tools. They need a linked binary and a workload. The separate, explicit [`normfix leaks`](/commands/leaks) command executes the binary you name; preflight never does. |
 | [AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html), [LeakSanitizer](https://clang.llvm.org/docs/LeakSanitizer.html), UBSan | Instrumented builds, for the same reason. `preflight` gives a separate debug-build recipe without changing the submitted Makefile. |
 | [clang-tidy](https://clang.llvm.org/extra/clang-tidy/index.html) | It needs the project's real compilation database, include paths, defines, and target flags. `preflight` reports whether it is available, but does not guess a command. |
 | `cppcheck`, `scan-build` | Separate installs with their own project configuration; wiring them would mean guessing your build. |

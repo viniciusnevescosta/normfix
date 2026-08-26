@@ -96,12 +96,13 @@ normfix leaks --force ./libft_test
 | System | How |
 |---|---|
 | Linux, FreeBSD | Valgrind, from your package manager |
-| macOS | [`LouisBrunner/valgrind-macos`](https://github.com/LouisBrunner/valgrind-macos), since upstream Valgrind does not build for macOS. Its Apple Silicon support is limited |
+| macOS | Use a Linux environment or WSL on another machine. Native community ports are not accepted as a clean-result backend because a real smoke test found one could miss a known C leak |
 | Windows | Run normfix inside [WSL](https://learn.microsoft.com/windows/wsl/install), where the Linux checker works normally |
 
-normfix locates `valgrind` on `PATH` and verifies it by its own `--version`, so
-any working build satisfies it. When none is found, it says so and names the
-route for the system you are on.
+normfix locates a compatible `valgrind` on `PATH`, verifies its identity, and
+requires a complete machine-readable report. Native macOS community ports fail
+closed instead of claiming a clean run. When no supported checker is found,
+normfix says so and names the supported route for that system.
 ## Reading it from a script
 
 Every field this command returns is documented in [the JSON API](/reference/api).
