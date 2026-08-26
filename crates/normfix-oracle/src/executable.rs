@@ -1,4 +1,3 @@
-#[cfg(not(windows))]
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fs;
