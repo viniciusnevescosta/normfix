@@ -75,11 +75,17 @@ scoop bucket add normfix https://github.com/viniciusnevescosta/normfix
 scoop install normfix
 ```
 
-Once installed, keep it current with:
+For a direct installer/source install on Linux, macOS, or FreeBSD, keep it
+current with:
 
 ```sh
 normfix upgrade
 ```
+
+Package-manager installs stay owned by their manager: use
+`brew upgrade viniciusnevescosta/normfix/normfix` or `scoop update normfix`.
+On a direct Windows install, `normfix upgrade --check` checks the channel;
+rerun the verified installer to replace the executable after the process exits.
 
 You can also download the archive directly from the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases), or

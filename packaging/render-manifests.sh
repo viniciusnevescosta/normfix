@@ -31,6 +31,17 @@ sums="$2"
 output="$3"
 repository="https://github.com/viniciusnevescosta/normfix"
 
+if ! awk -v version="$version" 'BEGIN {
+	identifier = "[0-9A-Za-z-]+"
+	core = "(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"
+	prerelease = "(-" identifier "(\\." identifier ")*)?"
+	build = "(\\+" identifier "(\\." identifier ")*)?"
+	exit(version ~ ("^" core prerelease build "$") ? 0 : 1)
+}'; then
+	echo "$0: invalid semantic version \`$version\`" >&2
+	exit 1
+fi
+
 if [ ! -r "$sums" ]; then
 	echo "$0: cannot read checksum manifest \`$sums\`" >&2
 	exit 1
@@ -40,11 +51,26 @@ mkdir -p "$output/Formula" "$output/bucket"
 # Reads one archive's checksum, and refuses to continue without it.
 checksum() {
 	archive="$1"
-	value=$(awk -v name="$archive" '$2 == name || $2 == "*" name { print $1 }' "$sums")
-	if [ -z "$value" ]; then
-		echo "$0: \`$sums\` has no checksum for \`$archive\`" >&2
+	if ! value=$(awk -v name="$archive" '
+		$2 == name || $2 == "*" name { value = $1; count++ }
+		END {
+			if (count != 1) exit 1
+			print value
+		}
+	' "$sums"); then
+		echo "$0: \`$sums\` must contain exactly one checksum for \`$archive\`" >&2
 		exit 1
 	fi
+	if [ "${#value}" -ne 64 ]; then
+		echo "$0: \`$sums\` has an invalid checksum for \`$archive\`" >&2
+		exit 1
+	fi
+	case "$value" in
+		*[!0-9A-Fa-f]*)
+			echo "$0: \`$sums\` has an invalid checksum for \`$archive\`" >&2
+			exit 1
+			;;
+	esac
 	printf '%s' "$value"
 }
 

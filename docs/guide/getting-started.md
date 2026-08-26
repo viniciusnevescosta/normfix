@@ -156,11 +156,17 @@ NORMFIX_VERSION=v1.9.0 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh
 NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
 
-`NORMFIX_VERSION` is taken literally: that tag is downloaded, with no channel
-selection. Without it, you get the newest stable release — or, if none has been
+`NORMFIX_VERSION` selects that exact tag, with no channel selection, after
+strict Semantic Version validation. Without it, you get the newest stable release — or, if none has been
 published yet, the newest pre-release, so a release candidate stays installable.
 
-If a checksum does not match, the install stops and prints both values.
+If a checksum is missing, duplicated, malformed, or does not match, the install
+stops before extraction. The final copy uses an atomic rename, so interruption
+cannot leave half a binary on `PATH`.
+
+On Windows, a running `.exe` cannot replace itself. `normfix upgrade --check`
+still checks the release channel; rerun this installer to apply a direct-install
+update, or use `scoop update normfix` when Scoop owns it.
 
 ### Building from source
 

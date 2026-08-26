@@ -15,7 +15,6 @@
 set -eu
 
 REPO="viniciusnevescosta/normfix"
-BIN_DIR="${NORMFIX_BIN_DIR:-$HOME/.local/bin}"
 
 die() {
     printf 'normfix install: %s\n' "$1" >&2
@@ -26,6 +25,14 @@ note() {
     printf '%s\n' "$1"
 }
 
+if [ -n "${NORMFIX_BIN_DIR:-}" ]; then
+    BIN_DIR="$NORMFIX_BIN_DIR"
+elif [ -n "${HOME:-}" ]; then
+    BIN_DIR="$HOME/.local/bin"
+else
+    die "HOME is not set; set NORMFIX_BIN_DIR to the directory that should receive normfix"
+fi
+
 need() {
     command -v "$1" >/dev/null 2>&1 || die "this installer needs $1 on PATH"
 }
@@ -35,11 +42,17 @@ need tar
 need mkdir
 need install
 need mktemp
+need mv
+need awk
+need sed
 
 if command -v curl >/dev/null 2>&1; then
-    fetch_to() { curl -fsSL "$1" -o "$2"; }
+    fetch_to() {
+        curl -fsSL --proto '=https' --tlsv1.2 --connect-timeout 10 \
+            --max-time 120 --max-filesize 134217728 "$1" -o "$2"
+    }
 elif command -v wget >/dev/null 2>&1; then
-    fetch_to() { wget -qO "$2" "$1"; }
+    fetch_to() { wget -q --timeout=120 --tries=1 -O "$2" "$1"; }
 else
     die "this installer needs curl or wget on PATH"
 fi
@@ -78,7 +91,72 @@ case "$os:$arch" in
 esac
 
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT INT TERM
+install_stage=""
+trap 'rm -rf "$work"; [ -z "$install_stage" ] || rm -f "$install_stage"' EXIT INT TERM
+
+valid_version() {
+    awk -v version="$1" 'BEGIN {
+        identifier = "[0-9A-Za-z-]+"
+        core = "(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"
+        prerelease = "(-" identifier "(\\." identifier ")*)?"
+        build = "(\\+" identifier "(\\." identifier ")*)?"
+        if (version !~ ("^v" core prerelease build "$")) {
+            exit 1
+        }
+        candidate = substr(version, 2)
+        plus = index(candidate, "+")
+        if (plus > 0) {
+            candidate = substr(candidate, 1, plus - 1)
+        }
+        dash = index(candidate, "-")
+        if (dash == 0) {
+            exit 0
+        }
+        count = split(substr(candidate, dash + 1), identifiers, ".")
+        for (position = 1; position <= count; position++) {
+            if (identifiers[position] ~ /^0[0-9]+$/) {
+                exit 1
+            }
+        }
+        exit 0
+    }'
+}
+
+# Emit `tag_name|prerelease` for complete published release records. GitHub's
+# JSON is trusted metadata, but malformed, draft, and partial records must not
+# become executable download paths. Token scanning works for both its pretty
+# response and the compact fixtures below without requiring jq or Python.
+published_releases() {
+    awk '
+        function value(token) {
+            sub(/^[^:]*:[[:space:]]*/, "", token)
+            gsub(/^"|"$/, "", token)
+            return token
+        }
+        {
+            rest = $0
+            while (match(rest, /"(tag_name|draft|prerelease)"[[:space:]]*:[[:space:]]*("[^"]*"|true|false)/)) {
+                token = substr(rest, RSTART, RLENGTH)
+                if (token ~ /^"tag_name"/) {
+                    tag = value(token)
+                    draft = ""
+                    preview = ""
+                } else if (token ~ /^"draft"/) {
+                    draft = value(token)
+                } else {
+                    preview = value(token)
+                    if (tag != "" && draft == "false" && (preview == "true" || preview == "false")) {
+                        print tag "|" preview
+                    }
+                    tag = ""
+                    draft = ""
+                    preview = ""
+                }
+                rest = substr(rest, RSTART + RLENGTH)
+            }
+        }
+    ' "$1"
+}
 
 version="${NORMFIX_VERSION:-}"
 if [ -z "$version" ]; then
@@ -110,32 +188,17 @@ if [ -z "$version" ]; then
         fetch_to "https://api.github.com/repos/$REPO/releases?per_page=100" "$releases" 2>/dev/null ||
             die "could not determine the newest release; set NORMFIX_VERSION=vX.Y.Z"
         first_published=""
-        while IFS= read -r candidate; do
+        while IFS='|' read -r candidate candidate_preview; do
             [ -n "$candidate" ] || continue
             if [ -z "$first_published" ]; then
                 first_published="$candidate"
             fi
-            without_build="${candidate%%+*}"
-            case "$without_build" in
-                *-*) ;;
-                *)
-                    version="$candidate"
-                    break
-                    ;;
-            esac
+            if [ "$candidate_preview" = "false" ]; then
+                version="$candidate"
+                break
+            fi
         done <<EOF
-$(awk '
-    {
-        rest = $0
-        while (match(rest, /"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
-            token = substr(rest, RSTART, RLENGTH)
-            sub(/^"tag_name"[[:space:]]*:[[:space:]]*"/, "", token)
-            sub(/"$/, "", token)
-            print token
-            rest = substr(rest, RSTART + RLENGTH)
-        }
-    }
-' "$releases")
+$(published_releases "$releases")
 EOF
         if [ -z "$version" ]; then
             version="$first_published"
@@ -143,6 +206,8 @@ EOF
     fi
 fi
 [ -n "$version" ] || die "could not determine the newest release; set NORMFIX_VERSION=vX.Y.Z"
+valid_version "$version" ||
+    die "invalid release tag '$version'; expected vMAJOR.MINOR.PATCH with optional SemVer prerelease/build identifiers"
 
 base="https://github.com/$REPO/releases/download/$version"
 
@@ -191,9 +256,13 @@ esac
 binary=normfix
 [ -f "$work/normfix.exe" ] && binary=normfix.exe
 [ -f "$work/$binary" ] || die "the archive did not contain a normfix binary"
+[ ! -L "$work/$binary" ] || die "the archive contained a symbolic link instead of a normfix binary"
 
 mkdir -p "$BIN_DIR"
-install -m 0755 "$work/$binary" "$BIN_DIR/$binary"
+install_stage="$(mktemp "$BIN_DIR/.normfix-install.XXXXXX")"
+install -m 0755 "$work/$binary" "$install_stage"
+mv -f "$install_stage" "$BIN_DIR/$binary"
+install_stage=""
 note "installed $BIN_DIR/$binary"
 
 case ":$PATH:" in

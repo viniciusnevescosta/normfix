@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Show pinned Rust toolchain
         run: rustup show active-toolchain
       - name: Check formatting
@@ -60,7 +60,7 @@ jobs:
     # next change reintroduces one silently.
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Show pinned Rust toolchain
         run: rustup show active-toolchain
       - name: Build the workspace
@@ -106,7 +106,7 @@ jobs:
       # correctly there — argument passing, exit codes, output decoding — is the
       # evidence the compatibility policy needs before it can claim Windows.
       - name: Install Python for the official checker
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
       - name: Install exact official Norminette
@@ -122,13 +122,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # GitHub has no FreeBSD runner, so the suite runs in a virtual machine on
       # this one. Without it the platform would be cross-compiled and never
       # executed, which is the difference between shipping a binary and
       # supporting a system.
       - name: Run the suite on FreeBSD
-        uses: vmactions/freebsd-vm@v1
+        uses: vmactions/freebsd-vm@f0552d3b69211736abd97f02ff3d4674c56b73b1 # v1
         with:
           release: "14.2"
           usesh: true
@@ -161,9 +161,9 @@ jobs:
     continue-on-error: true
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@fcf5432d9f50d67e37ee6e29bdb7a224ff67b4a7 # v2
         with:
           tool: cargo-llvm-cov
       - name: Measure coverage
@@ -178,11 +178,11 @@ jobs:
     continue-on-error: true
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Measure the native action pipeline
         run: cargo bench -p normfix-c-actions --locked -- --output-format bencher | tee bench.txt
       - name: Upload measurements
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: benchmarks
           path: bench.txt
@@ -195,15 +195,19 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@fcf5432d9f50d67e37ee6e29bdb7a224ff67b4a7 # v2
         with:
           tool: cargo-deny
       - name: Check dependencies
         run: cargo deny --all-features check
+      - name: Test installer and package manifests
+        run: |
+          sh web/tests/install.sh
+          sh packaging/test-render-manifests.sh
       - name: Install supported Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
           cache: npm
@@ -219,7 +223,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install declared MSRV
         run: rustup toolchain install 1.85.0 --profile minimal
       - name: Test workspace with MSRV
@@ -237,11 +241,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Run all tests
         run: cargo test --workspace --all-targets --locked
       - name: Install Python for the official checker
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
       - name: Install exact official Norminette
@@ -258,9 +262,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
       - name: Install exact official Norminette

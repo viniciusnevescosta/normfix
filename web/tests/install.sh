@@ -2,7 +2,7 @@
 
 set -eu
 
-root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+root="$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)"
 installer="$root/web/public/install.sh"
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT INT TERM
@@ -81,7 +81,7 @@ assert_contains() {
     expected="$1"
     file="$2"
     if ! grep -Fq "$expected" "$file"; then
-        printf 'expected `%s` in %s:\n' "$expected" "$file" >&2
+        printf 'expected "%s" in %s:\n' "$expected" "$file" >&2
         sed 's/^/  /' "$file" >&2
         exit 1
     fi
@@ -124,7 +124,7 @@ run_install preview_fallback fail '' "$preview_json" ""
 assert_contains 'normfix v1.1.0-rc.1 for Linux x86_64' "$temporary/preview_fallback/output"
 assert_contains '/releases?per_page=100' "$temporary/preview_fallback/requests"
 
-mixed_json='[{"tag_name":"v1.1.0-rc.1","prerelease":true},{"tag_name":"v1.0.0","prerelease":false}]'
+mixed_json='[{"tag_name":"v1.1.0-rc.1","draft":false,"prerelease":true},{"tag_name":"v1.0.0","draft":false,"prerelease":false}]'
 run_install stable_fallback fail '' "$mixed_json" ""
 assert_contains 'normfix v1.0.0 for Linux x86_64' "$temporary/stable_fallback/output"
 
@@ -136,6 +136,31 @@ run_install exact fail '' '[]' 'v9.9.9-rc.9'
 assert_contains 'normfix v9.9.9-rc.9 for Linux x86_64' "$temporary/exact/output"
 if grep -Fq '/api.github.com/' "$temporary/exact/requests"; then
     printf '%s\n' 'exact install unexpectedly consulted an update channel' >&2
+    exit 1
+fi
+
+draft_then_preview='[{"tag_name":"v2.0.0","draft":true,"prerelease":false},{"tag_name":"v1.2.0-rc.1","draft":false,"prerelease":true}]'
+run_install skip_draft fail '' "$draft_then_preview" ""
+assert_contains 'normfix v1.2.0-rc.1 for Linux x86_64' "$temporary/skip_draft/output"
+
+invalid_dir="$temporary/invalid_version"
+mkdir -p "$invalid_dir/bin"
+if env \
+    HOME="$invalid_dir/home" \
+    PATH="$tools:$PATH" \
+    NORMFIX_BIN_DIR="$invalid_dir/bin" \
+    NORMFIX_VERSION='../main' \
+    TEST_REQUEST_LOG="$invalid_dir/requests" \
+    TEST_LATEST_STATUS=fail \
+    TEST_LATEST_JSON='' \
+    TEST_RELEASES_JSON='[]' \
+    sh "$installer" >"$invalid_dir/output" 2>"$invalid_dir/error"; then
+    printf '%s\n' 'an invalid exact version unexpectedly installed' >&2
+    exit 1
+fi
+assert_contains "invalid release tag '../main'" "$invalid_dir/error"
+if [ -e "$invalid_dir/bin/normfix" ]; then
+    printf '%s\n' 'an invalid exact version wrote a binary' >&2
     exit 1
 fi
 

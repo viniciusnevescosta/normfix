@@ -159,12 +159,19 @@ NORMFIX_VERSION=v1.9.0 sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh
 NORMFIX_BIN_DIR=~/bin sh -c "$(curl -fsSL https://normfix.vercel.app/install.sh)"
 ```
 
-`NORMFIX_VERSION` es literal: descarga esa etiqueta, sin elegir canal. Sin ella
+`NORMFIX_VERSION` selecciona esa etiqueta exacta, sin elegir canal, después de
+una validación SemVer estricta. Sin ella
 recibes la release estable más nueva — o, si todavía no hay ninguna, la
 preliberación más nueva, para que un candidato a release siga siendo instalable.
 
-Si una suma de verificación no coincide, la instalación se detiene y muestra
-ambos valores.
+Si la suma falta, está duplicada, es inválida o no coincide, la instalación se
+detiene antes de extraer. La escritura final usa un cambio atómico, así que una
+interrupción no deja medio binario en el `PATH`.
+
+En Windows, un `.exe` en ejecución no puede reemplazarse a sí mismo.
+`normfix upgrade --check` todavía consulta el canal; vuelve a ejecutar este
+instalador para actualizar una instalación directa, o usa `scoop update
+normfix` cuando Scoop sea el responsable.
 
 ### Compilando desde el código fuente
 

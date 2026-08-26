@@ -22,7 +22,7 @@ jobs:
       contents: read
     steps:
       - name: Check out tagged source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Require an annotated tag from main
@@ -52,7 +52,7 @@ jobs:
       - name: Run all tests
         run: cargo test --workspace --all-targets --locked
       - name: Install Python for the official checker
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
       - name: Install exact official Norminette
@@ -76,7 +76,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps --locked
       - name: Install supported Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
           cache: npm
@@ -85,6 +85,10 @@ jobs:
         run: npm ci
       - name: Reject known site dependency advisories
         run: npm audit --audit-level=moderate
+      - name: Test installer and package manifests
+        run: |
+          sh web/tests/install.sh
+          sh packaging/test-render-manifests.sh
       - name: Install browser compilation tools
         run: |
           rustup target add wasm32-unknown-unknown
@@ -128,7 +132,7 @@ jobs:
       attestations: write
     steps:
       - name: Check out tagged source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install release target
         run: rustup target add ${{ matrix.target }}
       - name: Build locked release binary
@@ -153,11 +157,11 @@ jobs:
         shell: pwsh
         run: ./packaging/archive.ps1 -Target "${{ matrix.target }}" -Archive "${{ matrix.archive }}"
       - name: Attest release archive
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: dist/${{ matrix.archive }}
       - name: Upload release archive
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-${{ matrix.target }}
           path: dist/${{ matrix.archive }}
@@ -179,9 +183,9 @@ jobs:
       attestations: write
     steps:
       - name: Check out tagged source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Build and archive inside FreeBSD
-        uses: vmactions/freebsd-vm@v1
+        uses: vmactions/freebsd-vm@f0552d3b69211736abd97f02ff3d4674c56b73b1 # v1
         with:
           release: "14.2"
           usesh: true
@@ -199,11 +203,11 @@ jobs:
             cp README.md LICENSE dist/stage/
             tar -czf dist/normfix-x86_64-freebsd.tar.gz -C dist/stage normfix README.md LICENSE
       - name: Attest release archive
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: dist/normfix-x86_64-freebsd.tar.gz
       - name: Upload release archive
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-x86_64-unknown-freebsd
           path: dist/normfix-x86_64-freebsd.tar.gz
@@ -223,9 +227,9 @@ jobs:
       # The manifest renderer lives in this repository, so the job that writes
       # the tap and the bucket needs the source it is releasing.
       - name: Check out tagged source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Download release archives
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: release-*
           path: dist
@@ -234,7 +238,7 @@ jobs:
         working-directory: dist
         run: shasum -a 256 -- *.tar.gz *.zip > SHA256SUMS
       - name: Attest checksum manifest
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: dist/SHA256SUMS
       - name: Create immutable release
@@ -339,18 +343,19 @@ jobs:
       # pointed at directly, so there is no second repository to reach and no
       # token beyond the one this job already has.
       - name: Check out main for the packaging manifests
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           path: main
       - name: Write the Homebrew formula and the Scoop manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         working-directory: main
         run: |
           version="${GITHUB_REF_NAME#v}"
-          packaging/render-manifests.sh "$version" ../dist/SHA256SUMS .
+          # Execute the renderer from the immutable tagged checkout. Running a
+          # script from a later main commit here would give post-tag code the
+          # release job's write credential.
+          ../packaging/render-manifests.sh "$version" ../dist/SHA256SUMS .
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add Formula/normfix.rb bucket/normfix.json

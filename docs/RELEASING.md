@@ -4,6 +4,9 @@
 The workflow is deliberately tag-gated so an ordinary push cannot publish
 external artifacts.
 
+Every third-party action is pinned to a full commit SHA, with its major tag left
+as a review hint. A moved upstream tag therefore cannot change a release run.
+
 ## Preconditions
 
 Before tagging:
@@ -47,7 +50,8 @@ git push origin v1.9.0
    version;
 2. repeats the locked Rust, npm audit, WASM, playground, and documentation
    quality gates;
-3. builds and executes `normfix --version` on four native runners;
+3. builds and executes `normfix --version` on Linux x86-64/ARM64, macOS
+   Intel/Apple Silicon, Windows x86-64/ARM64, and FreeBSD x86-64;
 4. archives `normfix`, `README.md`, and `LICENSE` per target;
 5. attaches provenance for each archive;
 6. creates `SHA256SUMS` and one immutable GitHub release with generated notes.
@@ -62,10 +66,17 @@ normfix-x86_64-linux-gnu.tar.gz
 normfix-aarch64-linux-gnu.tar.gz
 normfix-x86_64-macos.tar.gz
 normfix-aarch64-macos.tar.gz
+normfix-x86_64-windows.zip
+normfix-aarch64-windows.zip
+normfix-x86_64-freebsd.tar.gz
 SHA256SUMS
 ```
 
 These are intentionally public platform names, not raw Rust target triples.
+
+The manifest update checks out current `main` only as a destination. It executes
+`packaging/render-manifests.sh` from the tagged checkout, so code introduced
+after the tag never receives the release job's write credential.
 They omit placeholder/vendor components while still distinguishing operating
 system, architecture, and the Linux GNU ABI.
 
