@@ -1,5 +1,5 @@
-import type { MessageKey } from "../i18n";
 import type { PlaygroundElements } from "../dom";
+import type { MessageKey } from "../i18n";
 import { statusState } from "../tree-state.svelte";
 import type { AppState, RuntimeState, Translator, WasmModule } from "./model";
 

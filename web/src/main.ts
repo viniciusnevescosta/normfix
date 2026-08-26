@@ -19,11 +19,11 @@ import { createProjectController } from "./playground/project-controller";
 import { createResultsController } from "./playground/results-controller";
 import { createRuntimeController } from "./playground/runtime-controller";
 import {
-  type ThemePreference,
   applyThemePreference,
   isThemePreference,
   readStoredThemePreference,
   storeThemePreference,
+  type ThemePreference,
   watchSystemAppearance,
 } from "./theme";
 import { chromeState, headerState, statusState } from "./tree-state.svelte";

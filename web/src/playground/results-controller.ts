@@ -1,7 +1,7 @@
 import { mount } from "svelte";
 import Diagnostics from "../components/Diagnostics.svelte";
 import ResultSummary from "../components/ResultSummary.svelte";
-import { requiredElement, type PlaygroundElements } from "../dom";
+import { type PlaygroundElements, requiredElement } from "../dom";
 import { downloadProject, downloadSource } from "../downloads";
 import {
   type BrowserSummary,
