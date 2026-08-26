@@ -1,7 +1,8 @@
 //! Standalone commands that do not enter the project formatting pipeline.
 
 use std::env;
-use std::io::{self, IsTerminal as _, Write as _};
+use std::fs::File;
+use std::io::{self, IsTerminal as _, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -13,6 +14,8 @@ use crate::presentation::{
     cli_locale, cli_messages, print_json_outcome, print_run_error, resolve_locale,
 };
 use crate::{rules, uninstall, upgrade};
+
+const MAX_LEAK_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
 
 pub(super) fn run_standalone_command(cli: &Cli, cwd: &Path) -> Option<ExitCode> {
     match &cli.command {
@@ -328,7 +331,7 @@ fn leak_diagnostic(
     let location = location?;
     let path = Utf8PathBuf::from(&location.file);
     if !sources.contains_key(&path) {
-        let text = std::fs::read_to_string(&path).ok()?;
+        let text = read_leak_source(path.as_std_path())?;
         sources.insert(path.clone(), text);
     }
     let source = sources.get(&path)?;
@@ -347,6 +350,24 @@ fn leak_diagnostic(
             localized: None,
         },
     ))
+}
+
+fn read_leak_source(path: &Path) -> Option<String> {
+    let input = File::open(path).ok()?;
+    let metadata = input.metadata().ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_LEAK_SOURCE_BYTES {
+        return None;
+    }
+    let capacity = usize::try_from(metadata.len()).ok()?;
+    let mut bytes = Vec::with_capacity(capacity);
+    input
+        .take(MAX_LEAK_SOURCE_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if u64::try_from(bytes.len()).ok()? != metadata.len() {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
 }
 
 /// The range covering one one-based line, without its leading whitespace.
@@ -695,4 +716,23 @@ fn confirm_undo(run: &UndoRun, cli: &Cli) -> Result<(), String> {
     confirmed
         .then_some(())
         .ok_or_else(|| messages.undo_cancelled.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    #[test]
+    fn leak_source_snippets_refuse_oversized_files_before_allocating_them() {
+        let temporary = TempDir::new().expect("temporary directory");
+        let source = temporary.path().join("oversized.c");
+        fs::File::create(&source)
+            .expect("sparse fixture")
+            .set_len(super::MAX_LEAK_SOURCE_BYTES + 1)
+            .expect("oversized sparse fixture");
+
+        assert!(super::read_leak_source(&source).is_none());
+    }
 }
