@@ -73,7 +73,41 @@ impl CParser {
             .parser
             .parse(source.as_ref(), None)
             .ok_or(ParseFailure::NoTree)?;
-        ParsedFile::from_tree(source, &tree)
+        let original = ParsedFile::from_tree(Arc::clone(&source), &tree)?;
+        if !original.has_syntax_errors() {
+            return Ok(original);
+        }
+        let spans = compatible_va_arg_spans(&source, original.issues());
+        if spans.is_empty() {
+            return Ok(original);
+        }
+        let mut shadow = source.as_bytes().to_vec();
+        for span in &spans {
+            shadow[span.start..span.end].fill(b'_');
+        }
+        let shadow = String::from_utf8(shadow).map_err(|_| ParseFailure::InvalidRange {
+            start: 0,
+            end: source.len(),
+        })?;
+        let compatibility_tree = self
+            .parser
+            .parse(shadow.as_str(), None)
+            .ok_or(ParseFailure::NoTree)?;
+        let mut compatible = ParsedFile::from_tree(source, &compatibility_tree)?;
+        if compatible.has_syntax_errors() || compatible.tape().has_unknown() {
+            return Ok(original);
+        }
+        compatible.issues = spans
+            .into_iter()
+            .map(|span| {
+                Ok(SyntaxIssue {
+                    kind: SyntaxIssueKind::Compatibility,
+                    range: text_range(span.start, span.end)?,
+                    syntax_kind: "va_arg_type_argument".into(),
+                })
+            })
+            .collect::<Result<Vec<_>, ParseFailure>>()?;
+        Ok(compatible)
     }
 }
 
@@ -143,7 +177,9 @@ impl ParsedFile {
     /// Returns whether Tree-sitter recovered from at least one syntax problem.
     #[must_use]
     pub fn has_syntax_errors(&self) -> bool {
-        !self.issues.is_empty()
+        self.issues
+            .iter()
+            .any(|issue| issue.kind != SyntaxIssueKind::Compatibility)
     }
 
     /// Returns whether this milestone permits automatic edits to the file.
@@ -209,6 +245,11 @@ pub enum SyntaxIssueKind {
     Error,
     /// Tree-sitter inserted a zero-width missing token.
     Missing,
+    /// A known grammar limitation isolated as one opaque, lossless token.
+    ///
+    /// Automatic edits remain permitted outside this exact byte range. No
+    /// formatter phase can see or rewrite the bytes inside the token.
+    Compatibility,
 }
 
 /// A failure to initialize or run the parsing backend.
@@ -313,6 +354,190 @@ fn collect_tree_metadata(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug)]
+struct CompatibilitySpan {
+    start: usize,
+    end: usize,
+}
+
+/// Finds single-line `va_arg` calls only when they explain every recovery node.
+///
+/// Tree-sitter-c parses the second argument as an expression even though the C
+/// macro takes a raw type. Replacing the complete call with an equal-length
+/// identifier creates an offset-stable syntax tree while the lossless tape
+/// still carries the original call as one opaque token. Any unrelated recovery,
+/// multiline call, comment/string occurrence, or unmatched parenthesis keeps
+/// the original fail-closed parse.
+fn compatible_va_arg_spans(source: &str, issues: &[SyntaxIssue]) -> Vec<CompatibilitySpan> {
+    let bytes = source.as_bytes();
+    let mut candidates = Vec::new();
+    let mut index = 0_usize;
+    let mut state = LexState::Code;
+    while index < bytes.len() {
+        match state {
+            LexState::Code if bytes.get(index..index + 2) == Some(b"//") => {
+                state = LexState::LineComment;
+                index += 2;
+            }
+            LexState::Code if bytes.get(index..index + 2) == Some(b"/*") => {
+                state = LexState::BlockComment;
+                index += 2;
+            }
+            LexState::Code if bytes[index] == b'"' => {
+                state = LexState::String;
+                index += 1;
+            }
+            LexState::Code if bytes[index] == b'\'' => {
+                state = LexState::Character;
+                index += 1;
+            }
+            LexState::Code if identifier_at(bytes, index, b"va_arg") => {
+                if let Some(end) = single_line_call_end(bytes, index + b"va_arg".len()) {
+                    candidates.push(CompatibilitySpan { start: index, end });
+                    index = end;
+                } else {
+                    index += b"va_arg".len();
+                }
+            }
+            LexState::LineComment if matches!(bytes[index], b'\r' | b'\n') => {
+                state = LexState::Code;
+                index += 1;
+            }
+            LexState::BlockComment if bytes.get(index..index + 2) == Some(b"*/") => {
+                state = LexState::Code;
+                index += 2;
+            }
+            LexState::String | LexState::Character if bytes[index] == b'\\' => {
+                index = (index + 2).min(bytes.len());
+            }
+            LexState::String if bytes[index] == b'"' => {
+                state = LexState::Code;
+                index += 1;
+            }
+            LexState::Character if bytes[index] == b'\'' => {
+                state = LexState::Code;
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    let candidates = candidates
+        .into_iter()
+        .filter(|span| issues.iter().any(|issue| issue_within_span(issue, *span)))
+        .collect::<Vec<_>>();
+    if issues.iter().all(|issue| {
+        candidates
+            .iter()
+            .any(|span| issue_within_span(issue, *span))
+    }) {
+        candidates
+    } else {
+        Vec::new()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum LexState {
+    Code,
+    LineComment,
+    BlockComment,
+    String,
+    Character,
+}
+
+fn identifier_at(source: &[u8], start: usize, identifier: &[u8]) -> bool {
+    source.get(start..start + identifier.len()) == Some(identifier)
+        && source
+            .get(start.wrapping_sub(1))
+            .is_none_or(|byte| !is_identifier_byte(*byte))
+        && source
+            .get(start + identifier.len())
+            .is_none_or(|byte| !is_identifier_byte(*byte))
+}
+
+const fn is_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+fn single_line_call_end(source: &[u8], after_name: usize) -> Option<usize> {
+    let mut cursor = after_name;
+    while source.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+        if matches!(source[cursor], b'\r' | b'\n') {
+            return None;
+        }
+        cursor += 1;
+    }
+    if source.get(cursor) != Some(&b'(') {
+        return None;
+    }
+    let mut depth = 0_usize;
+    let mut saw_top_level_comma = false;
+    let mut state = LexState::Code;
+    while cursor < source.len() {
+        let byte = source[cursor];
+        if matches!(byte, b'\r' | b'\n') {
+            return None;
+        }
+        match state {
+            LexState::Code if source.get(cursor..cursor + 2) == Some(b"//") => return None,
+            LexState::Code if source.get(cursor..cursor + 2) == Some(b"/*") => {
+                state = LexState::BlockComment;
+                cursor += 2;
+            }
+            LexState::Code if byte == b'"' => {
+                state = LexState::String;
+                cursor += 1;
+            }
+            LexState::Code if byte == b'\'' => {
+                state = LexState::Character;
+                cursor += 1;
+            }
+            LexState::Code if byte == b'(' => {
+                depth += 1;
+                cursor += 1;
+            }
+            LexState::Code if byte == b')' => {
+                depth = depth.checked_sub(1)?;
+                cursor += 1;
+                if depth == 0 {
+                    return saw_top_level_comma.then_some(cursor);
+                }
+            }
+            LexState::Code if byte == b',' && depth == 1 => {
+                saw_top_level_comma = true;
+                cursor += 1;
+            }
+            LexState::BlockComment if source.get(cursor..cursor + 2) == Some(b"*/") => {
+                state = LexState::Code;
+                cursor += 2;
+            }
+            LexState::String | LexState::Character if byte == b'\\' => {
+                cursor = (cursor + 2).min(source.len());
+            }
+            LexState::String if byte == b'"' => {
+                state = LexState::Code;
+                cursor += 1;
+            }
+            LexState::Character if byte == b'\'' => {
+                state = LexState::Code;
+                cursor += 1;
+            }
+            _ => cursor += 1,
+        }
+    }
+    None
+}
+
+fn issue_within_span(issue: &SyntaxIssue, span: CompatibilitySpan) -> bool {
+    let start = issue.range.start().get() as usize;
+    let end = issue.range.end().get() as usize;
+    if start == end {
+        span.start <= start && start <= span.end
+    } else {
+        span.start < end && start < span.end
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::CFunctionKind;
@@ -361,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_va_arg_type_arguments_are_preserved_conservatively() {
+    fn raw_va_arg_type_arguments_are_isolated_as_one_opaque_compatible_token() {
         let mut parser = CParser::new().expect("embedded C grammar must load");
         let source = concat!(
             "char\t*next_string(va_list *args)\n",
@@ -373,9 +598,34 @@ mod tests {
             .parse(source)
             .expect("recovery should produce a tree");
 
+        assert!(!parsed.has_syntax_errors());
+        assert!(parsed.permits_automatic_edits());
+        assert_eq!(parsed.issues().len(), 1);
+        assert_eq!(parsed.issues()[0].kind(), SyntaxIssueKind::Compatibility);
+        assert!(parsed.tape().is_lossless());
+        assert_eq!(parsed.tape().reconstruct(), source);
+    }
+
+    #[test]
+    fn va_arg_compatibility_never_hides_an_unrelated_syntax_error() {
+        let mut parser = CParser::new().expect("embedded C grammar must load");
+        let source = concat!(
+            "char\t*next_string(va_list *args)\n",
+            "{\n",
+            "\treturn (va_arg(*args, char *));\n",
+            "}\n",
+            "int broken( {\n",
+        );
+        let parsed = parser.parse(source).expect("recovered translation unit");
+
         assert!(parsed.has_syntax_errors());
         assert!(!parsed.permits_automatic_edits());
-        assert!(parsed.tape().is_lossless());
+        assert!(parsed.issues().iter().all(|issue| {
+            matches!(
+                issue.kind(),
+                SyntaxIssueKind::Error | SyntaxIssueKind::Missing
+            )
+        }));
         assert_eq!(parsed.tape().reconstruct(), source);
     }
 

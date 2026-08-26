@@ -590,35 +590,26 @@ fn build_preflight_evaluation(report: &RunReport) -> EvaluationReport {
                 message: "The Makefile could not be evaluated completely.".to_owned(),
             });
         }
-        let mut original_counts = BTreeMap::<(EvaluationFailureKind, String), usize>::new();
-        for diagnostic in &file.before {
-            let Some(kind) = evaluation_failure_kind(diagnostic) else {
-                continue;
-            };
-            *original_counts
-                .entry((kind, diagnostic.rule_id.clone()))
-                .or_default() += 1;
-            increment_evaluation_count(kind, &mut norm_count, &mut makefile_count);
-            push_evaluation_finding(&mut hard_failures, diagnostic, file.original.as_deref());
-        }
-        let mut shadow_counts = BTreeMap::<(EvaluationFailureKind, String), usize>::new();
-        for diagnostic in &file.after {
+        // A pre-defense hard fail describes the bytes currently on disk. A
+        // successful fix transaction makes the validated shadow authoritative;
+        // check/diff, a refused write, or a failed transaction leaves the
+        // original authoritative. Some report producers have no distinct
+        // `before` phase, so an empty one falls back to `after`.
+        let written_shadow = report.mode == ReportMode::Fix && file.written;
+        let (authoritative, source) = if written_shadow || file.before.is_empty() {
+            (file.after.as_slice(), file.fixed.as_deref())
+        } else {
+            (file.before.as_slice(), file.original.as_deref())
+        };
+        for diagnostic in authoritative {
             let Some(kind) = evaluation_failure_kind(diagnostic) else {
                 if diagnostic.severity != Severity::Info {
                     other_blocking += 1;
                 }
                 continue;
             };
-            let key = (kind, diagnostic.rule_id.clone());
-            let occurrence = shadow_counts.entry(key.clone()).or_default();
-            let represented_by_original =
-                *occurrence < original_counts.get(&key).copied().unwrap_or_default();
-            *occurrence += 1;
-            if represented_by_original {
-                continue;
-            }
             increment_evaluation_count(kind, &mut norm_count, &mut makefile_count);
-            push_evaluation_finding(&mut hard_failures, diagnostic, file.fixed.as_deref());
+            push_evaluation_finding(&mut hard_failures, diagnostic, source);
         }
     }
     hard_failures.sort();
@@ -1898,6 +1889,56 @@ mod tests {
         assert_eq!(finding.rule_id, "TOO_MANY_LINES");
         assert_eq!(finding.path, "src/main.c");
         assert_eq!((finding.line, finding.column), (Some(1), Some(6)));
+    }
+
+    #[test]
+    fn a_successful_fix_evaluates_the_bytes_written_to_disk() {
+        let mut source_file = file();
+        let mut official = diagnostic();
+        official.source = DiagnosticSource::NorminetteCompat("3.3.59".to_owned());
+        source_file.before = vec![official];
+        source_file.after.clear();
+        source_file.written = true;
+        let mut report = RunReport::new(
+            "1.0.0",
+            ReportMode::Fix,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![source_file],
+            Duration::ZERO,
+        );
+
+        report.enable_preflight_evaluation();
+
+        let evaluation = report.evaluation.as_ref().expect("evaluation");
+        assert_eq!(evaluation.verdict, EvaluationVerdict::AdvisoryPass);
+        assert!(evaluation.hard_failures.is_empty());
+    }
+
+    #[test]
+    fn a_refused_fix_keeps_the_original_disk_failure_authoritative() {
+        let mut source_file = file();
+        let mut official = diagnostic();
+        official.source = DiagnosticSource::NorminetteCompat("3.3.59".to_owned());
+        source_file.before = vec![official];
+        source_file.after.clear();
+        source_file.written = false;
+        let mut report = RunReport::new(
+            "1.0.0",
+            ReportMode::Fix,
+            ReportIdentity::default(),
+            Vec::new(),
+            Vec::new(),
+            vec![source_file],
+            Duration::ZERO,
+        );
+
+        report.enable_preflight_evaluation();
+
+        let evaluation = report.evaluation.as_ref().expect("evaluation");
+        assert_eq!(evaluation.verdict, EvaluationVerdict::HardFail);
+        assert_eq!(evaluation.hard_failures[0].rule_id, "TOO_MANY_LINES");
     }
 
     #[test]

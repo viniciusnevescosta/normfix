@@ -2,7 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
@@ -10,6 +11,7 @@ use thiserror::Error;
 
 const MAX_PROJECT_FILES: usize = 25_000;
 const MAX_PROJECT_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_PROJECT_FILE_BYTES: u64 = 32 * 1024 * 1024;
 
 /// A minimal guard pair that may be renamed atomically.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -102,7 +104,10 @@ pub fn plan_guard_renames(
         if path.extension() != Some(OsStr::new("h")) {
             continue;
         }
-        let Ok(source) = fs::read_to_string(path) else {
+        let Ok(bytes) = read_file_bounded(path, MAX_PROJECT_FILE_BYTES) else {
+            continue;
+        };
+        let Ok(source) = String::from_utf8(bytes) else {
             continue;
         };
         let Some(rename) = guard_candidate(path, &source) else {
@@ -182,7 +187,10 @@ pub fn plan_guard_insertions(
         if path.extension() != Some(OsStr::new("h")) {
             continue;
         }
-        let Ok(source) = fs::read_to_string(path) else {
+        let Ok(bytes) = read_file_bounded(path, MAX_PROJECT_FILE_BYTES) else {
+            continue;
+        };
+        let Ok(source) = String::from_utf8(bytes) else {
             continue;
         };
         let Some(insertion) = guard_insertion_candidate(path, &source) else {
@@ -224,16 +232,16 @@ pub fn plan_guard_insertions(
 #[must_use]
 pub fn guard_approval_is_current(approval: &GuardApproval) -> bool {
     scan_project(&approval.snapshot.root).is_ok_and(|current| current == approval.snapshot)
-        && fs::read(&approval.rename.path)
-            .is_ok_and(|bytes| *blake3::hash(&bytes).as_bytes() == approval.rename.header_digest)
+        && hash_file_bounded(&approval.rename.path, MAX_PROJECT_FILE_BYTES)
+            .is_ok_and(|digest| digest == approval.rename.header_digest)
 }
 
 /// Rechecks every project hash and the exact unguarded header bytes.
 #[must_use]
 pub fn guard_insertion_approval_is_current(approval: &GuardInsertionApproval) -> bool {
     scan_project(&approval.snapshot.root).is_ok_and(|current| current == approval.snapshot)
-        && fs::read(&approval.insertion.path)
-            .is_ok_and(|bytes| *blake3::hash(&bytes).as_bytes() == approval.insertion.header_digest)
+        && hash_file_bounded(&approval.insertion.path, MAX_PROJECT_FILE_BYTES)
+            .is_ok_and(|digest| digest == approval.insertion.header_digest)
 }
 
 fn guard_insertion_candidate(path: &Path, source: &str) -> Option<GuardInsertion> {
@@ -468,10 +476,17 @@ fn scan_project(root: &Path) -> Result<ProjectSnapshot, GuardPlanError> {
                 "project exceeds the {MAX_PROJECT_FILES}-file safety limit"
             )));
         }
-        let bytes = fs::read(entry.path()).map_err(|error| {
+        let metadata = fs::symlink_metadata(entry.path()).map_err(|error| {
             GuardPlanError::ProjectScan(format!("{}: {error}", entry.path().display()))
         })?;
-        total_bytes = total_bytes.saturating_add(bytes.len() as u64);
+        if metadata.len() > MAX_PROJECT_FILE_BYTES {
+            return Err(GuardPlanError::ProjectScan(format!(
+                "{} exceeds the {} MiB per-file safety limit",
+                entry.path().display(),
+                MAX_PROJECT_FILE_BYTES / (1024 * 1024)
+            )));
+        }
+        total_bytes = total_bytes.saturating_add(metadata.len());
         if total_bytes > MAX_PROJECT_BYTES {
             return Err(GuardPlanError::ProjectScan(format!(
                 "project exceeds the {} MiB safety limit",
@@ -480,7 +495,9 @@ fn scan_project(root: &Path) -> Result<ProjectSnapshot, GuardPlanError> {
         }
         files.insert(
             canonical_or_lexical(entry.path()),
-            *blake3::hash(&bytes).as_bytes(),
+            hash_file_bounded(entry.path(), MAX_PROJECT_FILE_BYTES).map_err(|error| {
+                GuardPlanError::ProjectScan(format!("{}: {error}", entry.path().display()))
+            })?,
         );
     }
     Ok(ProjectSnapshot {
@@ -516,6 +533,7 @@ fn project_entry_allowed(root: &Path, entry: &ignore::DirEntry) -> bool {
 fn read_snapshot_contents(
     snapshot: &ProjectSnapshot,
 ) -> Result<BTreeMap<PathBuf, Vec<u8>>, GuardPlanError> {
+    let mut total_bytes = 0_u64;
     snapshot
         .files
         .iter()
@@ -529,7 +547,21 @@ fn read_snapshot_contents(
                     path.display()
                 )));
             }
-            let bytes = fs::read(path).map_err(|error| {
+            if metadata.len() > MAX_PROJECT_FILE_BYTES {
+                return Err(GuardPlanError::ProjectScan(format!(
+                    "snapshot path exceeds the {} MiB per-file limit at `{}`",
+                    MAX_PROJECT_FILE_BYTES / (1024 * 1024),
+                    path.display()
+                )));
+            }
+            total_bytes = total_bytes.saturating_add(metadata.len());
+            if total_bytes > MAX_PROJECT_BYTES {
+                return Err(GuardPlanError::ProjectScan(format!(
+                    "snapshot contents exceed the {} MiB project limit",
+                    MAX_PROJECT_BYTES / (1024 * 1024)
+                )));
+            }
+            let bytes = read_file_bounded(path, MAX_PROJECT_FILE_BYTES).map_err(|error| {
                 GuardPlanError::ProjectScan(format!("{}: {error}", path.display()))
             })?;
             if blake3::hash(&bytes).as_bytes() != expected_digest {
@@ -541,6 +573,54 @@ fn read_snapshot_contents(
             Ok((path.clone(), bytes))
         })
         .collect()
+}
+
+fn read_file_bounded(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() || metadata.len() > limit {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "path is not a bounded regular file",
+        ));
+    }
+    let capacity = usize::try_from(metadata.len())
+        .map_err(|_| std::io::Error::other("file length does not fit in memory"))?;
+    let mut bytes = Vec::with_capacity(capacity);
+    File::open(path)?
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()) != Ok(metadata.len()) {
+        return Err(std::io::Error::other(
+            "file changed while it was being read",
+        ));
+    }
+    Ok(bytes)
+}
+
+fn hash_file_bounded(path: &Path, limit: u64) -> std::io::Result<[u8; 32]> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() || metadata.len() > limit {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "path is not a bounded regular file",
+        ));
+    }
+    let mut input = File::open(path)?.take(limit.saturating_add(1));
+    let mut hasher = blake3::Hasher::new();
+    let mut length = 0_u64;
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let read = input.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        length = length.saturating_add(read as u64);
+        hasher.update(&buffer[..read]);
+    }
+    if length != metadata.len() {
+        return Err(std::io::Error::other("file changed while it was hashed"));
+    }
+    Ok(*hasher.finalize().as_bytes())
 }
 
 fn duplicate_filename_guards<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> BTreeSet<String> {

@@ -2443,7 +2443,91 @@ fn fix_indentation(
             }
         }
     }
+    for line_number in diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "SPACE_REPLACE_TAB")
+        .map(|diagnostic| diagnostic.line)
+        .collect::<BTreeSet<_>>()
+    {
+        let Some((start, end)) = composite_typedef_alias_gap(context, line_number) else {
+            continue;
+        };
+        edits.push(Edit::new(
+            start,
+            end,
+            "\t",
+            "SPACE_REPLACE_TAB",
+            "replaced the space before a composite typedef alias with the required tab",
+            Some(line_number),
+        )?);
+    }
     Ok(edits)
+}
+
+/// Finds the whitespace in the closing line of a simple composite typedef.
+///
+/// Tree-sitter's token stream supplies the proof rather than a text pattern:
+/// the physical line must contain exactly `}`, one identifier and `;`; the
+/// brace must match an opening brace introduced by `typedef struct`, `union`,
+/// or `enum`. This deliberately leaves declarations with attributes, macros,
+/// comments, or any other decoration for review.
+fn composite_typedef_alias_gap(
+    context: &ParsedContext,
+    line_number: u32,
+) -> Option<(usize, usize)> {
+    let line = context.lines().get(line_number)?;
+    let indexed = context
+        .tokens()
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| token.start >= line.start && token.end <= line.content_end)
+        .collect::<Vec<_>>();
+    let [(closing_index, closing), (_, alias), (_, semicolon)] = indexed.as_slice() else {
+        return None;
+    };
+    if closing.text != "}"
+        || !is_identifier(&alias.text)
+        || semicolon.text != ";"
+        || closing.end > alias.start
+    {
+        return None;
+    }
+    let gap = context.source().get(closing.end..alias.start)?;
+    if !gap.contains(' ') || !gap.bytes().all(|byte| matches!(byte, b' ' | b'\t')) {
+        return None;
+    }
+
+    let tokens = context.tokens();
+    let mut depth = 1_u32;
+    let mut opening_index = None;
+    for index in (0..*closing_index).rev() {
+        match tokens[index].text.as_str() {
+            "}" => depth = depth.saturating_add(1),
+            "{" => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    opening_index = Some(index);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let opening_index = opening_index?;
+    let declaration_prefix = tokens[..opening_index]
+        .iter()
+        .rev()
+        .take_while(|token| !matches!(token.text.as_str(), ";" | "{" | "}"))
+        .map(|token| token.text.as_str())
+        .collect::<BTreeSet<_>>();
+    if !declaration_prefix.contains("typedef")
+        || !["struct", "union", "enum"]
+            .iter()
+            .any(|keyword| declaration_prefix.contains(keyword))
+    {
+        return None;
+    }
+    Some((closing.end, alias.start))
 }
 
 fn whitespace_run_near(text: &str, index: usize) -> (usize, usize) {

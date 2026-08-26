@@ -33,6 +33,8 @@ use std::path::{Component, Path, PathBuf};
 use ignore::WalkBuilder;
 use thiserror::Error;
 
+const MAX_DISCOVERY_ENTRIES: usize = 100_000;
+
 /// Options controlling one discovery operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiscoveryOptions {
@@ -355,7 +357,21 @@ fn walk_directory(
         builder.add_custom_ignore_filename(".norminetteignore");
     }
 
+    let mut visited = 0_usize;
     for entry in builder.build() {
+        visited = visited.saturating_add(1);
+        if visited > MAX_DISCOVERY_ENTRIES {
+            errors.insert(error(
+                root,
+                root,
+                DiscoveryErrorKind::Walk {
+                    message: format!(
+                        "directory walk exceeds the {MAX_DISCOVERY_ENTRIES}-entry safety limit"
+                    ),
+                },
+            ));
+            break;
+        }
         let entry = match entry {
             Ok(entry) => entry,
             Err(source) => {

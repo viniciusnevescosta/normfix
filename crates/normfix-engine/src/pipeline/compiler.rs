@@ -18,8 +18,9 @@ use normfix_oracle::CompilerReport;
 use normfix_project::{DiscoveredFile, DiscoveryOptions, ProjectFileKind, discover};
 use regex::Regex;
 
+use super::diagnostics::{ColumnUnit, diagnostic_range, point_diagnostic};
 use super::paths::absolute_lexical;
-use super::{ColumnUnit, FixOptions, OracleContext, diagnostic_range, point_diagnostic};
+use super::{FixOptions, OracleContext};
 
 pub(super) const COMPILER_FINGERPRINT_FILE_LIMIT: u64 = 8 * 1024 * 1024;
 pub(super) const COMPILER_FINGERPRINT_PROJECT_LIMIT: u64 = 64 * 1024 * 1024;

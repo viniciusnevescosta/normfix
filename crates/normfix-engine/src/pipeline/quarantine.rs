@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 
 use camino::Utf8PathBuf;
 
-use normfix_destructive::{QuarantineItem, QuarantineRequest, plan_quarantine};
+use normfix_destructive::{
+    QuarantineItem, QuarantineRequest, plan_quarantine, quarantine_snapshot_matches,
+};
 
 use super::paths::{absolute_lexical, automatic_backup_root, run_id};
 use super::{BackupPolicy, FixOptions};
@@ -221,10 +223,8 @@ pub(super) fn execute_quarantine(items: &[QuarantineItem]) -> Result<Vec<Utf8Pat
                 item.source_path
             ));
         }
-        let bytes = std::fs::read(&item.source_path)
-            .map_err(|error| format!("Could not re-read `{}`: {error}", item.source_path))?;
-        if bytes.len() as u64 != item.snapshot.byte_length
-            || blake3::hash(&bytes).to_hex().to_string() != item.snapshot.blake3_hash
+        if !quarantine_snapshot_matches(item)
+            .map_err(|error| format!("Could not re-read `{}`: {error}", item.source_path))?
         {
             return Err(format!(
                 "Quarantine source changed after planning: {}",

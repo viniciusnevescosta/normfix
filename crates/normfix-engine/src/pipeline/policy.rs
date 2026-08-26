@@ -17,6 +17,7 @@ use normfix_project::{
 
 use super::diagnostics::project_diagnostic;
 use super::paths::report_path;
+use super::source_io::read_project_file;
 use super::{FileWork, FixOptions, FunctionPolicyPlan, FunctionPolicyProof};
 
 pub(super) fn plan_policy_diagnostics(
@@ -136,7 +137,7 @@ pub(super) fn build_function_policy_proof(
     let mut external_definitions = BTreeSet::new();
     let mut source_digests = BTreeMap::new();
     for file in project_sources {
-        let bytes = std::fs::read(&file.path).map_err(|error| {
+        let bytes = read_project_file(&file.path).map_err(|error| {
             format!(
                 "Complete-project source `{}` could not be read: {error}",
                 file.path.display()
@@ -337,7 +338,7 @@ pub(super) fn validate_function_policy_snapshot(
         return Err("The complete project C/header file set changed during the run.".to_owned());
     }
     for (path, expected) in &proof.source_digests {
-        let bytes = std::fs::read(path).map_err(|error| {
+        let bytes = read_project_file(path).map_err(|error| {
             format!(
                 "Complete-project source `{}` could not be re-read: {error}",
                 path.display()

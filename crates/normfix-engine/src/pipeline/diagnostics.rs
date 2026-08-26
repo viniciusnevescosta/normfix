@@ -168,6 +168,33 @@ pub(super) fn merge_official_diagnostics(
     }));
 }
 
+/// Removes the native copy of a structural limit the successful official run
+/// already reported for this file.
+///
+/// Native analysis points at the function name and can explain the measured
+/// count, while Norminette commonly points at a different line. Keeping both
+/// makes one violation look like two remaining problems. Ordinary check/fix
+/// output therefore trusts the official occurrence and preserves every one of
+/// its locations. Budget/lint output calls a separate path and retains the
+/// native measurements.
+pub(super) fn suppress_official_structural_duplicates(
+    diagnostics: &mut Vec<Diagnostic>,
+    official: &[NorminetteDiagnostic],
+) {
+    let official_rules = official
+        .iter()
+        .map(|diagnostic| diagnostic.rule_id.as_str())
+        .collect::<BTreeSet<_>>();
+    diagnostics.retain(|diagnostic| {
+        diagnostic.source != DiagnosticSource::NativeNorm41
+            || !matches!(
+                diagnostic.rule_id.as_str(),
+                "TOO_MANY_ARGS" | "TOO_MANY_FUNCS" | "TOO_MANY_LINES" | "TOO_MANY_VARS_FUNC"
+            )
+            || !official_rules.contains(diagnostic.rule_id.as_str())
+    });
+}
+
 pub(super) fn diagnostic_help(rule_id: &str) -> &'static str {
     match rule_id {
         "TOO_MANY_LINES" => "Extract one coherent responsibility into a well-named static helper.",
@@ -457,10 +484,11 @@ pub(super) fn explain_constant_array_false_positives(
 
 #[cfg(test)]
 mod tests {
-    use normfix_core::Severity;
+    use camino::Utf8PathBuf;
+    use normfix_core::{Diagnostic, DiagnosticSource, Severity, TextRange, TextSize};
     use normfix_oracle::NorminetteDiagnostic;
 
-    use super::{diagnostic_help, official_diagnostics};
+    use super::{diagnostic_help, official_diagnostics, suppress_official_structural_duplicates};
 
     fn remark(rule_id: &str, advisory: bool) -> NorminetteDiagnostic {
         NorminetteDiagnostic {
@@ -512,6 +540,54 @@ mod tests {
         // the violations would report work that its own author says is done.
         assert_eq!(diagnostics[0].severity, Severity::Info);
         assert_eq!(diagnostics[1].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn official_structural_rules_replace_native_copies_without_losing_locations() {
+        let mut diagnostics = vec![Diagnostic {
+            rule_id: "TOO_MANY_ARGS".to_owned(),
+            path: Utf8PathBuf::from("a.c"),
+            range: TextRange::empty(TextSize::new(8)),
+            severity: Severity::Warning,
+            message: "native measurement".to_owned(),
+            source: DiagnosticSource::NativeNorm41,
+            notes: Vec::new(),
+            help: None,
+            localized: None,
+        }];
+        let official = vec![
+            NorminetteDiagnostic {
+                rule_id: "TOO_MANY_ARGS".to_owned(),
+                line: 2,
+                column: 1,
+                message: "first function".to_owned(),
+                advisory: false,
+            },
+            NorminetteDiagnostic {
+                rule_id: "TOO_MANY_ARGS".to_owned(),
+                line: 20,
+                column: 1,
+                message: "second function".to_owned(),
+                advisory: false,
+            },
+        ];
+
+        suppress_official_structural_duplicates(&mut diagnostics, &official);
+        diagnostics.extend(official_diagnostics(
+            &Utf8PathBuf::from("a.c"),
+            &"\n".repeat(21),
+            &official,
+            "3.3.59",
+        ));
+
+        assert_eq!(diagnostics.len(), 2);
+        assert!(
+            diagnostics.iter().all(|diagnostic| matches!(
+                diagnostic.source,
+                DiagnosticSource::NorminetteCompat(_)
+            ))
+        );
+        assert_ne!(diagnostics[0].range.start(), diagnostics[1].range.start());
     }
 
     #[test]

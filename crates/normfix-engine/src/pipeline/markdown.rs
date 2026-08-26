@@ -13,7 +13,8 @@ use normfix_report::FileReport;
 
 use normfix_project::DiscoveredFile;
 
-use super::{FileWork, FixOptions, failed_source, line_point_range};
+use super::diagnostics::line_point_range;
+use super::{FileWork, FixOptions, failed_source};
 
 pub(super) fn process_markdown(
     file: &DiscoveredFile,

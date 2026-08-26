@@ -22,7 +22,7 @@ pub use orphan_prototypes::{
 };
 pub use quarantine::{
     QuarantineItem, QuarantinePlan, QuarantinePlanError, QuarantineRequest, QuarantineSnapshot,
-    plan_quarantine,
+    plan_quarantine, quarantine_snapshot_matches,
 };
 pub use static_functions::{
     ClosedCSourceSet, ClosedSourceError, DestructiveFilePlan, StaticRemovalPlan,

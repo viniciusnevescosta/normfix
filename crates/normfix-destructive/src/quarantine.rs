@@ -1,7 +1,8 @@
 //! Read-only planning for recoverable quarantine of unexpected files.
 
 use std::collections::BTreeSet;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read as _;
 use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -11,6 +12,9 @@ use thiserror::Error;
 use crate::{AuthorizationError, DestructiveAuthorization, DestructiveCapability};
 
 const RULE_REJECTED: &str = "UNSAFE_QUARANTINE_REJECTED";
+const MAX_QUARANTINE_ITEMS: usize = 10_000;
+const MAX_QUARANTINE_FILE_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_QUARANTINE_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Inputs for a deterministic quarantine plan.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,6 +92,12 @@ pub enum QuarantinePlanError {
     /// The run identifier was not a safe single component.
     #[error("quarantine run identifier must contain only ASCII letters, digits, `.`, `_` or `-`")]
     InvalidRunId,
+    /// The request is too large to snapshot in one recoverable transaction.
+    #[error("quarantine request contains more than {limit} paths")]
+    TooManyPaths {
+        /// Maximum number of paths in one request.
+        limit: usize,
+    },
 }
 
 /// Creates a quarantine plan without changing any file.
@@ -110,6 +120,11 @@ pub fn plan_quarantine(
     if !valid_run_id(&request.run_id) {
         return Err(QuarantinePlanError::InvalidRunId);
     }
+    if request.paths.len() > MAX_QUARANTINE_ITEMS {
+        return Err(QuarantinePlanError::TooManyPaths {
+            limit: MAX_QUARANTINE_ITEMS,
+        });
+    }
     let project_root = canonical_directory("project", &request.project_root)?;
     let recovery_root = canonical_directory("recovery", &request.recovery_root)?;
     if recovery_root.starts_with(&project_root) || project_root.starts_with(&recovery_root) {
@@ -122,6 +137,7 @@ pub fn plan_quarantine(
     let mut items = Vec::new();
     let mut diagnostics = Vec::new();
     let mut seen_destinations = BTreeSet::new();
+    let mut captured_bytes = 0_u64;
     for relative_path in paths {
         match capture_item(
             &project_root,
@@ -130,7 +146,19 @@ pub fn plan_quarantine(
             &relative_path,
         ) {
             Ok(item) if seen_destinations.insert(item.destination_path.clone()) => {
-                items.push(item);
+                let next_total = captured_bytes.saturating_add(item.snapshot.byte_length);
+                if next_total > MAX_QUARANTINE_TOTAL_BYTES {
+                    diagnostics.push(rejected_diagnostic(
+                        &relative_path,
+                        &format!(
+                            "The request exceeds the {} MiB recoverable snapshot limit; split the quarantine into smaller runs.",
+                            MAX_QUARANTINE_TOTAL_BYTES / (1024 * 1024)
+                        ),
+                    ));
+                } else {
+                    captured_bytes = next_total;
+                    items.push(item);
+                }
             }
             Ok(_) => diagnostics.push(rejected_diagnostic(
                 &relative_path,
@@ -166,8 +194,15 @@ fn capture_item(
     if !before.is_file() {
         return Err("Only regular files can be quarantined.".to_owned());
     }
-    let bytes = fs::read(&source_path)
-        .map_err(|error| format!("Could not capture the source bytes: {error}"))?;
+    if before.len() > MAX_QUARANTINE_FILE_BYTES {
+        return Err(format!(
+            "The source is {} bytes; quarantine snapshots are limited to {} MiB per file.",
+            before.len(),
+            MAX_QUARANTINE_FILE_BYTES / (1024 * 1024)
+        ));
+    }
+    let bytes = read_exact_bounded(&source_path, before.len())
+        .map_err(|error| format!("Could not capture the source bytes safely: {error}"))?;
     let after = fs::symlink_metadata(&source_path)
         .map_err(|error| format!("Could not revalidate the source: {error}"))?;
     if after.file_type().is_symlink() || !after.is_file() {
@@ -199,6 +234,58 @@ fn capture_item(
             blake3_hash: hash,
         },
     })
+}
+
+fn read_exact_bounded(path: &Utf8Path, expected_length: u64) -> std::io::Result<Vec<u8>> {
+    if expected_length > MAX_QUARANTINE_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "file exceeds the quarantine snapshot limit",
+        ));
+    }
+    let capacity = usize::try_from(expected_length)
+        .map_err(|_| std::io::Error::other("file length does not fit memory limits"))?;
+    let mut bytes = Vec::with_capacity(capacity);
+    File::open(path)?
+        .take(expected_length.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()) != Ok(expected_length) {
+        return Err(std::io::Error::other(
+            "file length changed while it was being read",
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Revalidates a snapshot without allocating another file-sized buffer.
+///
+/// # Errors
+///
+/// Returns an I/O error when the source metadata or bytes cannot be read.
+pub fn quarantine_snapshot_matches(item: &QuarantineItem) -> std::io::Result<bool> {
+    let metadata = fs::symlink_metadata(&item.source_path)?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.len() != item.snapshot.byte_length
+        || metadata.len() > MAX_QUARANTINE_FILE_BYTES
+    {
+        return Ok(false);
+    }
+    let mut input =
+        File::open(&item.source_path)?.take(item.snapshot.byte_length.saturating_add(1));
+    let mut hasher = blake3::Hasher::new();
+    let mut length = 0_u64;
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let read = input.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        length = length.saturating_add(read as u64);
+        hasher.update(&buffer[..read]);
+    }
+    Ok(length == item.snapshot.byte_length
+        && hasher.finalize().to_hex().as_str() == item.snapshot.blake3_hash)
 }
 
 fn canonical_directory(
@@ -344,7 +431,10 @@ mod tests {
 
     use crate::{DestructiveCapability, DestructiveRequest, EXACT_CONFIRMATION_PHRASE};
 
-    use super::{QuarantinePlanError, QuarantineRequest, plan_quarantine};
+    use super::{
+        MAX_QUARANTINE_FILE_BYTES, QuarantinePlanError, QuarantineRequest, plan_quarantine,
+        quarantine_snapshot_matches,
+    };
 
     fn authorization() -> crate::DestructiveAuthorization {
         DestructiveRequest::one(DestructiveCapability::QuarantineUnexpectedFiles)
@@ -437,6 +527,47 @@ mod tests {
             plan_quarantine(&inside, &authorization()),
             Err(QuarantinePlanError::RecoveryOverlapsProject(_))
         ));
+    }
+
+    #[test]
+    fn refuses_an_oversized_file_before_allocating_its_contents() {
+        let (_temporary, project, recovery) = fixture();
+        let oversized = project.join("large.bin");
+        fs::File::create(&oversized)
+            .expect("sparse fixture")
+            .set_len(MAX_QUARANTINE_FILE_BYTES + 1)
+            .expect("sparse length");
+        let request = QuarantineRequest {
+            project_root: project,
+            recovery_root: recovery,
+            run_id: "run".to_owned(),
+            paths: vec![Utf8PathBuf::from("large.bin")],
+        };
+
+        let plan = plan_quarantine(&request, &authorization()).expect("bounded plan");
+
+        assert!(plan.items.is_empty());
+        assert_eq!(plan.diagnostics.len(), 1);
+        assert!(plan.diagnostics[0].notes[0].contains("32 MiB"));
+    }
+
+    #[test]
+    fn streaming_revalidation_detects_a_changed_snapshot() {
+        let (_temporary, project, recovery) = fixture();
+        fs::write(project.join("note.txt"), b"before").expect("fixture");
+        let request = QuarantineRequest {
+            project_root: project.clone(),
+            recovery_root: recovery,
+            run_id: "run".to_owned(),
+            paths: vec![Utf8PathBuf::from("note.txt")],
+        };
+        let plan = plan_quarantine(&request, &authorization()).expect("plan");
+        let item = plan.items.first().expect("captured item");
+        assert!(quarantine_snapshot_matches(item).expect("original snapshot"));
+
+        fs::write(project.join("note.txt"), b"changed").expect("mutation");
+
+        assert!(!quarantine_snapshot_matches(item).expect("changed snapshot"));
     }
 
     #[cfg(unix)]

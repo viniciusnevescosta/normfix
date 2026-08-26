@@ -323,6 +323,7 @@ fn inspect_file(
             kind: match issue.kind() {
                 SyntaxIssueKind::Error => "error",
                 SyntaxIssueKind::Missing => "missing",
+                SyntaxIssueKind::Compatibility => "compatibility",
             }
             .to_owned(),
             start_byte: issue.range().start().get(),

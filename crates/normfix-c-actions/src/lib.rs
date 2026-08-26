@@ -17,7 +17,7 @@ mod transforms;
 use std::collections::{BTreeSet, HashSet};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use normfix_c_syntax::{CParser, ParseFailure};
+use normfix_c_syntax::{CParser, ParseFailure, SyntaxIssueKind};
 pub use normfix_core::{
     Applicability, Diagnostic, DiagnosticSource, Severity, TextRange, TextSize,
 };
@@ -395,6 +395,7 @@ fn final_diagnostics(
     diagnostics.extend(analysis::unsupported_reported_diagnostics(
         path, context, reported,
     ));
+    diagnostics.extend(syntax_issue_diagnostics(&path.to_owned(), context.issues()));
     diagnostics.sort();
     diagnostics.dedup();
     diagnostics
@@ -530,11 +531,26 @@ pub fn syntax_recovery_diagnostics(path: &Utf8PathBuf, source: &str) -> Vec<Diag
         }
     };
     match parser.parse(source) {
-        Ok(parsed) => parsed
-            .issues()
-            .iter()
+        Ok(parsed) => syntax_issue_diagnostics(path, parsed.issues()),
+        Err(error) => vec![point_diagnostic(
+            path,
+            "C_PARSER_FAILURE",
+            Severity::Error,
+            error.to_string(),
+            DiagnosticSource::Parser,
+            Some("Repair the source syntax before running automatic fixes.".to_owned()),
+        )],
+    }
+}
+
+fn syntax_issue_diagnostics(
+    path: &Utf8PathBuf,
+    issues: &[normfix_c_syntax::SyntaxIssue],
+) -> Vec<Diagnostic> {
+    issues
+        .iter()
             .map(|issue| {
-                let va_arg_compatibility = recovery_is_inside_va_arg(source, issue.range());
+                let va_arg_compatibility = issue.kind() == SyntaxIssueKind::Compatibility;
                 Diagnostic {
                     rule_id: if va_arg_compatibility {
                         "C_PARSER_VA_ARG_COMPAT"
@@ -569,7 +585,7 @@ pub fn syntax_recovery_diagnostics(path: &Utf8PathBuf, source: &str) -> Vec<Diag
                     ],
                     help: Some(
                         if va_arg_compatibility {
-                            "No source change is required; native syntax-aware edits remain disabled for this file."
+                            "No source change is required; the opaque call is preserved exactly while proven edits elsewhere remain available."
                         } else {
                             "Repair the malformed or unsupported construct, then rerun normfix."
                         }
@@ -578,41 +594,7 @@ pub fn syntax_recovery_diagnostics(path: &Utf8PathBuf, source: &str) -> Vec<Diag
                     localized: None,
                 }
             })
-            .collect(),
-        Err(error) => vec![point_diagnostic(
-            path,
-            "C_PARSER_FAILURE",
-            Severity::Error,
-            error.to_string(),
-            DiagnosticSource::Parser,
-            Some("Repair the source syntax before running automatic fixes.".to_owned()),
-        )],
-    }
-}
-
-/// Whether a recovery sits on a line using `va_arg`.
-///
-/// The tree-sitter C grammar cannot read a raw type argument, so this one
-/// recovery is a grammar limitation rather than a defect in the source, and is
-/// reported as information instead of a warning.
-fn recovery_is_inside_va_arg(source: &str, range: TextRange) -> bool {
-    let Ok(start) = usize::try_from(range.start().get()) else {
-        return false;
-    };
-    if start > source.len() || !source.is_char_boundary(start) {
-        return false;
-    }
-    let line_start = source[..start].rfind('\n').map_or(0, |newline| newline + 1);
-    let line_end = source[start..]
-        .find('\n')
-        .map_or(source.len(), |newline| start + newline);
-    source[line_start..line_end]
-        .find("va_arg")
-        .is_some_and(|offset| {
-            source[line_start + offset + "va_arg".len()..line_end]
-                .trim_start()
-                .starts_with('(')
-        })
+            .collect()
 }
 
 /// A diagnostic with no meaningful range, anchored at the start of the file.

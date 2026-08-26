@@ -164,6 +164,40 @@ fn lint_only_reports_original_source_without_planning_a_header() {
 }
 
 #[test]
+fn an_official_structural_finding_is_counted_once_in_check_mode() {
+    let fixture = Fixture::new(
+        r#"
+if [ "$1" = "--version" ]; then
+    echo "norminette 3.3.59"
+    exit 0
+fi
+echo "$1: Error!"
+echo "Error: TOO_MANY_ARGS (line: 1, col: 5): function has more than 4 arguments"
+exit 1
+"#,
+    );
+    fs::write(
+        fixture.project.path().join("many.c"),
+        "int\tmany(int a, int b, int c, int d, int e)\n{\n\treturn (a + b + c + d + e);\n}\n",
+    )
+    .expect("source fixture");
+
+    let report = run_ready(&[], &fixture.options(ReportMode::Check)).expect("check pipeline");
+    let findings = report.files[0]
+        .after
+        .iter()
+        .filter(|diagnostic| diagnostic.rule_id == "TOO_MANY_ARGS")
+        .collect::<Vec<_>>();
+
+    assert_eq!(findings.len(), 1);
+    assert!(matches!(
+        findings[0].source,
+        DiagnosticSource::NorminetteCompat(_)
+    ));
+    assert_eq!(report.summary.remaining, 1);
+}
+
+#[test]
 fn allowed_function_diagnostic_range_tracks_the_final_header_inserted_source() {
     let fixture = Fixture::clean_oracle();
     let source_path = fixture.project.path().join("allocate.c");

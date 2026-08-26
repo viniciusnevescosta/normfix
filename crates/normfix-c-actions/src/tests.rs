@@ -69,6 +69,33 @@ fn reported_extra_enum_tab_converges_to_the_syntax_depth() {
 }
 
 #[test]
+fn reported_space_before_composite_typedef_alias_becomes_a_tab() {
+    for keyword in ["struct", "union", "enum"] {
+        let member = if keyword == "enum" {
+            "\tITEM_VALUE\n"
+        } else {
+            "\tint\tvalue;\n"
+        };
+        let source = format!("typedef {keyword} s_item\n{{\n{member}}} t_item;\n");
+        let fixed = apply(&source, &[diagnostic("SPACE_REPLACE_TAB", 4, 2)]);
+        assert_eq!(
+            fixed,
+            format!("typedef {keyword} s_item\n{{\n{member}}}\tt_item;\n")
+        );
+        assert_eq!(apply(&fixed, &[]), fixed);
+    }
+}
+
+#[test]
+fn reported_space_after_unrelated_closing_brace_is_not_guessed_as_a_typedef() {
+    let source = "struct s_value\n{\n\tint\tvalue;\n} value;\n";
+    assert_eq!(
+        apply(source, &[diagnostic("SPACE_REPLACE_TAB", 4, 2)]),
+        source
+    );
+}
+
+#[test]
 fn preprocessor_spacing_tracks_nested_conditional_depth() {
     let source = concat!(
         "# include <stddef.h>\n",
@@ -713,6 +740,23 @@ fn parser_recovery_blocks_all_actions() {
     )
     .unwrap_err();
     assert_eq!(error, CActionError::UnsafeSyntax);
+}
+
+#[test]
+fn an_opaque_va_arg_call_does_not_block_proven_layout_around_it() {
+    let source = concat!(
+        "char *next_string(va_list *args)\n",
+        "{\n",
+        " return (va_arg(*args, char *));\n",
+        "}\n",
+    );
+
+    let fixed = apply(source, &[]);
+
+    assert!(fixed.contains("va_arg(*args, char *)"));
+    assert!(fixed.contains("\n\treturn (va_arg"));
+    assert_ne!(fixed, source);
+    assert_eq!(apply(&fixed, &[]), fixed);
 }
 
 #[test]

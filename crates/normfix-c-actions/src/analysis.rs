@@ -76,7 +76,12 @@ pub fn analyze_c(
     let mut parser = CParser::new()?;
     let context = ParsedContext::parse(&mut parser, source)?;
     context.require_safe()?;
-    Ok(analyze_native(path, &context, max_columns))
+    let mut diagnostics = analyze_native(path, &context, max_columns);
+    diagnostics.extend(crate::syntax_issue_diagnostics(
+        &path.to_owned(),
+        context.issues(),
+    ));
+    Ok(diagnostics)
 }
 
 /// Returns function budgets without adding them to normal diagnostics.

@@ -7,18 +7,27 @@
 
 #![forbid(unsafe_code)]
 
+mod filesystem;
+
+use filesystem::{
+    absolute_lexical, canonical_directory, file_blake3, file_sha256_hex, make_journal,
+    persist_staged, preflight, preflight_bytes, prepare_backup_root, prepare_file_at,
+    regular_file_without_symlink_components, reject_symlink_components, resolve_beneath, rollback,
+    sha256_hex, validate_read_preconditions, validate_read_preconditions_except, write_journal,
+};
+
 use std::collections::BTreeSet;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
-use std::path::{Component, Path, PathBuf};
+use std::fs::{self, File};
+use std::io::{self, Read as _};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use filetime::{FileTime, set_file_times};
 use normfix_core::FixRecord;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 use thiserror::Error;
+
+const MAX_JOURNAL_BYTES: u64 = 16 * 1024 * 1024;
 
 /// One validated file replacement.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -293,6 +302,7 @@ pub enum TransactionError {
 
 struct PreparedFile {
     plan: PlannedFile,
+    target_path: PathBuf,
     staged: NamedTempFile,
     backup: Option<PathBuf>,
     metadata: fs::Metadata,
@@ -451,9 +461,8 @@ fn journal_file_is_intact(
     {
         return false;
     }
-    fs::read(source)
-        .is_ok_and(|bytes| blake3::hash(&bytes).to_hex().to_string() == file.replacement_blake3)
-        && fs::read(&backup).is_ok_and(|bytes| sha256_hex(&bytes) == file.original_sha256)
+    file_blake3(&source).is_ok_and(|digest| digest.to_hex().as_str() == file.replacement_blake3)
+        && file_sha256_hex(&backup).is_ok_and(|digest| digest == file.original_sha256)
 }
 
 /// Restores a committed run only while every target still has the exact bytes
@@ -503,7 +512,22 @@ pub fn undo_run(
 }
 
 fn read_journal(path: &Path) -> io::Result<Journal> {
-    let bytes = fs::read(path)?;
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() || metadata.len() > MAX_JOURNAL_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "journal is not a bounded regular file",
+        ));
+    }
+    let capacity = usize::try_from(metadata.len())
+        .map_err(|_| io::Error::other("journal length does not fit in memory"))?;
+    let mut bytes = Vec::with_capacity(capacity);
+    File::open(path)?
+        .take(MAX_JOURNAL_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()) != Ok(metadata.len()) {
+        return Err(io::Error::other("journal changed while it was being read"));
+    }
     serde_json::from_slice(&bytes).map_err(io::Error::other)
 }
 
@@ -546,52 +570,8 @@ fn validate_undo_journal(
     let mut backups = BTreeSet::new();
     let mut plans = Vec::with_capacity(journal.files.len());
     for file in &journal.files {
-        if !file.committed {
-            return Err(invalid_undo_journal(
-                run,
-                "the journal contains an uncommitted file",
-            ));
-        }
-        let Some(source) = resolve_beneath(project_root_input, project_root, &file.source) else {
-            return Err(invalid_undo_journal(
-                run,
-                "a journal source is outside the selected project",
-            ));
-        };
-        if !regular_file_without_symlink_components(project_root, &source) {
-            return Err(invalid_undo_journal(
-                run,
-                "a journal source or one of its components is not a regular non-symlink file",
-            ));
-        }
-        let Some(backup) = file.backup.as_ref().map(|path| absolute_lexical(path)) else {
-            return Err(invalid_undo_journal(
-                run,
-                "a committed journal file has no retained backup",
-            ));
-        };
-        if !backups.insert(backup.clone())
-            || !regular_file_without_symlink_components(run_directory, &backup)
-        {
-            return Err(invalid_undo_journal(
-                run,
-                "a backup is duplicated, outside its run, or behind a symbolic link",
-            ));
-        }
-        let current = fs::read(&source).map_err(|source_error| UndoError::Inspect {
-            path: source.clone(),
-            source: source_error,
-        })?;
-        if blake3::hash(&current).to_hex().to_string() != file.replacement_blake3 {
-            return Err(UndoError::ModifiedSinceRun(file.source.clone()));
-        }
-        let original = fs::read(&backup).map_err(|source| UndoError::Inspect {
-            path: backup.clone(),
-            source,
-        })?;
-        if sha256_hex(&original) != file.original_sha256 {
-            return Err(UndoError::BackupIntegrity(backup));
-        }
+        let current = validate_undo_source(file, run, project_root_input, project_root)?;
+        let original = validate_undo_backup(file, run, run_directory, &mut backups)?;
         plans.push(PlannedFile {
             path: file.source.clone(),
             original: current,
@@ -605,6 +585,80 @@ fn validate_undo_journal(
         });
     }
     Ok(plans)
+}
+
+fn validate_undo_source(
+    file: &JournalFile,
+    run: &UndoRun,
+    project_root_input: &Path,
+    project_root: &Path,
+) -> Result<Vec<u8>, UndoError> {
+    if !file.committed {
+        return Err(invalid_undo_journal(
+            run,
+            "the journal contains an uncommitted file",
+        ));
+    }
+    let Some(source) = resolve_beneath(project_root_input, project_root, &file.source) else {
+        return Err(invalid_undo_journal(
+            run,
+            "a journal source is outside the selected project",
+        ));
+    };
+    if !regular_file_without_symlink_components(project_root, &source) {
+        return Err(invalid_undo_journal(
+            run,
+            "a journal source or one of its components is not a regular non-symlink file",
+        ));
+    }
+    if file_blake3(&source)
+        .map_err(|source_error| UndoError::Inspect {
+            path: source.clone(),
+            source: source_error,
+        })?
+        .to_hex()
+        .as_str()
+        != file.replacement_blake3
+    {
+        return Err(UndoError::ModifiedSinceRun(file.source.clone()));
+    }
+    fs::read(&source).map_err(|source_error| UndoError::Inspect {
+        path: source,
+        source: source_error,
+    })
+}
+
+fn validate_undo_backup(
+    file: &JournalFile,
+    run: &UndoRun,
+    run_directory: &Path,
+    backups: &mut BTreeSet<PathBuf>,
+) -> Result<Vec<u8>, UndoError> {
+    let Some(backup) = file.backup.as_ref().map(|path| absolute_lexical(path)) else {
+        return Err(invalid_undo_journal(
+            run,
+            "a committed journal file has no retained backup",
+        ));
+    };
+    if !backups.insert(backup.clone())
+        || !regular_file_without_symlink_components(run_directory, &backup)
+    {
+        return Err(invalid_undo_journal(
+            run,
+            "a backup is duplicated, outside its run, or behind a symbolic link",
+        ));
+    }
+    if file_sha256_hex(&backup).map_err(|source| UndoError::Inspect {
+        path: backup.clone(),
+        source,
+    })? != file.original_sha256
+    {
+        return Err(UndoError::BackupIntegrity(backup));
+    }
+    fs::read(&backup).map_err(|source| UndoError::Inspect {
+        path: backup,
+        source,
+    })
 }
 
 struct UndoJournalLocation {
@@ -680,7 +734,7 @@ fn prepare_transaction(
     options: &TransactionOptions,
     preconditions: &[ReadPrecondition],
 ) -> Result<(Vec<PreparedFile>, Option<PathBuf>), TransactionError> {
-    let mut plans = plans
+    let plans = plans
         .into_iter()
         .filter(PlannedFile::changed)
         .collect::<Vec<_>>();
@@ -695,18 +749,27 @@ fn prepare_transaction(
     {
         return Err(TransactionError::InvalidRunId);
     }
-    plans.sort_by(|left, right| left.path.cmp(&right.path));
-    reject_duplicate_targets(&plans)?;
     let root_input = absolute_lexical(&options.project_root);
     let root = canonical_directory(&options.project_root)?;
-    for plan in &plans {
-        preflight(plan, &root_input, &root)?;
+    let mut resolved_plans = Vec::with_capacity(plans.len());
+    for plan in plans {
+        preflight(&plan, &root_input, &root)?;
+        let (_, resolved) = filesystem::resolve_transaction_path(&plan.path, &root_input, &root)?;
+        resolved_plans.push((resolved, plan));
+    }
+    resolved_plans.sort_by(|left, right| left.0.cmp(&right.0));
+    if let Some(duplicate) = resolved_plans
+        .windows(2)
+        .find(|pair| pair[0].0 == pair[1].0)
+        .map(|pair| pair[1].1.path.clone())
+    {
+        return Err(TransactionError::DuplicateTarget(duplicate));
     }
     validate_read_preconditions(preconditions, &root_input, &root)?;
     let backup_run = prepare_backup_root(options, &root_input, &root)?;
-    let mut prepared = Vec::with_capacity(plans.len());
-    for plan in plans {
-        prepared.push(prepare_file(plan, backup_run.as_deref())?);
+    let mut prepared = Vec::with_capacity(resolved_plans.len());
+    for (target_path, plan) in resolved_plans {
+        prepared.push(prepare_file_at(plan, target_path, backup_run.as_deref())?);
     }
     Ok((prepared, backup_run))
 }
@@ -762,7 +825,7 @@ fn commit_prepared_files(
         }
         let committed_paths = committed_indices
             .iter()
-            .map(|committed| absolute_lexical(&prepared[*committed].plan.path))
+            .map(|committed| absolute_lexical(&prepared[*committed].target_path))
             .collect::<BTreeSet<_>>();
         if let Err(error) =
             validate_read_preconditions_except(preconditions, &root_input, &root, &committed_paths)
@@ -772,6 +835,20 @@ fn commit_prepared_files(
                 if let Some(path) = journal_path {
                     let _ = write_journal(path, journal);
                 }
+                return Err(error);
+            }
+            return Err(rollback_error(
+                prepared,
+                &committed_indices,
+                journal,
+                journal_path,
+                &options.project_root,
+                target,
+                io::Error::other(error.to_string()),
+            ));
+        }
+        if let Err(error) = preflight(&prepared[index].plan, &root_input, &root) {
+            if committed_indices.is_empty() {
                 return Err(error);
             }
             return Err(rollback_error(
@@ -820,7 +897,7 @@ fn validate_committed_replacements(
 ) -> Result<(), (PathBuf, io::Error)> {
     for index in committed_indices {
         let file = &prepared[*index];
-        if let Err(source) = preflight_bytes(&file.plan.path, &file.plan.replacement) {
+        if let Err(source) = preflight_bytes(&file.target_path, &file.plan.replacement) {
             return Err((file.plan.path.clone(), source));
         }
     }
@@ -907,1158 +984,5 @@ fn build_commit_report(
     }
 }
 
-fn reject_duplicate_targets(plans: &[PlannedFile]) -> Result<(), TransactionError> {
-    let mut seen = BTreeSet::new();
-    for plan in plans {
-        if !seen.insert(&plan.path) {
-            return Err(TransactionError::DuplicateTarget(plan.path.clone()));
-        }
-    }
-    Ok(())
-}
-
-fn canonical_directory(path: &Path) -> Result<PathBuf, TransactionError> {
-    path.canonicalize()
-        .map_err(|source| TransactionError::Inspect {
-            path: path.to_path_buf(),
-            source,
-        })
-}
-
-fn prepare_backup_root(
-    options: &TransactionOptions,
-    project_root_input: &Path,
-    project_root: &Path,
-) -> Result<Option<PathBuf>, TransactionError> {
-    let Some(base) = &options.backup_root else {
-        return Ok(None);
-    };
-    let absolute = absolute_lexical(base);
-    if absolute.starts_with(project_root_input) || absolute.starts_with(project_root) {
-        return Err(TransactionError::BackupInsideProject(absolute));
-    }
-    let canonical_base = create_canonical_backup_base(&absolute, project_root)?;
-    let run = canonical_base.join(&options.run_id);
-    fs::create_dir(&run).map_err(|source| TransactionError::Prepare {
-        path: run.clone(),
-        source,
-    })?;
-    set_private_directory_permissions(&run).map_err(|source| TransactionError::Prepare {
-        path: run.clone(),
-        source,
-    })?;
-    let resolved = run
-        .canonicalize()
-        .map_err(|source| TransactionError::Inspect {
-            path: run.clone(),
-            source,
-        })?;
-    if resolved.starts_with(project_root) || resolved.parent() != Some(canonical_base.as_path()) {
-        return Err(TransactionError::BackupInsideProject(resolved));
-    }
-    Ok(Some(resolved))
-}
-
-fn create_canonical_backup_base(
-    absolute: &Path,
-    project_root: &Path,
-) -> Result<PathBuf, TransactionError> {
-    let mut existing = absolute.to_path_buf();
-    let mut missing = Vec::new();
-    loop {
-        match fs::symlink_metadata(&existing) {
-            Ok(_) => break,
-            Err(source) if source.kind() == io::ErrorKind::NotFound => {
-                let Some(name) = existing.file_name() else {
-                    return Err(TransactionError::Inspect {
-                        path: existing,
-                        source,
-                    });
-                };
-                missing.push(name.to_os_string());
-                if !existing.pop() {
-                    return Err(TransactionError::Inspect {
-                        path: absolute.to_path_buf(),
-                        source: io::Error::new(
-                            io::ErrorKind::NotFound,
-                            "backup path has no existing ancestor",
-                        ),
-                    });
-                }
-            }
-            Err(source) => {
-                return Err(TransactionError::Inspect {
-                    path: existing,
-                    source,
-                });
-            }
-        }
-    }
-    let mut canonical = existing
-        .canonicalize()
-        .map_err(|source| TransactionError::Inspect {
-            path: existing.clone(),
-            source,
-        })?;
-    if !canonical.is_dir() {
-        return Err(TransactionError::Inspect {
-            path: canonical,
-            source: io::Error::other("backup path ancestor is not a directory"),
-        });
-    }
-    if canonical.starts_with(project_root) {
-        return Err(TransactionError::BackupInsideProject(canonical));
-    }
-    for component in missing.into_iter().rev() {
-        let next = canonical.join(component);
-        match fs::create_dir(&next) {
-            Ok(()) => {
-                set_private_directory_permissions(&next).map_err(|source| {
-                    TransactionError::Prepare {
-                        path: next.clone(),
-                        source,
-                    }
-                })?;
-            }
-            Err(source) if source.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(source) => {
-                return Err(TransactionError::Prepare { path: next, source });
-            }
-        }
-        let metadata = fs::symlink_metadata(&next).map_err(|source| TransactionError::Inspect {
-            path: next.clone(),
-            source,
-        })?;
-        if metadata.file_type().is_symlink() {
-            return Err(TransactionError::Symlink(next));
-        }
-        if !metadata.file_type().is_dir() {
-            return Err(TransactionError::Inspect {
-                path: next,
-                source: io::Error::other("backup path component is not a directory"),
-            });
-        }
-        canonical = next
-            .canonicalize()
-            .map_err(|source| TransactionError::Inspect { path: next, source })?;
-        if canonical.starts_with(project_root) {
-            return Err(TransactionError::BackupInsideProject(canonical));
-        }
-    }
-    Ok(canonical)
-}
-
-fn preflight(
-    plan: &PlannedFile,
-    root_input: &Path,
-    canonical_root: &Path,
-) -> Result<(), TransactionError> {
-    let absolute = absolute_lexical(&plan.path);
-    let resolved = if let Ok(relative) = absolute.strip_prefix(root_input) {
-        canonical_root.join(relative)
-    } else if absolute.starts_with(canonical_root) {
-        absolute.clone()
-    } else {
-        return Err(TransactionError::OutsideProject(absolute));
-    };
-    reject_symlink_components(canonical_root, &resolved)?;
-    let metadata = fs::symlink_metadata(&absolute).map_err(|source| TransactionError::Inspect {
-        path: absolute.clone(),
-        source,
-    })?;
-    if !metadata.file_type().is_file() {
-        return Err(TransactionError::NotRegularFile(absolute));
-    }
-    let current = fs::read(&absolute).map_err(|source| TransactionError::Inspect {
-        path: absolute.clone(),
-        source,
-    })?;
-    if current != plan.original {
-        return Err(TransactionError::ConcurrentModification(absolute));
-    }
-    Ok(())
-}
-
-fn validate_read_preconditions(
-    preconditions: &[ReadPrecondition],
-    root_input: &Path,
-    canonical_root: &Path,
-) -> Result<(), TransactionError> {
-    validate_read_preconditions_except(preconditions, root_input, canonical_root, &BTreeSet::new())
-}
-
-fn validate_read_preconditions_except(
-    preconditions: &[ReadPrecondition],
-    root_input: &Path,
-    canonical_root: &Path,
-    ignored_paths: &BTreeSet<PathBuf>,
-) -> Result<(), TransactionError> {
-    for precondition in preconditions {
-        let path = match precondition {
-            ReadPrecondition::Matches { path, .. } | ReadPrecondition::Absent { path } => path,
-            ReadPrecondition::ProjectSources { root, .. } => root,
-        };
-        if ignored_paths.contains(&absolute_lexical(path)) {
-            continue;
-        }
-        match precondition {
-            ReadPrecondition::Matches { path, blake3 } => {
-                let (absolute, resolved) =
-                    resolve_transaction_path(path, root_input, canonical_root)?;
-                reject_symlink_components(canonical_root, &resolved)?;
-                let metadata = fs::symlink_metadata(&absolute).map_err(|source| {
-                    if source.kind() == io::ErrorKind::NotFound {
-                        TransactionError::ConcurrentModification(absolute.clone())
-                    } else {
-                        TransactionError::Inspect {
-                            path: absolute.clone(),
-                            source,
-                        }
-                    }
-                })?;
-                if !metadata.file_type().is_file() {
-                    return Err(TransactionError::ConcurrentModification(absolute));
-                }
-                let bytes = fs::read(&absolute).map_err(|source| TransactionError::Inspect {
-                    path: absolute.clone(),
-                    source,
-                })?;
-                if blake3::hash(&bytes).as_bytes() != blake3 {
-                    return Err(TransactionError::ConcurrentModification(absolute));
-                }
-            }
-            ReadPrecondition::Absent { path } => {
-                let (absolute, resolved) =
-                    resolve_transaction_path(path, root_input, canonical_root)?;
-                reject_symlink_components_allow_missing(canonical_root, &resolved)?;
-                match fs::symlink_metadata(&absolute) {
-                    Err(source) if source.kind() == io::ErrorKind::NotFound => {}
-                    Ok(_) => return Err(TransactionError::ConcurrentModification(absolute)),
-                    Err(source) => {
-                        return Err(TransactionError::Inspect {
-                            path: absolute,
-                            source,
-                        });
-                    }
-                }
-            }
-            ReadPrecondition::ProjectSources { root, paths } => {
-                validate_project_source_membership(root, paths, root_input, canonical_root)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-const MAX_PROJECT_TREE_ENTRIES: usize = 1_000_000;
-
-fn validate_project_source_membership(
-    observed_root: &Path,
-    expected_paths: &[PathBuf],
-    transaction_root_input: &Path,
-    canonical_transaction_root: &Path,
-) -> Result<(), TransactionError> {
-    let (absolute_root, resolved_root) = resolve_transaction_path(
-        observed_root,
-        transaction_root_input,
-        canonical_transaction_root,
-    )?;
-    reject_symlink_components(canonical_transaction_root, &resolved_root)?;
-    let metadata = fs::symlink_metadata(&absolute_root).map_err(|source| {
-        if source.kind() == io::ErrorKind::NotFound {
-            TransactionError::ConcurrentModification(absolute_root.clone())
-        } else {
-            TransactionError::Inspect {
-                path: absolute_root.clone(),
-                source,
-            }
-        }
-    })?;
-    if !metadata.file_type().is_dir() {
-        return Err(TransactionError::ConcurrentModification(absolute_root));
-    }
-
-    let mut expected = BTreeSet::new();
-    for path in expected_paths {
-        let (absolute, resolved) =
-            resolve_transaction_path(path, transaction_root_input, canonical_transaction_root)?;
-        if !resolved.starts_with(&resolved_root)
-            || !matches!(
-                absolute.extension().and_then(std::ffi::OsStr::to_str),
-                Some("c" | "h")
-            )
-            || !expected.insert(absolute_lexical(&absolute))
-        {
-            return Err(TransactionError::ConcurrentModification(absolute));
-        }
-    }
-    let actual =
-        collect_project_sources(&absolute_root).map_err(|source| TransactionError::Inspect {
-            path: absolute_root.clone(),
-            source,
-        })?;
-    if actual != expected {
-        let changed = actual
-            .symmetric_difference(&expected)
-            .next()
-            .cloned()
-            .unwrap_or(absolute_root);
-        return Err(TransactionError::ConcurrentModification(changed));
-    }
-    Ok(())
-}
-
-fn collect_project_sources(root: &Path) -> io::Result<BTreeSet<PathBuf>> {
-    let mut sources = BTreeSet::new();
-    let mut pending = vec![root.to_path_buf()];
-    let mut visited = 0_usize;
-    while let Some(directory) = pending.pop() {
-        let mut entries = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
-        entries.sort_by_key(fs::DirEntry::path);
-        for entry in entries.into_iter().rev() {
-            visited = visited.saturating_add(1);
-            if visited > MAX_PROJECT_TREE_ENTRIES {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "project source membership exceeds the transaction safety limit",
-                ));
-            }
-            let path = entry.path();
-            let file_type = entry.file_type()?;
-            if file_type.is_symlink() {
-                continue;
-            }
-            if file_type.is_dir() {
-                let name = entry.file_name();
-                if name == ".git"
-                    || matches!(name.to_str(), Some(".claude" | ".codex"))
-                    || fs::symlink_metadata(path.join(".git")).is_ok()
-                {
-                    continue;
-                }
-                pending.push(path);
-            } else if file_type.is_file()
-                && matches!(
-                    path.extension().and_then(std::ffi::OsStr::to_str),
-                    Some("c" | "h")
-                )
-            {
-                sources.insert(absolute_lexical(&path));
-            }
-        }
-    }
-    Ok(sources)
-}
-
-fn resolve_transaction_path(
-    path: &Path,
-    root_input: &Path,
-    canonical_root: &Path,
-) -> Result<(PathBuf, PathBuf), TransactionError> {
-    let absolute = absolute_lexical(path);
-    let resolved = if let Ok(relative) = absolute.strip_prefix(root_input) {
-        canonical_root.join(relative)
-    } else if absolute.starts_with(canonical_root) {
-        absolute.clone()
-    } else {
-        return Err(TransactionError::OutsideProject(absolute));
-    };
-    Ok((absolute, resolved))
-}
-
-fn prepare_file(
-    plan: PlannedFile,
-    backup_run: Option<&Path>,
-) -> Result<PreparedFile, TransactionError> {
-    let metadata = fs::metadata(&plan.path).map_err(|source| TransactionError::Prepare {
-        path: plan.path.clone(),
-        source,
-    })?;
-    let backup = backup_run
-        .map(|root| backup_path(root, &plan.path))
-        .transpose()
-        .map_err(|source| TransactionError::Prepare {
-            path: plan.path.clone(),
-            source,
-        })?;
-    if let Some(path) = &backup {
-        write_exact_file(path, &plan.original, &metadata).map_err(|source| {
-            TransactionError::Prepare {
-                path: path.clone(),
-                source,
-            }
-        })?;
-    }
-    let parent = plan
-        .path
-        .parent()
-        .ok_or_else(|| TransactionError::OutsideProject(plan.path.clone()))?;
-    let mut staged = NamedTempFile::new_in(parent).map_err(|source| TransactionError::Prepare {
-        path: plan.path.clone(),
-        source,
-    })?;
-    staged
-        .write_all(&plan.replacement)
-        .and_then(|()| staged.as_file_mut().sync_all())
-        .map_err(|source| TransactionError::Prepare {
-            path: plan.path.clone(),
-            source,
-        })?;
-    apply_metadata(staged.path(), &metadata).map_err(|source| TransactionError::Prepare {
-        path: plan.path.clone(),
-        source,
-    })?;
-    Ok(PreparedFile {
-        plan,
-        staged,
-        backup,
-        metadata,
-    })
-}
-
-fn persist_staged(prepared: &mut PreparedFile) -> io::Result<()> {
-    preflight_bytes(&prepared.plan.path, &prepared.plan.original)?;
-    let parent = prepared
-        .plan
-        .path
-        .parent()
-        .ok_or_else(|| io::Error::other("target has no parent directory"))?;
-    let staged = std::mem::replace(&mut prepared.staged, NamedTempFile::new_in(parent)?);
-    staged
-        .persist(&prepared.plan.path)
-        .map_err(|error| error.error)?;
-    sync_directory(parent)
-}
-
-fn rollback(prepared: &[PreparedFile], committed_indices: &[usize]) -> bool {
-    let mut complete = true;
-    for index in committed_indices.iter().rev() {
-        let file = &prepared[*index];
-        if preflight_bytes(&file.plan.path, &file.plan.replacement).is_err()
-            || restore_exact(&file.plan.path, &file.plan.original, &file.metadata).is_err()
-        {
-            complete = false;
-        }
-    }
-    complete
-}
-
-fn restore_exact(path: &Path, bytes: &[u8], metadata: &fs::Metadata) -> io::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::other("target has no parent directory"))?;
-    let mut temporary = NamedTempFile::new_in(parent)?;
-    temporary.write_all(bytes)?;
-    temporary.as_file_mut().sync_all()?;
-    apply_metadata(temporary.path(), metadata)?;
-    temporary.persist(path).map_err(|error| error.error)?;
-    sync_directory(parent)
-}
-
-fn preflight_bytes(path: &Path, expected: &[u8]) -> io::Result<()> {
-    let metadata = fs::symlink_metadata(path)?;
-    if !metadata.file_type().is_file() {
-        return Err(io::Error::other("target is no longer a regular file"));
-    }
-    if fs::read(path)? != expected {
-        return Err(io::Error::other(
-            "target changed after transaction preflight",
-        ));
-    }
-    Ok(())
-}
-
-fn backup_path(root: &Path, source: &Path) -> io::Result<PathBuf> {
-    let parent = source
-        .parent()
-        .ok_or_else(|| io::Error::other("source has no parent"))?;
-    let parent_hash = blake3::hash(parent.as_os_str().as_encoded_bytes())
-        .to_hex()
-        .to_string();
-    let name = source
-        .file_name()
-        .ok_or_else(|| io::Error::other("source has no file name"))?;
-    Ok(root.join(&parent_hash[..16]).join(name))
-}
-
-fn write_exact_file(path: &Path, bytes: &[u8], metadata: &fs::Metadata) -> io::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::other("backup has no parent"))?;
-    fs::create_dir_all(parent)?;
-    set_private_directory_permissions(parent)?;
-    let mut options = OpenOptions::new();
-    options.create_new(true).write(true);
-    let mut file = options.open(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    apply_metadata(path, metadata)?;
-    sync_directory(parent)
-}
-
-fn apply_metadata(path: &Path, metadata: &fs::Metadata) -> io::Result<()> {
-    fs::set_permissions(path, metadata.permissions())?;
-    let accessed = FileTime::from_last_access_time(metadata);
-    let modified = FileTime::from_last_modification_time(metadata);
-    set_file_times(path, accessed, modified)
-}
-
-fn make_journal(options: &TransactionOptions, prepared: &[PreparedFile]) -> Journal {
-    Journal {
-        schema_version: 1,
-        run_id: options.run_id.clone(),
-        state: JournalState::Prepared,
-        files: prepared
-            .iter()
-            .map(|file| JournalFile {
-                source: file.plan.path.clone(),
-                backup: file.backup.clone(),
-                original_sha256: sha256_hex(&file.plan.original),
-                replacement_blake3: blake3::hash(&file.plan.replacement).to_hex().to_string(),
-                committed: false,
-            })
-            .collect(),
-    }
-}
-
-fn write_journal(path: &Path, journal: &Journal) -> io::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::other("journal has no parent"))?;
-    let mut temporary = NamedTempFile::new_in(parent)?;
-    serde_json::to_writer_pretty(temporary.as_file_mut(), journal)?;
-    temporary.write_all(b"\n")?;
-    temporary.as_file_mut().sync_all()?;
-    temporary.persist(path).map_err(|error| error.error)?;
-    sync_directory(parent)
-}
-
-fn reject_symlink_components(root: &Path, path: &Path) -> Result<(), TransactionError> {
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| TransactionError::OutsideProject(path.to_path_buf()))?;
-    let mut current = root.to_path_buf();
-    for component in relative.components() {
-        match component {
-            Component::CurDir => {}
-            Component::Prefix(_) | Component::RootDir | Component::ParentDir => {
-                return Err(TransactionError::OutsideProject(path.to_path_buf()));
-            }
-            Component::Normal(value) => {
-                current.push(value);
-                let metadata =
-                    fs::symlink_metadata(&current).map_err(|source| TransactionError::Inspect {
-                        path: current.clone(),
-                        source,
-                    })?;
-                if metadata.file_type().is_symlink() {
-                    return Err(TransactionError::Symlink(current));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn reject_symlink_components_allow_missing(
-    root: &Path,
-    path: &Path,
-) -> Result<(), TransactionError> {
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| TransactionError::OutsideProject(path.to_path_buf()))?;
-    let mut current = root.to_path_buf();
-    for component in relative.components() {
-        let Component::Normal(value) = component else {
-            if matches!(component, Component::CurDir) {
-                continue;
-            }
-            return Err(TransactionError::OutsideProject(path.to_path_buf()));
-        };
-        current.push(value);
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(TransactionError::Symlink(current));
-            }
-            Ok(_) => {}
-            Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(source) => {
-                return Err(TransactionError::Inspect {
-                    path: current,
-                    source,
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
-fn regular_file_without_symlink_components(root: &Path, path: &Path) -> bool {
-    path.starts_with(root)
-        && reject_symlink_components(root, path).is_ok()
-        && fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
-}
-
-fn resolve_beneath(input_root: &Path, canonical_root: &Path, path: &Path) -> Option<PathBuf> {
-    let absolute = absolute_lexical(path);
-    if let Ok(relative) = absolute.strip_prefix(input_root) {
-        return Some(canonical_root.join(relative));
-    }
-    absolute.starts_with(canonical_root).then_some(absolute)
-}
-
-fn absolute_lexical(path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        lexical_normalize(path)
-    } else {
-        lexical_normalize(
-            &std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(path),
-        )
-    }
-}
-
-fn lexical_normalize(path: &Path) -> PathBuf {
-    let mut output = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                let _ = output.pop();
-            }
-            other => output.push(other.as_os_str()),
-        }
-    }
-    output
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
-
-/// Makes a newly created or replaced entry durable.
-///
-/// POSIX requires the parent directory to be flushed before a create or rename
-/// survives a crash, which is why this exists at all.
-///
-/// Windows has no counterpart. A directory handle cannot even be opened without
-/// `FILE_FLAG_BACKUP_SEMANTICS`, and flushing one is not a supported operation —
-/// `File::open` on a directory is what made every commit and every backup fail
-/// there with "Access is denied". The file's own `sync_all` has already run, and
-/// NTFS journals the metadata, so nothing is skipped here that Windows would
-/// otherwise have done. What remains different is that a rename is not written
-/// through, which `docs/COMPATIBILITY.md` states rather than papers over.
-#[cfg(unix)]
-fn sync_directory(path: &Path) -> io::Result<()> {
-    File::open(path)?.sync_all()
-}
-
-#[cfg(not(unix))]
-fn sync_directory(_path: &Path) -> io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
-fn set_private_directory_permissions(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-}
-
-#[cfg(not(unix))]
-fn set_private_directory_permissions(_path: &Path) -> io::Result<()> {
-    Ok(())
-}
-
 #[cfg(test)]
-mod tests {
-    use std::{collections::BTreeSet, fs};
-
-    use normfix_core::FixRecord;
-    use tempfile::TempDir;
-
-    use super::{
-        PlannedFile, ReadPrecondition, TransactionError, TransactionOptions, UndoError,
-        commit_files, commit_files_guarded, list_undo_runs, read_journal, sha256_hex, undo_run,
-        validate_committed_replacements, validate_read_preconditions_except, write_journal,
-    };
-
-    fn plan(path: &std::path::Path, replacement: &[u8]) -> PlannedFile {
-        PlannedFile {
-            path: path.to_path_buf(),
-            original: fs::read(path).expect("fixture"),
-            replacement: replacement.to_vec(),
-            fixes: vec![FixRecord {
-                rule_id: "TEST".to_owned(),
-                description: "test replacement".to_owned(),
-                line: Some(1),
-                count: 1,
-            }],
-        }
-    }
-
-    #[test]
-    fn commits_sorted_files_with_external_backups_and_journal() {
-        let project = TempDir::new().expect("project");
-        let backups = TempDir::new().expect("backups");
-        let a = project.path().join("a.c");
-        let b = project.path().join("b.c");
-        fs::write(&a, "old a\n").expect("a");
-        fs::write(&b, "old b\n").expect("b");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-1".to_owned(),
-            backup_root: Some(backups.path().to_path_buf()),
-        };
-
-        let report = commit_files(vec![plan(&b, b"new b\n"), plan(&a, b"new a\n")], &options)
-            .expect("commit");
-
-        assert_eq!(fs::read(&a).expect("a"), b"new a\n");
-        assert_eq!(fs::read(&b).expect("b"), b"new b\n");
-        assert_eq!(report.files[0].path, a);
-        assert_eq!(report.files[1].path, b);
-        assert!(report.journal.as_ref().is_some_and(|path| path.is_file()));
-        for file in &report.files {
-            let backup = file.backup.as_ref().expect("backup");
-            assert!(backup.is_file());
-        }
-        assert_eq!(report.files[0].original_sha256, sha256_hex(b"old a\n"));
-    }
-
-    #[test]
-    fn concurrent_modification_aborts_before_any_write() {
-        let project = TempDir::new().expect("project");
-        let a = project.path().join("a.c");
-        let b = project.path().join("b.c");
-        fs::write(&a, "old a\n").expect("a");
-        fs::write(&b, "old b\n").expect("b");
-        let first = plan(&a, b"new a\n");
-        let second = plan(&b, b"new b\n");
-        fs::write(&b, "external\n").expect("external change");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-2".to_owned(),
-            backup_root: None,
-        };
-
-        assert!(matches!(
-            commit_files(vec![first, second], &options),
-            Err(TransactionError::ConcurrentModification(path)) if path == b
-        ));
-        assert_eq!(fs::read(&a).expect("a"), b"old a\n");
-        assert_eq!(fs::read(&b).expect("b"), b"external\n");
-    }
-
-    #[test]
-    fn changed_read_precondition_aborts_before_backup_or_write() {
-        let project = TempDir::new().expect("project");
-        let backups = TempDir::new().expect("backups");
-        let target = project.path().join("target.c");
-        let observed = project.path().join("public.h");
-        fs::write(&target, "old\n").expect("target");
-        fs::write(&observed, "old declaration\n").expect("observed file");
-        let precondition = ReadPrecondition::matches(&observed, b"old declaration\n");
-        fs::write(&observed, "new declaration\n").expect("external change");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-read-set".to_owned(),
-            backup_root: Some(backups.path().join("normfix")),
-        };
-
-        assert!(matches!(
-            commit_files_guarded(vec![plan(&target, b"new\n")], &options, &[precondition]),
-            Err(TransactionError::ConcurrentModification(path)) if path == observed
-        ));
-        assert_eq!(fs::read(&target).expect("target"), b"old\n");
-        assert!(!backups.path().join("normfix").exists());
-    }
-
-    #[test]
-    fn newly_present_absence_precondition_aborts_before_write() {
-        let project = TempDir::new().expect("project");
-        let target = project.path().join("Makefile");
-        let missing = project.path().join("missing.c");
-        fs::write(&target, "SRCS = missing.c\n").expect("Makefile");
-        let precondition = ReadPrecondition::absent(&missing);
-        fs::write(&missing, "int main(void) { return (0); }\n").expect("new source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-absence".to_owned(),
-            backup_root: None,
-        };
-
-        assert!(matches!(
-            commit_files_guarded(vec![plan(&target, b"SRCS =\n")], &options, &[precondition]),
-            Err(TransactionError::ConcurrentModification(path)) if path == missing
-        ));
-        assert_eq!(fs::read(&target).expect("Makefile"), b"SRCS = missing.c\n");
-    }
-
-    #[test]
-    fn new_project_source_aborts_a_closed_world_commit() {
-        let project = TempDir::new().expect("project");
-        let target = project.path().join("main.c");
-        let header = project.path().join("public.h");
-        fs::write(&target, "int main(void) { return (0); }\n").expect("target");
-        fs::write(&header, "int old_api(void);\n").expect("header");
-        let precondition =
-            ReadPrecondition::project_sources(project.path(), vec![target.clone(), header.clone()]);
-        let introduced = project.path().join("late.c");
-        fs::write(&introduced, "int old_api(void) { return (1); }\n").expect("late source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-project-membership".to_owned(),
-            backup_root: None,
-        };
-
-        assert!(matches!(
-            commit_files_guarded(
-                vec![plan(&header, b"\n")],
-                &options,
-                &[precondition],
-            ),
-            Err(TransactionError::ConcurrentModification(path)) if path == introduced
-        ));
-        assert_eq!(fs::read(&header).expect("header"), b"int old_api(void);\n");
-    }
-
-    #[test]
-    fn project_source_membership_is_rechecked_after_a_prior_replacement() {
-        let project = TempDir::new().expect("project");
-        let first = project.path().join("first.c");
-        let second = project.path().join("second.h");
-        fs::write(&first, "int first(void) { return (1); }\n").expect("first");
-        fs::write(&second, "int second(void);\n").expect("second");
-        let precondition =
-            ReadPrecondition::project_sources(project.path(), vec![first.clone(), second.clone()]);
-        let mut prepared =
-            super::prepare_file(plan(&first, b"int first(void) { return (2); }\n"), None)
-                .expect("prepare first replacement");
-        super::persist_staged(&mut prepared).expect("commit first replacement");
-        let introduced = project.path().join("late.h");
-        fs::write(&introduced, "int late(void);\n").expect("late header");
-        let canonical = project.path().canonicalize().expect("canonical project");
-
-        assert!(matches!(
-            validate_read_preconditions_except(
-                &[precondition],
-                project.path(),
-                &canonical,
-                &BTreeSet::new(),
-            ),
-            Err(TransactionError::ConcurrentModification(path)) if path == introduced
-        ));
-    }
-
-    #[test]
-    fn project_snapshot_preconditions_allow_a_multi_file_commit() {
-        let project = TempDir::new().expect("project");
-        let first = project.path().join("first.h");
-        let second = project.path().join("second.h");
-        fs::write(&first, "#ifndef FIRST\n#define FIRST\n#endif\n").expect("first");
-        fs::write(&second, "#ifndef SECOND\n#define SECOND\n#endif\n").expect("second");
-        let preconditions = [
-            ReadPrecondition::matches(&first, b"#ifndef FIRST\n#define FIRST\n#endif\n"),
-            ReadPrecondition::matches(&second, b"#ifndef SECOND\n#define SECOND\n#endif\n"),
-        ];
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-multi-read-set".to_owned(),
-            backup_root: None,
-        };
-
-        commit_files_guarded(
-            vec![
-                plan(&first, b"#ifndef FIRST_H\n#define FIRST_H\n#endif\n"),
-                plan(&second, b"#ifndef SECOND_H\n#define SECOND_H\n#endif\n"),
-            ],
-            &options,
-            &preconditions,
-        )
-        .expect("multi-file guarded commit");
-
-        assert_eq!(
-            fs::read(&first).expect("first"),
-            b"#ifndef FIRST_H\n#define FIRST_H\n#endif\n"
-        );
-        assert_eq!(
-            fs::read(&second).expect("second"),
-            b"#ifndef SECOND_H\n#define SECOND_H\n#endif\n"
-        );
-    }
-
-    #[test]
-    fn a_committed_target_must_still_match_before_the_next_replacement() {
-        let project = TempDir::new().expect("project");
-        let first = project.path().join("first.h");
-        fs::write(&first, "old\n").expect("first");
-        let mut prepared =
-            super::prepare_file(plan(&first, b"replacement\n"), None).expect("prepare replacement");
-        super::persist_staged(&mut prepared).expect("commit first replacement");
-        fs::write(&first, "concurrent writer\n").expect("concurrent change");
-
-        let error = validate_committed_replacements(&[prepared], &[0])
-            .expect_err("the changed committed target must be detected");
-
-        assert_eq!(error.0, first);
-        assert!(
-            error
-                .1
-                .to_string()
-                .contains("changed after transaction preflight")
-        );
-    }
-
-    #[test]
-    fn rejects_symlinks_and_backup_storage_inside_project() {
-        let project = TempDir::new().expect("project");
-        let source = project.path().join("main.c");
-        fs::write(&source, "old\n").expect("source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-3".to_owned(),
-            backup_root: Some(project.path().join("backups")),
-        };
-        assert!(matches!(
-            commit_files(vec![plan(&source, b"new\n")], &options),
-            Err(TransactionError::BackupInsideProject(_))
-        ));
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::symlink;
-
-            let link = project.path().join("link.c");
-            symlink(&source, &link).expect("symlink");
-            let options = TransactionOptions {
-                project_root: project.path().to_path_buf(),
-                run_id: "run-4".to_owned(),
-                backup_root: None,
-            };
-            let linked_plan = PlannedFile {
-                path: link,
-                original: b"old\n".to_vec(),
-                replacement: b"new\n".to_vec(),
-                fixes: Vec::new(),
-            };
-            assert!(matches!(
-                commit_files(vec![linked_plan], &options),
-                Err(TransactionError::Symlink(_))
-            ));
-
-            let external = TempDir::new().expect("external backup parent");
-            let redirected = project.path().join("redirected-backups");
-            fs::create_dir(&redirected).expect("inside-project backup target");
-            let backup_link = external.path().join("backup-link");
-            symlink(&redirected, &backup_link).expect("backup symlink");
-            let options = TransactionOptions {
-                project_root: project.path().to_path_buf(),
-                run_id: "run-5".to_owned(),
-                backup_root: Some(backup_link),
-            };
-            assert!(matches!(
-                commit_files(vec![plan(&source, b"new\n")], &options),
-                Err(TransactionError::Symlink(_) | TransactionError::BackupInsideProject(_))
-            ));
-        }
-    }
-
-    #[test]
-    fn lists_and_undoes_the_latest_intact_transaction() {
-        let project = TempDir::new().expect("project");
-        let backups = TempDir::new().expect("backups");
-        let source = project.path().join("main.c");
-        fs::write(&source, "old\n").expect("source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-undo-test".to_owned(),
-            backup_root: Some(backups.path().to_path_buf()),
-        };
-        commit_files(vec![plan(&source, b"new\n")], &options).expect("commit");
-
-        let runs = list_undo_runs(backups.path(), project.path()).expect("runs");
-        assert_eq!(runs.len(), 1);
-        assert_eq!(runs[0].run_id, "run-undo-test");
-        let report = undo_run(&runs[0], project.path(), backups.path()).expect("undo");
-
-        assert_eq!(fs::read(&source).expect("restored"), b"old\n");
-        assert_eq!(report.files, vec![source]);
-        assert!(report.journal.is_some());
-    }
-
-    #[test]
-    fn undo_refuses_to_overwrite_changes_made_after_the_run() {
-        let project = TempDir::new().expect("project");
-        let backups = TempDir::new().expect("backups");
-        let source = project.path().join("main.c");
-        fs::write(&source, "old\n").expect("source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-changed-test".to_owned(),
-            backup_root: Some(backups.path().to_path_buf()),
-        };
-        commit_files(vec![plan(&source, b"new\n")], &options).expect("commit");
-        let run = list_undo_runs(backups.path(), project.path())
-            .expect("runs")
-            .pop()
-            .expect("run");
-        fs::write(&source, "student edit\n").expect("external edit");
-
-        assert!(matches!(
-            undo_run(&run, project.path(), backups.path()),
-            Err(UndoError::ModifiedSinceRun(path)) if path == source
-        ));
-        assert_eq!(fs::read(&source).expect("unchanged"), b"student edit\n");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn backup_root_uses_the_canonical_target_of_a_compatibility_symlink() {
-        use std::os::unix::fs::symlink;
-
-        let project = TempDir::new().expect("project");
-        let storage = TempDir::new().expect("storage");
-        let real_backups = storage.path().join("real-backups");
-        let compatibility_path = storage.path().join("compat-backups");
-        fs::create_dir(&real_backups).expect("real backups");
-        symlink(&real_backups, &compatibility_path).expect("compatibility symlink");
-        let source = project.path().join("main.c");
-        fs::write(&source, "old\n").expect("source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-compat-link".to_owned(),
-            backup_root: Some(compatibility_path.clone()),
-        };
-
-        let report = commit_files(vec![plan(&source, b"new\n")], &options).expect("commit");
-        let canonical_backups = real_backups.canonicalize().expect("canonical backups");
-        let journal = report.journal.expect("journal");
-        assert!(journal.starts_with(&canonical_backups));
-
-        fs::remove_file(&compatibility_path).expect("remove compatibility symlink");
-        symlink(project.path(), &compatibility_path).expect("redirect compatibility path");
-        assert!(journal.is_file());
-        assert!(!project.path().join("run-compat-link").exists());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn listing_and_undo_reject_a_symlinked_backup_parent_added_after_confirmation() {
-        use std::os::unix::fs::symlink;
-
-        let project = TempDir::new().expect("project");
-        let backups = TempDir::new().expect("backups");
-        let source = project.path().join("main.c");
-        fs::write(&source, "old\n").expect("source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-intermediate-link".to_owned(),
-            backup_root: Some(backups.path().to_path_buf()),
-        };
-        commit_files(vec![plan(&source, b"new\n")], &options).expect("commit");
-        let run = list_undo_runs(backups.path(), project.path())
-            .expect("runs")
-            .pop()
-            .expect("run");
-        let journal = read_journal(&run.journal).expect("journal");
-        let backup = journal.files[0].backup.as_ref().expect("backup");
-        let backup_parent = backup.parent().expect("backup parent");
-        let relocated = backup_parent.with_file_name("relocated-backup-parent");
-        fs::rename(backup_parent, &relocated).expect("relocate backup parent");
-        symlink(&relocated, backup_parent).expect("intermediate symlink");
-
-        assert!(
-            list_undo_runs(backups.path(), project.path())
-                .expect("runs")
-                .is_empty()
-        );
-        assert!(matches!(
-            undo_run(&run, project.path(), backups.path()),
-            Err(UndoError::InvalidJournal { .. })
-        ));
-        assert_eq!(fs::read(&source).expect("unchanged"), b"new\n");
-    }
-
-    #[test]
-    fn undo_rejects_a_confirmed_run_whose_advertised_source_set_changed() {
-        let project = TempDir::new().expect("project");
-        let backups = TempDir::new().expect("backups");
-        let source = project.path().join("main.c");
-        fs::write(&source, "old\n").expect("source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-source-set".to_owned(),
-            backup_root: Some(backups.path().to_path_buf()),
-        };
-        commit_files(vec![plan(&source, b"new\n")], &options).expect("commit");
-        let mut run = list_undo_runs(backups.path(), project.path())
-            .expect("runs")
-            .pop()
-            .expect("run");
-        run.files.push(project.path().join("unconfirmed.c"));
-
-        assert!(matches!(
-            undo_run(&run, project.path(), backups.path()),
-            Err(UndoError::InvalidJournal { .. })
-        ));
-        assert_eq!(fs::read(&source).expect("unchanged"), b"new\n");
-    }
-
-    #[test]
-    fn undo_reloads_the_journal_and_rechecks_backup_confinement_and_hashes() {
-        let project = TempDir::new().expect("project");
-        let backups = TempDir::new().expect("backups");
-        let source = project.path().join("main.c");
-        fs::write(&source, "old\n").expect("source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-revalidate".to_owned(),
-            backup_root: Some(backups.path().to_path_buf()),
-        };
-        commit_files(vec![plan(&source, b"new\n")], &options).expect("commit");
-        let run = list_undo_runs(backups.path(), project.path())
-            .expect("runs")
-            .pop()
-            .expect("run");
-        let mut journal = read_journal(&run.journal).expect("journal");
-        let outside = backups.path().join("outside-run.backup");
-        fs::write(&outside, "old\n").expect("outside backup");
-        journal.files[0].backup = Some(outside);
-        write_journal(&run.journal, &journal).expect("replace journal");
-
-        assert!(matches!(
-            undo_run(&run, project.path(), backups.path()),
-            Err(UndoError::InvalidJournal { .. })
-        ));
-        assert_eq!(fs::read(&source).expect("unchanged"), b"new\n");
-    }
-
-    #[test]
-    fn undo_rechecks_backup_digest_after_the_run_was_listed() {
-        let project = TempDir::new().expect("project");
-        let backups = TempDir::new().expect("backups");
-        let source = project.path().join("main.c");
-        fs::write(&source, "old\n").expect("source");
-        let options = TransactionOptions {
-            project_root: project.path().to_path_buf(),
-            run_id: "run-backup-hash".to_owned(),
-            backup_root: Some(backups.path().to_path_buf()),
-        };
-        commit_files(vec![plan(&source, b"new\n")], &options).expect("commit");
-        let run = list_undo_runs(backups.path(), project.path())
-            .expect("runs")
-            .pop()
-            .expect("run");
-        let journal = read_journal(&run.journal).expect("journal");
-        let backup = journal.files[0].backup.as_ref().expect("backup");
-        fs::write(backup, "tampered\n").expect("tamper backup");
-
-        assert!(matches!(
-            undo_run(&run, project.path(), backups.path()),
-            Err(UndoError::BackupIntegrity(path)) if path == *backup
-        ));
-        assert_eq!(fs::read(&source).expect("unchanged"), b"new\n");
-    }
-}
+mod tests;

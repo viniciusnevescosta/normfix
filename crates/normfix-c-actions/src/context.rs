@@ -1,6 +1,6 @@
 //! Lossless parsed context and exact token proofs.
 
-use normfix_c_syntax::{CParser, ParsedFile, SyntaxFacts, TapePiece, TriviaKind};
+use normfix_c_syntax::{CParser, ParsedFile, SyntaxFacts, SyntaxIssue, TapePiece, TriviaKind};
 
 use crate::CActionError;
 use crate::source::{LexicalMap, PhysicalLine, SourceLines};
@@ -80,6 +80,10 @@ impl ParsedContext {
 
     pub(crate) fn facts(&self) -> &SyntaxFacts {
         self.parsed.facts()
+    }
+
+    pub(crate) fn issues(&self) -> &[SyntaxIssue] {
+        self.parsed.issues()
     }
 
     pub(crate) const fn lexical(&self) -> &LexicalMap {
