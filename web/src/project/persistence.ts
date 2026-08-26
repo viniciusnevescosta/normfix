@@ -6,6 +6,15 @@
 // keyboard opens. So restoring is never silent — the page says the work came
 // back and offers to drop it — and nothing is ever written anywhere but here.
 
+import {
+  MAX_FILE_BYTES,
+  MAX_FILES,
+  MAX_PROJECT_BYTES,
+  MAX_UNSUPPORTED_FILES,
+  portablePathKey,
+  sourcePathProblem,
+} from "./files";
+
 /** What a stored project holds. */
 export interface StoredProject {
   /** Path to source, exactly as the project held them. */
@@ -52,6 +61,7 @@ export function serializeProject(project: StoredProject): string | null {
  */
 export function deserializeProject(payload: string | null): StoredProject | null {
   if (!payload) return null;
+  if (ENCODER.encode(payload).length > MAX_STORED_BYTES) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
@@ -62,18 +72,46 @@ export function deserializeProject(payload: string | null): StoredProject | null
   const record = parsed as Partial<StoredProject>;
   const files = record.files;
   if (typeof files !== "object" || files === null) return null;
-  const entries = Object.entries(files).filter(
-    (entry): entry is [string, string] => typeof entry[1] === "string",
-  );
-  const unsupported = Array.isArray(record.unsupported)
-    ? record.unsupported.filter((path): path is string => typeof path === "string")
-    : [];
+  if (Array.isArray(files)) return null;
+  const entries = Object.entries(files);
+  if (entries.length > MAX_FILES) return null;
+  const portable = new Set<string>();
+  let projectBytes = 0;
+  for (const [path, source] of entries) {
+    if (typeof source !== "string" || sourcePathProblem(path) !== null) return null;
+    const key = portablePathKey(path);
+    if (portable.has(key)) return null;
+    portable.add(key);
+    const bytes = ENCODER.encode(source).length;
+    if (bytes > MAX_FILE_BYTES) return null;
+    projectBytes += bytes;
+    if (projectBytes > MAX_PROJECT_BYTES) return null;
+  }
+  if (!Array.isArray(record.unsupported)) return null;
+  const unsupported: string[] = [];
+  for (const path of record.unsupported) {
+    if (typeof path !== "string" || sourcePathProblem(path)?.code !== "only_supported") {
+      return null;
+    }
+    const key = portablePathKey(path);
+    if (portable.has(key)) return null;
+    if (unsupported.length >= MAX_UNSUPPORTED_FILES) return null;
+    portable.add(key);
+    unsupported.push(path);
+  }
   if (entries.length === 0 && unsupported.length === 0) return null;
+  const selected =
+    typeof record.selected === "string" && entries.some(([path]) => path === record.selected)
+      ? record.selected
+      : null;
   return {
-    files: Object.fromEntries(entries),
-    selected: typeof record.selected === "string" ? record.selected : null,
+    files: Object.fromEntries(entries as [string, string][]),
+    selected,
     unsupported,
-    savedAt: typeof record.savedAt === "number" ? record.savedAt : 0,
+    savedAt:
+      typeof record.savedAt === "number" && Number.isFinite(record.savedAt) && record.savedAt >= 0
+        ? record.savedAt
+        : 0,
   };
 }
 

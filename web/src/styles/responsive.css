@@ -1,0 +1,267 @@
+@media (max-width: 900px) {
+  html {
+    scrollbar-gutter: auto;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .topbar-end {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .intro {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .intro p {
+    text-align: left;
+  }
+
+  .workbench {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .files-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .file-list {
+    min-height: 96px;
+    max-height: 180px;
+    flex-basis: auto;
+  }
+
+  .file-actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .editor-surface,
+  #fallback-editor {
+    min-height: clamp(360px, 58svh, 560px);
+  }
+
+  .scope-note {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .button,
+  .icon-button,
+  .text-button,
+  #top-bar select,
+  #top-bar a,
+  #identity-panel input[type="email"],
+  #identity-panel button,
+  #status-badges button,
+  dialog button,
+  [role="treeitem"],
+  [aria-haspopup="menu"],
+  #result-summary [role="tab"],
+  button[role="tab"],
+  button[role="menuitem"] {
+    min-height: 40px;
+  }
+
+  .icon-button,
+  [aria-haspopup="menu"] {
+    width: 40px;
+  }
+}
+
+@media (max-width: 560px) {
+  main {
+    width: calc(100% - 16px);
+    padding-top: 12px;
+  }
+
+  .topbar {
+    padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+  }
+
+  .topbar-end,
+  #top-bar {
+    justify-content: flex-start;
+  }
+
+  #status-badges:empty {
+    display: none;
+  }
+
+  .brand small {
+    font-size: 9px;
+  }
+
+  .runbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .runbar .button {
+    width: 100%;
+  }
+
+  #result-summary > div:nth-child(2),
+  #result-summary > div:nth-child(2) > label,
+  #result-summary > div:nth-child(2) > div {
+    width: 100%;
+  }
+
+  #result-summary > div:nth-child(2) button {
+    min-height: 44px;
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  #editor-header > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  #editor-header strong {
+    max-width: calc(100vw - 72px);
+    margin-left: 4px;
+  }
+
+  .editor-surface,
+  #fallback-editor {
+    min-height: clamp(340px, 58svh, 480px);
+  }
+
+  .result-view {
+    min-height: 260px;
+  }
+
+  .button,
+  .icon-button,
+  .text-button,
+  #top-bar select,
+  #top-bar a,
+  #identity-panel input[type="email"],
+  #identity-panel button,
+  #status-badges button,
+  dialog button,
+  [role="treeitem"],
+  [aria-haspopup="menu"],
+  #result-summary [role="tab"],
+  button[role="tab"],
+  button[role="menuitem"] {
+    min-height: 44px;
+  }
+
+  .icon-button,
+  [aria-haspopup="menu"] {
+    width: 44px;
+  }
+}
+
+/* Phones in landscape have enough width for two useful columns but very little
+   height. Keeping the project strip above the editor would spend half of that
+   height before the source is reachable. */
+@media (min-width: 620px) and (max-width: 900px) and (max-height: 520px) {
+  .topbar {
+    min-height: 44px;
+    flex-wrap: nowrap;
+    padding-block: 4px;
+  }
+
+  .brand small {
+    display: none;
+  }
+
+  .topbar-end {
+    width: auto;
+    flex-wrap: nowrap;
+  }
+
+  main {
+    width: calc(100% - 16px);
+    padding-top: 8px;
+  }
+
+  .intro {
+    display: none;
+  }
+
+  .workbench {
+    grid-template-columns: minmax(190px, 31vw) minmax(0, 1fr);
+  }
+
+  .files-panel {
+    max-height: calc(100svh - 60px);
+    border-right: 1px solid var(--border);
+    border-bottom: 0;
+  }
+
+  .file-list {
+    max-height: none;
+    flex: 1 1 auto;
+  }
+
+  .file-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .editor-surface,
+  #fallback-editor {
+    min-height: calc(100svh - 158px);
+  }
+
+  .runbar {
+    min-height: 48px;
+  }
+
+  .runbar p {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .button,
+  .icon-button,
+  .text-button,
+  .brand,
+  .release-link,
+  .skip-link,
+  #top-bar a,
+  #top-bar select,
+  #result-summary [role="tab"],
+  #status-badges button,
+  dialog button,
+  button[role="tab"],
+  button[role="menuitem"],
+  [aria-haspopup="menu"],
+  select,
+  input[type="email"],
+  [role="treeitem"] {
+    min-height: 44px;
+  }
+
+  .icon-button,
+  [aria-haspopup="menu"] {
+    width: 44px;
+  }
+
+  input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+  }
+
+  .dependency-links {
+    row-gap: 0;
+  }
+
+  .dependency-links a {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+  }
+}

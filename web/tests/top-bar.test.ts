@@ -11,8 +11,6 @@ function open(overrides: Record<string, unknown> = {}) {
     props: {
       locale: "pt",
       theme: "system",
-      stars: 1234,
-      format: (stars: number) => stars.toLocaleString("pt-BR"),
       docsHref: "/docs/pt/",
       onLocale: (locale: string) => calls.push(["locale", locale]),
       onTheme: (theme: string) => calls.push(["theme", theme]),
@@ -40,15 +38,12 @@ test("the pickers show what is chosen and report a change", () => {
   ]);
 });
 
-test("a star count that could not be fetched explains itself", () => {
-  // Decoration must never look like a number nobody measured.
-  const reachable = open();
-  assert.match(reachable.container.textContent ?? "", /1\.234/);
+test("opening the top bar does not require a third-party request", () => {
+  const bar = open();
+  const github = [...bar.container.querySelectorAll("a")].at(-1);
 
-  const unreachable = open({ stars: null });
-  assert.match(unreachable.container.textContent ?? "", /0/);
-  const link = [...unreachable.container.querySelectorAll("a")].at(-1);
-  assert.ok(link?.getAttribute("title"), "the zero says why it is a zero");
+  assert.equal(github?.textContent?.trim(), "GitHub");
+  assert.equal(github?.getAttribute("href"), "https://github.com/viniciusnevescosta/normfix");
 });
 
 test("the documentation link follows the reader's language", () => {

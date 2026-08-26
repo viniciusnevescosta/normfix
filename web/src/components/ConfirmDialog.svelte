@@ -30,13 +30,14 @@ $effect(() => {
 <dialog
   bind:this={dialog}
   class="border-border bg-panel text-text m-auto rounded border p-4 backdrop:bg-scrim"
+  aria-labelledby="delete-dialog-title"
   oncancel={(event) => {
     event.preventDefault();
     onCancel();
   }}
 >
   {#if request}
-    <h2 class="font-semibold">{translate("deleteEntry")}</h2>
+    <h2 id="delete-dialog-title" class="font-semibold">{translate("deleteEntry")}</h2>
     <p class="mt-2 text-sm">{request.text}</p>
     <div class="mt-4 flex justify-end gap-2">
       <button class="border-border rounded border px-3 py-1 text-sm" type="button" onclick={onCancel}>

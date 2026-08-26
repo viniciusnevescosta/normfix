@@ -44,6 +44,43 @@ test("damaged storage reads as absent rather than half a project", () => {
   assert.equal(deserializeProject('{"files":{"a.c":42}}'), null);
 });
 
+test("restored paths and byte budgets are validated before reaching the UI", () => {
+  assert.equal(
+    deserializeProject(
+      JSON.stringify({ files: { "../outside.c": "int x;" }, unsupported: [], selected: null }),
+    ),
+    null,
+  );
+  assert.equal(
+    deserializeProject(
+      JSON.stringify({ files: { "main.c": "int x;" }, unsupported: ["/absolute.o"] }),
+    ),
+    null,
+  );
+  assert.equal(
+    deserializeProject(
+      JSON.stringify({
+        files: { "main.c": "x".repeat(MAX_STORED_BYTES) },
+        unsupported: [],
+      }),
+    ),
+    null,
+  );
+});
+
+test("a stale selected path is cleared rather than restored as an impossible state", () => {
+  const restored = deserializeProject(
+    JSON.stringify({
+      files: { "main.c": "int main(void);\n" },
+      selected: "missing.c",
+      unsupported: [],
+      savedAt: 1,
+    }),
+  );
+
+  assert.equal(restored?.selected, null);
+});
+
 test("a restore that matches what is already open is not a restore", () => {
   const open = new Map(Object.entries(project.files));
   assert.ok(isSameProject(project, open));

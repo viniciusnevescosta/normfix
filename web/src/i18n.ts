@@ -137,7 +137,6 @@ const english = {
   skippedOther: "Skipped {count} files that normfix does not format.",
   dropHere: "Drop files or a project folder",
   dropAccepted: "Takes .c, .h, .md, and Makefile. Everything else is skipped.",
-  githubFallback: "GitHub star count unavailable; showing the last bundled count.",
   offlineAvailability: "Offline availability",
   offlineInstallable:
     "Once this page has loaded, it keeps working without a network, and your browser can install it as an app.",
@@ -289,7 +288,6 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     skippedOther: "{count} arquivos ignorados porque o normfix não os formata.",
     dropHere: "Solte arquivos ou uma pasta de projeto",
     dropAccepted: "Aceita .c, .h, .md e Makefile. O resto é ignorado.",
-    githubFallback: "Contagem de estrelas indisponível; exibindo o último valor incluído.",
     offlineAvailability: "Disponibilidade offline",
     offlineInstallable:
       "Depois que esta página carrega, ela continua funcionando sem rede, e o navegador pode instalá-la como aplicativo.",
@@ -435,8 +433,6 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     skippedOther: "{count} archivos omitidos porque normfix no los formatea.",
     dropHere: "Suelta archivos o una carpeta de proyecto",
     dropAccepted: "Acepta .c, .h, .md y Makefile. Lo demás se omite.",
-    githubFallback:
-      "No se pudo obtener la cantidad de estrellas; se muestra el último valor incluido.",
     offlineAvailability: "Disponibilidad sin conexión",
     offlineInstallable:
       "Una vez cargada esta página, sigue funcionando sin red, y el navegador puede instalarla como aplicación.",
@@ -584,7 +580,6 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     skippedOther: "{count} fichiers ignorés car normfix ne les formate pas.",
     dropHere: "Déposez des fichiers ou un dossier de projet",
     dropAccepted: "Accepte .c, .h, .md et Makefile. Le reste est ignoré.",
-    githubFallback: "Nombre d’étoiles indisponible ; la dernière valeur intégrée est affichée.",
     offlineAvailability: "Disponibilité hors ligne",
     offlineInstallable:
       "Une fois cette page chargée, elle continue de fonctionner sans réseau, et le navigateur peut l’installer comme application.",

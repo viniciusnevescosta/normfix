@@ -35,11 +35,11 @@ test("remembering a student identity is an explicit opt-in", () => {
 
   const field = panel.container.querySelector<HTMLInputElement>("#identity-email");
   assert.ok(field);
-  field.value = "vneves-c@student.42.fr";
+  field.value = "marvin@student.42.fr";
   field.dispatchEvent(new Event("input", { bubbles: true }));
   panel.button("Save")?.click();
 
-  assert.deepEqual(panel.calls, [["save", "vneves-c@student.42.fr", false]]);
+  assert.deepEqual(panel.calls, [["save", "marvin@student.42.fr", false]]);
 });
 
 test("with nothing stored it offers to remember, and saves what was typed", () => {
@@ -48,17 +48,17 @@ test("with nothing stored it offers to remember, and saves what was typed", () =
   const box = panel.container.querySelector<HTMLInputElement>("input[type=checkbox]");
   assert.ok(field && box, "the field and the box are both offered");
 
-  field.value = "vneves-c@student.42.fr";
+  field.value = "marvin@student.42.fr";
   field.dispatchEvent(new Event("input", { bubbles: true }));
   box.checked = true;
   box.dispatchEvent(new Event("change", { bubbles: true }));
   panel.button("Save")?.click();
 
-  assert.deepEqual(panel.calls, [["save", "vneves-c@student.42.fr", true]]);
+  assert.deepEqual(panel.calls, [["save", "marvin@student.42.fr", true]]);
 });
 
 test("with an identity stored the box and Save are gone, leaving Forget", () => {
-  const panel = open({ stored: true, email: "vneves-c@student.42.fr" });
+  const panel = open({ stored: true, email: "marvin@student.42.fr" });
 
   // The box would offer a choice already made, and Save would offer to make it
   // again. What is left is the one action that changes anything.

@@ -66,6 +66,20 @@ const tabs = [
   ["diagnostics", "diagnostics"],
   ["diff", "diff"],
 ] as const;
+
+function moveTab(event: KeyboardEvent, index: number): void {
+  let target = index;
+  if (event.key === "ArrowRight") target = (index + 1) % tabs.length;
+  else if (event.key === "ArrowLeft") target = (index - 1 + tabs.length) % tabs.length;
+  else if (event.key === "Home") target = 0;
+  else if (event.key === "End") target = tabs.length - 1;
+  else return;
+  event.preventDefault();
+  const next = tabs[target]?.[0];
+  if (!next) return;
+  onView(next);
+  event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`#${next}-tab`)?.focus();
+}
 </script>
 
 <div class="flex flex-wrap gap-3 text-sm" aria-label={translate("runSummary")}>
@@ -76,11 +90,11 @@ const tabs = [
   {/each}
 </div>
 
-<div class="mt-3 flex flex-wrap items-end gap-3">
-  <label class="flex flex-col gap-1 text-sm">
+<div class="mt-3 flex min-w-0 flex-wrap items-end gap-3">
+  <label class="flex min-w-0 max-w-full flex-1 flex-col gap-1 text-sm">
     <span class="text-faint text-xs uppercase">{translate("resultFile")}</span>
     <select
-      class="border-border bg-surface-sunken rounded border px-2 py-1 font-mono text-sm"
+      class="border-border bg-surface-sunken min-w-0 max-w-full rounded border px-2 py-1 font-mono text-sm"
       value={selected}
       onchange={(event) => onSelect((event.currentTarget as HTMLSelectElement).value)}
     >
@@ -90,7 +104,7 @@ const tabs = [
     </select>
   </label>
 
-  <div class="flex flex-wrap gap-2">
+  <div class="flex min-w-0 flex-wrap gap-2">
     <!-- Disabled is derived, not remembered: a result that cannot be applied
          cannot leave a button that says it can. -->
     <button
@@ -135,8 +149,8 @@ const tabs = [
   </div>
 </div>
 
-<div class="border-border mt-3 flex gap-1 border-b" role="tablist" aria-label={translate("resultViews")}>
-  {#each tabs as [name, label] (name)}
+<div class="border-border mt-3 flex min-w-0 gap-1 border-b" role="tablist" aria-label={translate("resultViews")}>
+  {#each tabs as [name, label], index (name)}
     <button
       class="px-3 py-1 text-sm"
       class:border-accent={view === name}
@@ -146,7 +160,9 @@ const tabs = [
       id="{name}-tab"
       aria-selected={view === name}
       aria-controls="{name}-view"
+      tabindex={view === name ? 0 : -1}
       onclick={() => onView(name)}
+      onkeydown={(event) => moveTab(event, index)}
     >
       {translate(label)}
       {#if name === "diagnostics"}<span class="text-faint ml-1">{diagnosticCount}</span>{/if}

@@ -1,19 +1,17 @@
 import { mount } from "svelte";
-import CodeView from "./components/CodeView.svelte";
-import ConfirmDialog from "./components/ConfirmDialog.svelte";
 import Diagnostics from "./components/Diagnostics.svelte";
-import DropOverlay from "./components/DropOverlay.svelte";
-import EditorHeader from "./components/EditorHeader.svelte";
-import EditorNotice from "./components/EditorNotice.svelte";
 import FileTree from "./components/FileTree.svelte";
-import IdentityPanel from "./components/IdentityPanel.svelte";
 import ResultSummary from "./components/ResultSummary.svelte";
-import StatusBadges from "./components/StatusBadges.svelte";
-import TopBar from "./components/TopBar.svelte";
+import { loadElements, requiredElement } from "./dom";
+import { downloadProject, downloadSource } from "./downloads";
 import { createSourceEditor, type SourceEditor } from "./editor";
-import { GITHUB_REPOSITORY_API, githubRequestInit, starCount } from "./github";
 import {
-  detectLocale,
+  type BrowserFileResult,
+  type BrowserSummary,
+  FormatterResponseError,
+  parseFormatterResponse,
+} from "./formatter-response";
+import {
   type Locale,
   type MessageKey,
   SUPPORTED_LOCALES,
@@ -21,21 +19,28 @@ import {
   translatePlural,
 } from "./i18n";
 import { setLocale } from "./i18n-state.svelte";
+import {
+  chooseIdentity,
+  hasStoredIdentity,
+  loadBrowserIdentity,
+  removeStoredIdentity,
+} from "./identity";
+import { localizeDocument, readInitialLocale, storeLocale } from "./localization";
+import { mountStaticUi } from "./mount-ui";
 import { type OfflineState, type OfflineSupport, startOfflineSupport } from "./offline/pwa";
-import { buildZip, ZipArchiveError } from "./project/archive";
+import { ZipArchiveError } from "./project/archive";
 import { openDraftRow } from "./project/draft-row";
 import { collectDroppedFiles, type DroppedFile } from "./project/drop";
 import {
-  canonicalIdentityEmail,
   ImportBatchError,
   MAX_FILE_BYTES,
   MAX_FILES,
   MAX_PROJECT_BYTES,
-  type ProjectSourceFile,
   portablePathKey,
   readImportBatch,
   sourcePathProblem,
 } from "./project/files";
+import { ImportPlanError, planImport } from "./project/import-plan";
 import { markersFor } from "./project/markers";
 import { deserializeProject, isSameProject, serializeProject } from "./project/persistence";
 import { movedPath, renamedPath, rewritePrefix, wouldContainItself } from "./project/tree";
@@ -63,9 +68,7 @@ import {
 } from "./tree-state.svelte";
 
 const UTF8_ENCODER = new TextEncoder();
-const IDENTITY_STORAGE_KEY = "normfix.identity.v1";
 const PROJECT_STORAGE_KEY = "normfix.project.v1";
-const LOCALE_STORAGE_KEY = "normfix.locale.v1";
 
 const SAMPLE: string = `#include <unistd.h>
 
@@ -77,67 +80,6 @@ int main(void)
 `;
 
 type RuntimeState = "loading" | "ready" | "error";
-type Severity = "error" | "warning" | "info";
-
-interface BrowserLocation {
-  line: number;
-  column: number;
-}
-
-interface BrowserFix {
-  rule_id: string;
-  description: string;
-  line: number | null;
-  applicability: string;
-}
-
-interface BrowserDiagnostic {
-  rule_id: string;
-  severity: Severity;
-  message: string;
-  location: BrowserLocation | null;
-  help: string | null;
-  notes: string[];
-  source: string;
-}
-
-interface BrowserBudget {
-  function: string;
-  line: number;
-  lines: number;
-  line_limit: number;
-  variables: number;
-  variable_limit: number;
-  parameters: number;
-  parameter_limit: number;
-}
-
-interface BrowserFileResult {
-  path: string;
-  formatted: string;
-  changed: boolean;
-  stable: boolean;
-  fixes: BrowserFix[];
-  diagnostics: BrowserDiagnostic[];
-  budget: BrowserBudget[];
-  diff: string;
-  error: string | null;
-}
-
-interface BrowserSummary {
-  files: number;
-  changed: number;
-  fixes: number;
-  diagnostics: number;
-  failed: number;
-}
-
-interface PlaygroundResponse {
-  schema_version: number;
-  files: BrowserFileResult[];
-  summary: BrowserSummary;
-}
-
 interface ResultRecord extends BrowserFileResult {
   inputSource: string;
 }
@@ -165,16 +107,8 @@ interface AppState {
   offlineSupport: OfflineSupport | null;
   theme: ThemePreference;
   appearance: Appearance;
-  /** Folders the reader has closed, by prefix. */
-  collapsed: Set<string>;
   /** Paths the project holds but normfix does not format. */
   unsupported: Set<string>;
-}
-
-function requiredElement<T extends Element>(selector: string): T {
-  const element = document.querySelector<T>(selector);
-  if (!element) throw new Error(`Required element is missing: ${selector}`);
-  return element;
 }
 
 const state: AppState = {
@@ -188,55 +122,15 @@ const state: AppState = {
   importing: false,
   revision: 0,
   identityEmail: null,
-  locale: readStoredLocale(),
+  locale: readInitialLocale(),
   offlineState: "unsupported",
   offlineSupport: null,
   theme: readStoredThemePreference(),
   appearance: "dark",
-  collapsed: new Set<string>(),
   unsupported: new Set<string>(),
 };
 
-const elements = {
-  fileList: requiredElement<HTMLElement>("#file-list"),
-  filePicker: requiredElement<HTMLInputElement>("#file-picker"),
-  dropOverlay: requiredElement<HTMLElement>("#drop-overlay"),
-  statusBadges: requiredElement<HTMLElement>("#status-badges"),
-
-  addFile: requiredElement<HTMLButtonElement>("#add-file"),
-  addFolder: requiredElement<HTMLButtonElement>("#add-folder"),
-  removeFile: requiredElement<HTMLButtonElement>("#remove-file"),
-  editorContainer: requiredElement<HTMLElement>("#monaco-editor"),
-  fallbackEditor: requiredElement<HTMLTextAreaElement>("#fallback-editor"),
-  identityPanel: requiredElement<HTMLElement>("#identity-panel"),
-  editorNotice: requiredElement<HTMLElement>("#editor-notice"),
-  editorHeader: requiredElement<HTMLElement>("#editor-header"),
-  topBar: requiredElement<HTMLElement>("#top-bar"),
-  confirmDelete: requiredElement<HTMLElement>("#confirm-delete"),
-  restoreNotice: requiredElement<HTMLElement>("#restore-notice"),
-  discardRestore: requiredElement<HTMLButtonElement>("#discard-restore"),
-  run: requiredElement<HTMLButtonElement>("#run"),
-  results: requiredElement<HTMLElement>("#results"),
-  resultSummary: requiredElement<HTMLElement>("#result-summary"),
-  formattedOutput: requiredElement<HTMLElement>("#formatted-output"),
-  diffOutput: requiredElement<HTMLElement>("#diff-output"),
-  diagnosticsView: requiredElement<HTMLElement>("#diagnostics-view"),
-  brand: requiredElement<HTMLAnchorElement>(".brand"),
-  canonical: requiredElement<HTMLLinkElement>("#canonical-url"),
-  manifest: requiredElement<HTMLLinkElement>("#manifest-link"),
-  metaDescription: requiredElement<HTMLMetaElement>("#meta-description"),
-  ogTitle: requiredElement<HTMLMetaElement>("#og-title"),
-  ogDescription: requiredElement<HTMLMetaElement>("#og-description"),
-  ogUrl: requiredElement<HTMLMetaElement>("#og-url"),
-  ogLocale: requiredElement<HTMLMetaElement>("#og-locale"),
-  ogAlternates: [
-    requiredElement<HTMLMetaElement>("#og-alternate-one"),
-    requiredElement<HTMLMetaElement>("#og-alternate-two"),
-    requiredElement<HTMLMetaElement>("#og-alternate-three"),
-  ],
-  twitterTitle: requiredElement<HTMLMetaElement>("#twitter-title"),
-  twitterDescription: requiredElement<HTMLMetaElement>("#twitter-description"),
-};
+const elements = loadElements();
 
 function t(key: MessageKey, values: Readonly<Record<string, string | number>> = {}): string {
   return translate(state.locale, key, values);
@@ -246,32 +140,8 @@ function tPlural(base: string, count: number): string {
   return translatePlural(state.locale, base, count);
 }
 
-function readStoredLocale(): Locale {
-  const routeLocale = window.location.pathname.split("/").filter(Boolean)[0];
-  if (routeLocale && SUPPORTED_LOCALES.includes(routeLocale as Locale)) {
-    return routeLocale as Locale;
-  }
-  try {
-    const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-    if (SUPPORTED_LOCALES.includes(stored as Locale)) return stored as Locale;
-  } catch {
-    // A blocked storage API should not prevent the playground from starting.
-  }
-  return detectLocale();
-}
-
 function loadIdentity(): void {
-  try {
-    const stored = localStorage.getItem(IDENTITY_STORAGE_KEY);
-    const canonical = stored ? canonicalIdentityEmail(stored) : null;
-    if (canonical) {
-      state.identityEmail = canonical;
-    } else if (stored) {
-      localStorage.removeItem(IDENTITY_STORAGE_KEY);
-    }
-  } catch {
-    // Identity remains session-only when browser storage is unavailable.
-  }
+  state.identityEmail = loadBrowserIdentity();
   renderIdentityControls();
 }
 
@@ -282,16 +152,8 @@ function loadIdentity(): void {
  * combination where it offers to remember something already remembered.
  */
 function renderIdentityControls(): void {
-  identityState.stored = readStoredIdentity() !== null;
+  identityState.stored = hasStoredIdentity();
   identityState.email = state.identityEmail ?? "";
-}
-
-function readStoredIdentity(): string | null {
-  try {
-    return localStorage.getItem(IDENTITY_STORAGE_KEY);
-  } catch {
-    return null;
-  }
 }
 
 function setIdentityStatus(key: MessageKey, invalid = false): void {
@@ -300,30 +162,21 @@ function setIdentityStatus(key: MessageKey, invalid = false): void {
 }
 
 function saveIdentity(typed: string, remember: boolean): void {
-  const canonical = canonicalIdentityEmail(typed);
-  if (!canonical) {
+  const choice = chooseIdentity(typed, remember);
+  if (choice.email === null) {
     setIdentityStatus("invalidIdentity", true);
     return;
   }
-  state.identityEmail = canonical;
+  state.identityEmail = choice.email;
   state.revision += 1;
   invalidateResults();
-  renderIdentityControls();
-  if (!remember) {
-    try {
-      localStorage.removeItem(IDENTITY_STORAGE_KEY);
-    } catch {
-      // The value still remains usable for the current tab.
-    }
-    setIdentityStatus("identitySession");
-    return;
-  }
-  try {
-    localStorage.setItem(IDENTITY_STORAGE_KEY, canonical);
-    setIdentityStatus("identitySaved");
-  } catch {
-    setIdentityStatus("storageUnavailable");
-  }
+  setIdentityStatus(
+    choice.outcome === "saved"
+      ? "identitySaved"
+      : choice.outcome === "storage_unavailable"
+        ? "storageUnavailable"
+        : "identitySession",
+  );
   renderIdentityControls();
 }
 
@@ -331,35 +184,14 @@ function forgetIdentity(): void {
   state.identityEmail = null;
   state.revision += 1;
   invalidateResults();
-  try {
-    localStorage.removeItem(IDENTITY_STORAGE_KEY);
-  } catch {
-    // The in-memory value has still been cleared.
-  }
+  removeStoredIdentity();
   setIdentityStatus("identityForgotten");
   renderIdentityControls();
 }
 
 function applyTranslations(): void {
-  document.documentElement.lang = state.locale;
   chromeState.locale = state.locale;
   chromeState.theme = state.theme;
-  for (const element of document.querySelectorAll<HTMLElement>("[data-i18n]")) {
-    const key = element.dataset.i18n as MessageKey | undefined;
-    if (key) element.textContent = t(key);
-  }
-  for (const element of document.querySelectorAll<HTMLElement>("[data-i18n-title]")) {
-    const key = element.dataset.i18nTitle as MessageKey | undefined;
-    if (key) element.title = t(key);
-  }
-  for (const element of document.querySelectorAll<HTMLInputElement>("[data-i18n-placeholder]")) {
-    const key = element.dataset.i18nPlaceholder as MessageKey | undefined;
-    if (key) element.placeholder = t(key);
-  }
-  for (const element of document.querySelectorAll<HTMLElement>("[data-i18n-aria]")) {
-    const key = element.dataset.i18nAria as MessageKey | undefined;
-    if (key) element.setAttribute("aria-label", t(key));
-  }
   // The runtime badge is the one message the page writes rather than marks up,
   // so it is re-said from the key it was set with instead of from an attribute
   // that no longer exists.
@@ -367,41 +199,7 @@ function applyTranslations(): void {
   renderOfflineStatus();
   elements.addFile.setAttribute("aria-label", t("addFile"));
   elements.addFolder.setAttribute("aria-label", t("addFolder"));
-  const route = state.locale === "en" ? "/" : `/${state.locale}/`;
-  if (window.location.pathname !== route) {
-    window.history.replaceState(
-      null,
-      "",
-      `${route}${window.location.search}${window.location.hash}`,
-    );
-  }
-  const canonical = `https://normfix.vercel.app${route}`;
-  document.title = t("seoTitle");
-  elements.metaDescription.content = t("seoDescription");
-  elements.ogTitle.content = t("seoTitle");
-  elements.ogDescription.content = t("seoDescription");
-  elements.twitterTitle.content = t("seoTitle");
-  elements.twitterDescription.content = t("seoDescription");
-  elements.ogUrl.content = canonical;
-  const ogLocale =
-    state.locale === "pt"
-      ? "pt_BR"
-      : state.locale === "es"
-        ? "es_ES"
-        : state.locale === "fr"
-          ? "fr_FR"
-          : "en_US";
-  elements.ogLocale.content = ogLocale;
-  ["en_US", "pt_BR", "es_ES", "fr_FR"]
-    .filter((locale) => locale !== ogLocale)
-    .forEach((locale, index) => {
-      const meta = elements.ogAlternates[index];
-      if (meta) meta.content = locale;
-    });
-  elements.canonical.href = canonical;
-  elements.manifest.href = `${route}site.webmanifest`;
-  elements.brand.href = route;
-  chromeState.docsHref = state.locale === "en" ? "/docs/" : `/docs/${state.locale}/`;
+  chromeState.docsHref = localizeDocument(state.locale, elements, (key) => t(key)).docsHref;
   updateEditorMeta();
   renderOfflineStatus();
   if (state.results.size > 0) renderRunResult();
@@ -413,32 +211,8 @@ function changeLocale(locale: Locale): void {
   // The components read the language rather than being handed a function, so
   // this is what re-says every word they have already drawn.
   setLocale(locale);
-  const route = locale === "en" ? "/" : `/${locale}/`;
-  window.history.replaceState(null, "", route);
-  try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  } catch {
-    // The selected language still applies for the current page.
-  }
+  storeLocale(locale);
   applyTranslations();
-}
-
-async function loadGitHubStars(): Promise<void> {
-  chromeState.stars = null;
-  try {
-    const response = await fetch(GITHUB_REPOSITORY_API, {
-      ...githubRequestInit(),
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-    const stars = starCount(await response.json());
-    if (stars === null) {
-      throw new Error("GitHub returned an invalid star count");
-    }
-    chromeState.stars = stars;
-  } catch {
-    chromeState.stars = null;
-  }
 }
 
 function setRuntime(stateName: RuntimeState, label: string): void {
@@ -469,15 +243,24 @@ async function loadFormatter(): Promise<void> {
     const module = (await import("../pkg/normfix_wasm.js")) as WasmModule;
     await module.default();
     state.formatter = module.formatProject;
-    elements.run.disabled = false;
+    refreshRunControl();
     setRuntimeMessage("ready", "wasmReady");
   } catch (error) {
     console.error(error);
     setRuntimeMessage("error", "wasmRequired");
-    elements.run.disabled = true;
+    refreshRunControl();
     elements.run.dataset.i18nTitle = "wasmBuildHelp";
     elements.run.title = t("wasmBuildHelp");
   }
+}
+
+function refreshRunControl(): void {
+  elements.run.disabled =
+    state.formatter === null ||
+    state.editor === null ||
+    state.running ||
+    state.importing ||
+    state.files.size === 0;
 }
 
 function invalidateResults(): void {
@@ -539,30 +322,60 @@ function applyMoves(moves: Array<readonly [string, string]>): void {
   if (state.importing || moves.length === 0) return;
   syncEditor();
   const proposed = new Map(state.files);
-  for (const [from] of moves) proposed.delete(from);
+  const proposedUnsupported = new Set(state.unsupported);
+  for (const [from] of moves) {
+    proposed.delete(from);
+    proposedUnsupported.delete(from);
+  }
   for (const [from, to] of moves) {
-    const normalized = normalizeSourcePath(to);
-    const clashes = [...proposed.keys()].some(
+    const supported = state.files.has(from);
+    const problem = sourcePathProblem(to);
+    const normalized = supported
+      ? normalizeSourcePath(to)
+      : problem?.code === "only_supported"
+        ? to
+        : (() => {
+            if (problem?.code === "path_bytes") {
+              throw new Error(t("pathBytes", { count: problem.count }));
+            }
+            throw new Error(t(problem === null ? "unsupportedFile" : "portablePath"));
+          })();
+    const clashes = [...proposed.keys(), ...proposedUnsupported].some(
       (loaded) => portablePathKey(loaded) === portablePathKey(normalized),
     );
     if (clashes) throw new Error(t("importConflict", { path: normalized }));
-    proposed.set(normalized, state.files.get(from) ?? "");
+    if (supported) {
+      const source = state.files.get(from);
+      if (source === undefined) throw new Error(t("responsePath", { path: from }));
+      proposed.set(normalized, source);
+    } else {
+      proposedUnsupported.add(normalized);
+    }
   }
-  validateProjectSources(proposed);
+  if (proposed.size > 0) validateProjectSources(proposed);
   const selected = moves.find(([from]) => from === state.selected);
+  const shownUnsupported = moves.find(
+    ([from]) => from === headerState.path && state.selected === null,
+  );
+  for (const [from] of moves) {
+    if (state.files.has(from)) state.editor?.removeFile(from);
+  }
   state.files = proposed;
+  state.unsupported = proposedUnsupported;
   state.revision += 1;
   invalidateResults();
   const reselect = selected ? normalizeSourcePath(selected[1]) : state.selected;
-  if (reselect === null) renderFileList();
+  if (shownUnsupported) showUnsupported(shownUnsupported[1]);
+  else if (reselect === null) renderFileList();
   else selectFile(reselect, false);
 }
 
 /** Moves one entry, or a whole folder, under `folder`. */
 function moveEntry(path: string, isFolder: boolean, folder: string): void {
   if (isFolder && wouldContainItself(path, folder)) return;
+  const paths = [...state.files.keys(), ...state.unsupported];
   const moves = isFolder
-    ? rewritePrefix(state.files.keys(), path, movedPath(path, folder))
+    ? rewritePrefix(paths, path, movedPath(path, folder))
     : [[path, movedPath(path, folder)] as const];
   if (moves.every(([from, to]) => from === to)) return;
   try {
@@ -577,7 +390,11 @@ function renameEntry(path: string, isFolder: boolean, name: string): void {
   const target = renamedPath(path, name);
   if (target === path) return;
   try {
-    applyMoves(isFolder ? rewritePrefix(state.files.keys(), path, target) : [[path, target]]);
+    applyMoves(
+      isFolder
+        ? rewritePrefix([...state.files.keys(), ...state.unsupported], path, target)
+        : [[path, target]],
+    );
   } catch (failure) {
     reportProjectError(failure);
   }
@@ -596,12 +413,18 @@ function deleteEntry(path: string, isFolder: boolean): void {
   const dropped = [...state.unsupported].filter(under);
   if (removed.length === 0 && dropped.length === 0) return;
   const proposed = new Map(state.files);
-  for (const loaded of removed) proposed.delete(loaded);
+  for (const loaded of removed) {
+    proposed.delete(loaded);
+    state.editor?.removeFile(loaded);
+  }
   state.files = proposed;
   for (const loaded of dropped) state.unsupported.delete(loaded);
   state.revision += 1;
   invalidateResults();
-  if (state.selected !== null && removed.includes(state.selected)) {
+  const showingRemoved =
+    (state.selected !== null && removed.includes(state.selected)) ||
+    (headerState.path !== null && dropped.includes(headerState.path));
+  if (showingRemoved) {
     const next = [...state.files.keys()].sort()[0];
     if (next === undefined) showEmptyProject();
     else selectFile(next, false);
@@ -625,7 +448,7 @@ function showEmptyProject(): void {
   state.selected = null;
   headerState.path = null;
   editorState.notice = { title: t("noFilesTitle"), detail: t("emptyProjectHint") };
-  elements.run.disabled = true;
+  refreshRunControl();
   renderFileList();
 }
 
@@ -692,14 +515,14 @@ function showUnsupported(path: string): void {
   state.selected = null;
   headerState.path = path;
   editorState.notice = { title: t("unsupportedFile"), detail: t("supportedKinds") };
-  elements.run.disabled = true;
+  refreshRunControl();
   renderFileList();
 }
 
 /** Turns the editor back on for a file normfix does format. */
 function enableEditor(): void {
   editorState.notice = null;
-  elements.run.disabled = state.formatter === null || state.running;
+  refreshRunControl();
 }
 
 /**
@@ -790,17 +613,8 @@ function addSource(path: string, source = ""): void {
 }
 
 function removeSelected(): void {
-  if (state.importing || !state.selected || state.files.size === 1) return;
-  syncEditor();
-  const removed = state.selected;
-  state.files.delete(removed);
-  state.editor?.removeFile(removed);
-  state.revision += 1;
-  const next = [...state.files.keys()].sort()[0];
-  if (!next) return;
-  invalidateResults();
-  state.selected = null;
-  selectFile(next, false);
+  if (state.importing || !state.selected) return;
+  confirmDelete(state.selected, false);
 }
 
 /**
@@ -816,45 +630,36 @@ function removeSelected(): void {
 async function loadFiles(
   incoming: readonly DroppedFile[],
   unsupported: readonly string[] = [],
+  alreadySkipped = 0,
 ): Promise<void> {
-  if (incoming.length === 0 && unsupported.length === 0) return;
-  // A file normfix cannot format is still part of the project the reader
-  // dropped in. It is kept by name so the tree can show it and say why it is
-  // not open, rather than leaving them to wonder where it went.
-  for (const path of unsupported) state.unsupported.add(path);
+  if (incoming.length === 0 && unsupported.length === 0 && alreadySkipped === 0) return;
   if (state.importing) throw new Error(t("importRunning"));
   syncEditor();
   const startingRevision = state.revision;
   state.importing = true;
   setImportControls(true);
   try {
-    const candidates = new Map<string, readonly [string, File]>();
-    let ignored = unsupported.length;
-    let firstRejected: string | null = null;
-    for (const { path: rawPath, file } of incoming) {
-      if (sourcePathProblem(rawPath) !== null) {
-        ignored += 1;
-        firstRejected ??= rawPath;
-        state.unsupported.add(rawPath);
-        continue;
-      }
-      const path = normalizeSourcePath(rawPath);
-      const portableKey = portablePathKey(path);
-      if (candidates.has(portableKey)) {
-        throw new Error(t("importDuplicate", { path }));
-      }
-      if ([...state.files.keys()].some((loaded) => portablePathKey(loaded) === portableKey)) {
-        throw new Error(t("importConflict", { path }));
-      }
-      if (file.size > MAX_FILE_BYTES) {
-        throw new Error(t("fileTooLarge", { path, count: MAX_FILE_BYTES }));
-      }
-      candidates.set(portableKey, [path, file]);
+    let plan: ReturnType<typeof planImport>;
+    try {
+      plan = planImport(
+        incoming,
+        unsupported,
+        state.files.keys(),
+        state.unsupported,
+        alreadySkipped,
+      );
+    } catch (error) {
+      if (!(error instanceof ImportPlanError)) throw error;
+      if (error.code === "duplicate") throw new Error(t("importDuplicate", { path: error.path }));
+      if (error.code === "conflict") throw new Error(t("importConflict", { path: error.path }));
+      throw new Error(t("fileTooLarge", { path: error.path, count: MAX_FILE_BYTES }));
     }
-    if (candidates.size === 0) {
-      // Nothing usable arrived. One rejected path explains itself far better
-      // than a count, which matters most when a student dropped a single file.
-      if (firstRejected !== null) normalizeSourcePath(firstRejected);
+    const { candidates } = plan;
+    const unsupportedChanged =
+      plan.unsupported.size !== state.unsupported.size ||
+      [...plan.unsupported].some((path) => !state.unsupported.has(path));
+    if (candidates.size === 0 && !unsupportedChanged) {
+      if (plan.firstRejected !== null) normalizeSourcePath(plan.firstRejected);
       throw new Error(t("onlySupported"));
     }
     if (state.files.size + candidates.size > MAX_FILES) {
@@ -875,6 +680,12 @@ async function loadFiles(
       if (error instanceof ImportBatchError && error.code === "project_changed") {
         throw new Error(t("importChanged"));
       }
+      if (error instanceof ImportBatchError && error.code === "file_too_large" && error.path) {
+        throw new Error(t("fileTooLarge", { path: error.path, count: MAX_FILE_BYTES }));
+      }
+      if (error instanceof ImportBatchError && error.code === "project_too_large") {
+        throw new Error(t("projectTooLarge", { count: MAX_PROJECT_BYTES }));
+      }
       if (error instanceof ImportBatchError && error.path) {
         throw new Error(t("invalidUtf8", { path: error.path }));
       }
@@ -887,12 +698,15 @@ async function loadFiles(
       throw new Error(t("importChanged"));
     }
     state.files = proposed;
+    state.unsupported = plan.unsupported;
     state.revision += 1;
-    if (candidates.size > 0) invalidateResults();
+    invalidateResults();
     if (imported.selectedPath) selectFile(imported.selectedPath, false);
     renderFileList();
-    const added = tPlural("imported", candidates.size);
-    setRuntime("ready", ignored > 0 ? `${added} ${tPlural("skipped", ignored)}` : added);
+    const messages: string[] = [];
+    if (candidates.size > 0) messages.push(tPlural("imported", candidates.size));
+    if (plan.ignored > 0) messages.push(tPlural("skipped", plan.ignored));
+    setRuntime("ready", messages.join(" "));
   } finally {
     state.importing = false;
     setImportControls(false);
@@ -905,13 +719,22 @@ function setImportControls(disabled: boolean): void {
   elements.addFile.disabled = disabled;
   elements.addFolder.disabled = disabled;
   elements.removeFile.disabled = disabled;
+  refreshRunControl();
 }
 
 async function runFormatter(): Promise<void> {
-  if (!state.formatter || state.running) return;
+  if (
+    !state.formatter ||
+    !state.editor ||
+    state.running ||
+    state.importing ||
+    state.files.size === 0
+  ) {
+    return;
+  }
   syncEditor();
   state.running = true;
-  elements.run.disabled = true;
+  refreshRunControl();
   setRuntimeMessage("loading", "formatting");
   try {
     // Yield once so the "formatting" message paints before the synchronous
@@ -935,17 +758,20 @@ async function runFormatter(): Promise<void> {
       identity_email: state.identityEmail,
       timestamp: formatHeaderTimestamp(new Date()),
     };
-    const response = JSON.parse(state.formatter(JSON.stringify(request))) as PlaygroundResponse;
-    if (response.schema_version !== 1 || !Array.isArray(response.files)) {
-      throw new Error(t("responseSchema"));
-    }
     const inputSources = new Map(request.files.map((file) => [file.path, file.source]));
+    let response: ReturnType<typeof parseFormatterResponse>;
+    try {
+      response = parseFormatterResponse(state.formatter(JSON.stringify(request)), inputSources);
+    } catch (error) {
+      if (error instanceof FormatterResponseError && error.code === "path") {
+        throw new Error(t("responsePath", { path: error.path ?? "?" }));
+      }
+      if (error instanceof FormatterResponseError) throw new Error(t("responseSchema"));
+      throw error;
+    }
     state.results = new Map(
       response.files.map((file): [string, ResultRecord] => {
-        const inputSource = inputSources.get(file.path);
-        if (inputSource === undefined) {
-          throw new Error(t("responsePath", { path: file.path }));
-        }
+        const inputSource = inputSources.get(file.path)!;
         return [file.path, { ...file, inputSource }];
       }),
     );
@@ -957,13 +783,16 @@ async function runFormatter(): Promise<void> {
     paintMarkers();
     setRuntimeMessage("ready", "wasmReady");
     elements.results.hidden = false;
-    elements.results.scrollIntoView({ behavior: "smooth", block: "start" });
+    elements.results.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+    });
   } catch (error) {
     console.error(error);
     setRuntime("error", error instanceof Error ? error.message : String(error));
   } finally {
     state.running = false;
-    elements.run.disabled = !state.formatter;
+    refreshRunControl();
   }
 }
 
@@ -1184,17 +1013,6 @@ function applyResults(results: readonly ResultRecord[]): void {
   renderFileList();
 }
 
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 let copyLabelTimer: number | undefined;
 
 function resetCopyLabel(): void {
@@ -1241,8 +1059,7 @@ async function copyCurrent(): Promise<void> {
 function downloadCurrent(): void {
   const result = selectedResult();
   if (!result || result.error || !result.stable) return;
-  const name = result.path.split("/").at(-1) || "normfix-output.c";
-  downloadBlob(new Blob([result.formatted], { type: "text/plain;charset=utf-8" }), name);
+  downloadSource(result.path, result.formatted);
 }
 
 function downloadAll(): void {
@@ -1251,8 +1068,7 @@ function downloadAll(): void {
     .map((file) => ({ path: file.path, source: file.formatted }));
   if (files.length === 0) return;
   try {
-    const archive = buildZip(files satisfies ProjectSourceFile[]);
-    downloadBlob(new Blob([archive], { type: "application/zip" }), "normfix-formatted.zip");
+    downloadProject(files);
   } catch (error) {
     if (error instanceof ZipArchiveError) {
       setRuntime("error", t("archivePath", { path: error.path }));
@@ -1325,7 +1141,7 @@ async function importDrop(transfer: DataTransfer | null): Promise<void> {
     return;
   }
   const selection = await collectDroppedFiles(entries);
-  await loadFiles(selection.files, selection.unsupported);
+  await loadFiles(selection.files, selection.unsupported, selection.skipped);
 }
 
 elements.filePicker.addEventListener("change", () => {
@@ -1426,8 +1242,18 @@ function restoreProject(): void {
     stored.selected !== null && state.files.has(stored.selected)
       ? stored.selected
       : [...state.files.keys()].sort()[0];
-  if (selected === undefined) showEmptyProject();
-  else selectFile(selected, false);
+  // The editor is created after restore. Publishing the tree before that
+  // would let a fast click select a second file while Monaco was still loading
+  // the first, leaving state and model on different paths.
+  if (selected === undefined) {
+    state.selected = null;
+    headerState.path = null;
+    editorState.notice = { title: t("noFilesTitle"), detail: t("emptyProjectHint") };
+    refreshRunControl();
+  } else {
+    state.selected = selected;
+    headerState.path = selected;
+  }
   elements.restoreNotice.hidden = false;
 }
 
@@ -1487,152 +1313,28 @@ watchSystemAppearance(() => {
 /** The element holding the formatted text, for selecting it to copy. */
 let formattedElement: HTMLElement | null = null;
 
-mount(TopBar, {
-  target: elements.topBar,
-  props: {
-    get locale() {
-      return chromeState.locale;
-    },
-    get theme() {
-      return chromeState.theme;
-    },
-    get stars() {
-      return chromeState.stars;
-    },
-    get docsHref() {
-      return chromeState.docsHref;
-    },
-    format: (stars: number) => stars.toLocaleString(state.locale),
-    onLocale: (locale: string) => {
-      if (SUPPORTED_LOCALES.includes(locale as Locale)) changeLocale(locale as Locale);
-    },
-    onTheme: (value: string) => {
-      if (isThemePreference(value)) changeTheme(value);
-    },
+mountStaticUi({
+  elements,
+  locale: () => state.locale,
+  translate: t,
+  onLocale: (locale) => {
+    if (SUPPORTED_LOCALES.includes(locale as Locale)) changeLocale(locale as Locale);
   },
-});
-
-mount(CodeView, {
-  target: elements.formattedOutput,
-  props: {
-    get text() {
-      return codeState.formatted;
-    },
-    bind: (element: HTMLElement) => {
-      formattedElement = element;
-    },
+  onTheme: (value) => {
+    if (isThemePreference(value)) changeTheme(value);
   },
-});
-
-mount(CodeView, {
-  target: elements.diffOutput,
-  props: {
-    get text() {
-      return codeState.diff;
-    },
-  },
-});
-
-mount(EditorHeader, {
-  target: elements.editorHeader,
-  props: {
-    get path() {
-      return headerState.path;
-    },
-    get lines() {
-      return headerState.lines;
-    },
-    get bytes() {
-      return headerState.bytes;
-    },
-    measure: (lines: number, bytes: number) =>
-      t("linesBytes", { lines, bytes: bytes.toLocaleString(state.locale) }),
-    get label() {
-      return t("input");
-    },
-  },
-});
-
-mount(ConfirmDialog, {
-  target: elements.confirmDelete,
-  props: {
-    get request() {
-      return confirmState.request;
-    },
-    onConfirm: () => {
-      const accept = confirmState.accept;
-      confirmState.request = null;
-      confirmState.accept = null;
-      accept?.();
-    },
-    onCancel: () => {
-      confirmState.request = null;
-      confirmState.accept = null;
-    },
-  },
-});
-
-mount(StatusBadges, {
-  target: elements.statusBadges,
-  props: {
-    get runtime() {
-      return statusState.runtime;
-    },
-    get runtimeLabel() {
-      return statusState.runtimeLabel;
-    },
-    get offline() {
-      return statusState.offline;
-    },
-    get online() {
-      return statusState.online;
-    },
-    translate: (key: string) => t(key as MessageKey),
-    onUpdate: () => state.offlineSupport?.applyUpdate(),
-  },
-});
-
-mount(DropOverlay, {
-  target: elements.dropOverlay,
-  props: {
-    get active() {
-      return dragState.active;
-    },
-    translate: (key: string) => t(key as MessageKey),
-  },
-});
-
-mount(EditorNotice, {
-  target: elements.editorNotice,
-  props: {
-    get notice() {
-      return editorState.notice;
-    },
-  },
-});
-
-mount(IdentityPanel, {
-  target: elements.identityPanel,
-  props: {
-    get email() {
-      return identityState.email;
-    },
-    get stored() {
-      return identityState.stored;
-    },
-    get status() {
-      return identityState.status;
-    },
-    get invalid() {
-      return identityState.invalid;
-    },
-    translate: (key: string) => t(key as MessageKey),
-    onSave: saveIdentity,
-    onForget: forgetIdentity,
+  onSaveIdentity: saveIdentity,
+  onForgetIdentity: forgetIdentity,
+  onOfflineUpdate: () => state.offlineSupport?.applyUpdate(),
+  onFormattedElement: (element) => {
+    formattedElement = element;
   },
 });
 
 async function initialize(): Promise<void> {
+  // The static buttons exist before the asynchronously loaded editor does.
+  // Keep them inert until there is a model to receive their state changes.
+  setImportControls(true);
   setLocale(state.locale);
   // The old markup carried this as text; the badge is written from state now.
   setRuntimeMessage("loading", "loadingFormatter");
@@ -1651,7 +1353,6 @@ async function initialize(): Promise<void> {
       statusState.online = online;
     },
   });
-  renderFileList();
   const formatterPromise = loadFormatter();
   // The editor opens on whatever the project ended up holding, which is the
   // restored file when there was one. Opening on the sample and correcting it
@@ -1661,43 +1362,29 @@ async function initialize(): Promise<void> {
   // it. The header is written from state now, and the first file is the one
   // case nothing else announces.
   headerState.path = opening;
-  state.editor = await createSourceEditor(
-    elements.editorContainer,
-    elements.fallbackEditor,
-    opening,
-    state.files.get(opening) ?? SAMPLE,
-    state.appearance,
-    {
-      onChange: () => {
-        syncEditor();
-        updateEditorMeta();
+  try {
+    state.editor = await createSourceEditor(
+      elements.editorContainer,
+      elements.fallbackEditor,
+      opening,
+      state.files.get(opening) ?? SAMPLE,
+      state.appearance,
+      {
+        onChange: () => {
+          syncEditor();
+          updateEditorMeta();
+        },
+        onRun: () => {
+          void runFormatter();
+        },
       },
-      onRun: () => {
-        void runFormatter();
-      },
-    },
-  );
+    );
+  } finally {
+    setImportControls(false);
+  }
+  renderFileList();
   updateEditorMeta();
   await formatterPromise;
-  whenIdle(() => void loadGitHubStars());
-}
-
-/**
- * Runs work that nothing on the page is waiting for.
- *
- * The star count is decoration: it is worth a request, but not worth competing
- * with the formatter for a phone's one slow connection. Waiting for load and
- * then for an idle moment takes it off the critical path entirely, and the
- * bundled count is already on screen until it answers.
- */
-function whenIdle(work: () => void): void {
-  const idle = window.requestIdleCallback as typeof window.requestIdleCallback | undefined;
-  const schedule = () => {
-    if (idle) idle(() => work(), { timeout: 3000 });
-    else window.setTimeout(work, 1000);
-  };
-  if (document.readyState === "complete") schedule();
-  else window.addEventListener("load", schedule, { once: true });
 }
 
 void initialize().catch((error: unknown) => {

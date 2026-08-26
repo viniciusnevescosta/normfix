@@ -17,10 +17,10 @@ interface Props {
 const { path, lines, bytes, measure, label }: Props = $props();
 </script>
 
-<div class="flex items-baseline justify-between gap-3 p-2">
-  <div>
+<div class="flex min-w-0 items-baseline justify-between gap-3 p-2">
+  <div class="min-w-0">
     <span class="text-faint text-xs uppercase">{label}</span>
     <strong class="ml-2 font-mono text-sm">{path ?? ""}</strong>
   </div>
-  <span class="text-muted text-xs">{path === null ? "" : measure(lines, bytes)}</span>
+  <span class="text-muted shrink-0 text-xs">{path === null ? "" : measure(lines, bytes)}</span>
 </div>

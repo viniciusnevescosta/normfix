@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="dark light">
     <meta name="theme-color" content="#111311">
     <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
     <meta name="application-name" content="normfix">
@@ -71,8 +71,9 @@
         </span>
       </a>
       <div class="topbar-end">
-        <div id="top-bar" class="flex items-center gap-3"></div>
-        <div id="status-badges" class="flex items-center gap-4"></div>
+        <div id="top-bar" class="flex min-w-0 flex-wrap items-center gap-3"></div>
+        <div id="status-badges" class="flex min-w-0 flex-wrap items-center gap-4"></div>
+      </div>
     </header>
 
     <main>
@@ -113,7 +114,7 @@
             <span data-i18n="workRestored">Your last project was restored from this browser.</span>
             <button class="text-button" id="discard-restore" type="button" data-i18n="discardRestored">Discard it</button>
           </div>
-          <div class="file-list" id="file-list" role="listbox" aria-label="Loaded project files" data-i18n-aria="loadedFiles"></div>
+          <div class="file-list" id="file-list"></div>
 
           <div id="identity-panel"></div>
 
@@ -164,11 +165,11 @@
         </div>
         <div id="result-summary"></div>
 
-        <div class="result-view code-view" id="formatted-view" role="tabpanel" aria-labelledby="formatted-tab">
+        <div class="result-view code-view" id="formatted-view" role="tabpanel" aria-labelledby="formatted-tab" tabindex="0">
           <div id="formatted-output"></div>
         </div>
-        <div class="result-view diagnostics-view" id="diagnostics-view" role="tabpanel" aria-labelledby="diagnostics-tab" hidden></div>
-        <div class="result-view code-view diff-view" id="diff-view" role="tabpanel" aria-labelledby="diff-tab" hidden>
+        <div class="result-view diagnostics-view" id="diagnostics-view" role="tabpanel" aria-labelledby="diagnostics-tab" tabindex="0" hidden></div>
+        <div class="result-view code-view diff-view" id="diff-view" role="tabpanel" aria-labelledby="diff-tab" tabindex="0" hidden>
           <div id="diff-output"></div>
         </div>
       </section>

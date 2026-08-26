@@ -7,6 +7,87 @@
  */
 @import "tailwindcss";
 
+:root {
+  color-scheme: dark;
+  --bg: #111311;
+  --panel: #171a17;
+  --panel-alt: #1d201d;
+  --surface-sunken: #141614;
+  --surface-code: #121412;
+  --surface-selected: #232823;
+  --border: #3a3f3a;
+  --border-strong: #596159;
+  --text: #e5e9e5;
+  --muted: #9ca49c;
+  --faint: #737b73;
+  --accent: #8fc7a8;
+  --accent-strong: #a8d5ba;
+  --on-accent: #101410;
+  --badge-text: #273127;
+  --badge-border: #5e846d;
+  --badge-bg: #b3d4bf;
+  --warning: #d5b56d;
+  --error: #dc8580;
+  --info: #86aeca;
+  --overlay: rgb(17 19 17 / 82%);
+  --scrim: rgb(0 0 0 / 70%);
+  --mono: "SFMono-Regular", "Cascadia Mono", "Liberation Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: #f7f8f7;
+    --panel: #fff;
+    --panel-alt: #eef1ee;
+    --surface-sunken: #f1f3f1;
+    --surface-code: #fbfcfb;
+    --surface-selected: #e2e8e3;
+    --border: #d2d8d2;
+    --border-strong: #a4ada4;
+    --text: #1a1d1a;
+    --muted: #5a625a;
+    --faint: #798179;
+    --accent: #2c6a48;
+    --accent-strong: #2c6a48;
+    --on-accent: #fff;
+    --badge-text: #1e3b2a;
+    --badge-border: #7ba98d;
+    --badge-bg: #dbeee2;
+    --warning: #7a5c0c;
+    --error: #9c332d;
+    --info: #23546f;
+    --overlay: rgb(247 248 247 / 88%);
+    --scrim: rgb(26 29 26 / 45%);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f8f7;
+  --panel: #fff;
+  --panel-alt: #eef1ee;
+  --surface-sunken: #f1f3f1;
+  --surface-code: #fbfcfb;
+  --surface-selected: #e2e8e3;
+  --border: #d2d8d2;
+  --border-strong: #a4ada4;
+  --text: #1a1d1a;
+  --muted: #5a625a;
+  --faint: #798179;
+  --accent: #2c6a48;
+  --accent-strong: #2c6a48;
+  --on-accent: #fff;
+  --badge-text: #1e3b2a;
+  --badge-border: #7ba98d;
+  --badge-bg: #dbeee2;
+  --warning: #7a5c0c;
+  --error: #9c332d;
+  --info: #23546f;
+  --overlay: rgb(247 248 247 / 88%);
+  --scrim: rgb(26 29 26 / 45%);
+}
+
 @theme {
   --color-bg: var(--bg);
   --color-panel: var(--panel);

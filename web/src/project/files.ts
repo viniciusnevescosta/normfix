@@ -4,8 +4,11 @@ export const MAX_FILES = 128;
 const MAX_PATH_BYTES = 240;
 export const MAX_FILE_BYTES = 1024 * 1024;
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
+/** Non-source paths shown as warnings, bounded so a build tree cannot freeze the UI. */
+export const MAX_UNSUPPORTED_FILES = 384;
 
 const UTF8_ENCODER = new TextEncoder();
+const MAX_CONCURRENT_READS = 4;
 
 export interface ProjectSourceFile {
   path: string;
@@ -63,10 +66,13 @@ interface ReadableImportFile {
 export type ImportCandidate = readonly [string, ReadableImportFile];
 
 export class ImportBatchError extends Error {
-  readonly code: "invalid_utf8" | "project_changed";
+  readonly code: "invalid_utf8" | "file_too_large" | "project_too_large" | "project_changed";
   readonly path: string | null;
 
-  constructor(code: "invalid_utf8" | "project_changed", path: string | null = null) {
+  constructor(
+    code: "invalid_utf8" | "file_too_large" | "project_too_large" | "project_changed",
+    path: string | null = null,
+  ) {
     super(code);
     this.name = "ImportBatchError";
     this.code = code;
@@ -80,20 +86,46 @@ export async function readImportBatch(
   currentRevision: () => number,
 ): Promise<{ sources: Map<string, string>; selectedPath: string | null }> {
   assertRevision(expectedRevision, currentRevision);
-  const sources = new Map<string, string>();
-  let selectedPath: string | null = null;
-  for (const [path, file] of candidates) {
-    let source: string;
-    try {
-      source = decodeUtf8Source(await file.arrayBuffer());
-    } catch {
-      throw new ImportBatchError("invalid_utf8", path);
+  const batch = [...candidates];
+  const decoded = new Array<string>(batch.length);
+  let next = 0;
+  let decodedBytes = 0;
+  const readNext = async (): Promise<void> => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      const candidate = batch[index];
+      if (!candidate) return;
+      const [path, file] = candidate;
+      try {
+        const bytes = await file.arrayBuffer();
+        if (bytes.byteLength > MAX_FILE_BYTES) {
+          throw new ImportBatchError("file_too_large", path);
+        }
+        decodedBytes += bytes.byteLength;
+        if (decodedBytes > MAX_PROJECT_BYTES) {
+          throw new ImportBatchError("project_too_large", path);
+        }
+        decoded[index] = decodeUtf8Source(bytes);
+      } catch (error) {
+        if (error instanceof ImportBatchError) throw error;
+        throw new ImportBatchError("invalid_utf8", path);
+      }
+      assertRevision(expectedRevision, currentRevision);
     }
-    assertRevision(expectedRevision, currentRevision);
-    sources.set(path, source);
-    selectedPath = path;
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(MAX_CONCURRENT_READS, batch.length) }, () => readNext()),
+  );
   assertRevision(expectedRevision, currentRevision);
+  const sources = new Map(
+    batch.map(([path], index) => {
+      const source = decoded[index];
+      if (source === undefined) throw new ImportBatchError("invalid_utf8", path);
+      return [path, source] as const;
+    }),
+  );
+  const selectedPath = batch.at(-1)?.[0] ?? null;
   return { sources, selectedPath };
 }
 

@@ -5,7 +5,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { build, defineConfig, type Plugin } from "vite";
 
-import { offlineShell, type Bundle } from "./src/offline/precache";
+import { offlineShell, type Bundle } from "./src/offline/precache.ts";
 import { version } from "./package.json" with { type: "json" };
 
 const projectDirectory = resolve(fileURLToPath(new URL(".", import.meta.url)));

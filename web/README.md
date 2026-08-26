@@ -119,9 +119,9 @@ explicitly enables persistence. When enabled, it is stored under
 **Forget**. It is passed directly to WebAssembly to generate the official 42
 header and is never sent to a server.
 
-Source buffers likewise stay inside the browser process. The only external
-browser request is an unauthenticated, no-referrer fetch of the repository's
-public GitHub star count; a bundled fallback is shown if GitHub is unavailable.
+Source buffers likewise stay inside the browser process. Opening the playground
+makes no third-party request; GitHub and the official tools are plain links
+followed only when the reader chooses.
 
 ## Why the browser scope is smaller
 
@@ -150,6 +150,6 @@ Content security policies are split so the playground and `/docs/` never
 receive competing CSP headers. Scripts remain same-origin and disallow inline
 execution. Monaco requires same-origin/blob workers and injects editor styles,
 so the playground permits `worker-src 'self' blob:` and `style-src 'unsafe-inline'`.
-`connect-src` additionally permits only GitHub's public API for the star count.
+`connect-src` permits only the playground's own origin.
 The inline-style exception is intentionally limited to styles; it does not
 weaken `script-src`.

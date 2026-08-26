@@ -31,7 +31,14 @@ $effect(() => {
 });
 </script>
 
-<section class="flex flex-col gap-2 p-3" aria-labelledby="identity-title">
+<form
+  class="flex flex-col gap-2 p-3"
+  aria-labelledby="identity-title"
+  onsubmit={(event) => {
+    event.preventDefault();
+    if (!stored) onSave(typed, remember);
+  }}
+>
   <strong id="identity-title">{translate("identity")}</strong>
   <label class="text-faint text-xs uppercase" for="identity-email">{translate("email")}</label>
   <input
@@ -39,9 +46,15 @@ $effect(() => {
     class="border-border bg-surface-sunken rounded border px-2 py-1 font-mono text-sm"
     type="email"
     inputmode="email"
-    autocomplete="email"
+    autocomplete="off"
+    autocapitalize="none"
+    spellcheck="false"
+    maxlength="254"
+    enterkeyhint="done"
     placeholder={translate("emailPlaceholder")}
     aria-invalid={invalid ? "true" : undefined}
+    aria-describedby="identity-status identity-privacy"
+    readonly={stored}
     bind:value={typed}
   />
 
@@ -62,14 +75,13 @@ $effect(() => {
     {:else}
       <button
         class="border-border hover:bg-surface-selected rounded border px-3 py-1 text-sm"
-        type="button"
-        onclick={() => onSave(typed, remember)}
+        type="submit"
       >
         {translate("saveIdentity")}
       </button>
     {/if}
   </div>
 
-  <p class="text-muted text-xs" role="status">{status}</p>
-  <p class="text-faint text-xs">{translate("identityPrivacy")}</p>
-</section>
+  <p id="identity-status" class="text-muted min-h-4 text-xs" role="status">{status}</p>
+  <p id="identity-privacy" class="text-faint text-xs">{translate("identityPrivacy")}</p>
+</form>

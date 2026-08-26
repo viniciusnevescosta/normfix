@@ -85,10 +85,9 @@ não contra o que está no editor agora.
 ## Privacidade e comportamento de rede
 
 Código e identidade permanecem na aba. Não há upload de código, conta,
-dependência de analytics nem backend de formatação. A única requisição externa é
-uma busca não autenticada e sem referrer da contagem pública de estrelas do
-repositório oficial no GitHub; quando ela não está disponível, a interface exibe
-um valor incluído no próprio site.
+dependência de analytics nem backend de formatação. Abrir o playground não faz
+requisições a terceiros; o GitHub e as ferramentas oficiais são links comuns,
+acessados somente quando você escolhe.
 
 ## Uso offline
 

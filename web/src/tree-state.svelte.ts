@@ -24,7 +24,6 @@ export const diagnosticsState = $state({
 export const chromeState = $state({
   locale: "en",
   theme: "system",
-  stars: null as number | null,
   docsHref: "/docs/",
 });
 

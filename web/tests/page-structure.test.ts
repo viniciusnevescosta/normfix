@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import { test } from "vitest";
 
 const page = await readFile(new URL("../index.html", import.meta.url), "utf8");
-const bootstrap = await readFile(new URL("../src/main.ts", import.meta.url), "utf8");
+const shell = await readFile(new URL("../src/dom.ts", import.meta.url), "utf8");
+const mountsSource = await readFile(new URL("../src/mount-ui.ts", import.meta.url), "utf8");
 
 test("every element the page asks for by id is in the markup", async () => {
   // main.ts finds its mount points and its remaining controls by id, and
@@ -11,13 +12,45 @@ test("every element the page asks for by id is in the markup", async () => {
   // sees the script blocks, and neither has ever opened index.html. Cutting one
   // block out of the markup took a container with it, and the page ran for five
   // commits as a single stacked column before a screenshot found it.
-  const required = [...bootstrap.matchAll(/requiredElement<[^>]*>\("#([\w-]+)"\)/g)].map(
+  const required = [...shell.matchAll(/requiredElement<[^>]*>\("#([\w-]+)"\)/g)].map(
     (match) => match[1],
   );
 
-  assert.ok(required.length > 10, "the bootstrap still finds its elements by id");
+  assert.ok(required.length > 10, "the shell still resolves its elements by id");
   const missing = required.filter((id) => !page.includes(`id="${id}"`));
   assert.deepEqual(missing, [], "these ids are asked for but not in the page");
+});
+
+test("the static shell has balanced element nesting", () => {
+  const voidElements = new Set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+  ]);
+  const stack: string[] = [];
+  const markup = page.replaceAll(/<!--[\s\S]*?-->/g, "");
+  for (const match of markup.matchAll(/<(\/)?([a-z][\w-]*)(?:\s[^<>]*?)?>/gi)) {
+    const closing = match[1] === "/";
+    const name = match[2]?.toLowerCase();
+    if (!name || voidElements.has(name)) continue;
+    if (!closing) {
+      stack.push(name);
+      continue;
+    }
+    assert.equal(stack.pop(), name, `closing </${name}> matches the open element around it`);
+  }
+  assert.deepEqual(stack, [], "every non-void element is closed");
 });
 
 test("the workbench keeps the shape the stylesheet lays out", async () => {
@@ -39,11 +72,11 @@ test("a mount point holds nothing of its own", async () => {
   // A component replaces whatever is inside its target, so markup left there is
   // markup that flashes on load and then vanishes — or worse, is what the
   // reader keeps when the component fails to mount.
-  const mounts = [...bootstrap.matchAll(/target: elements\.(\w+)/g)].map((match) => match[1]);
+  const mounts = [...mountsSource.matchAll(/target: elements\.(\w+)/g)].map((match) => match[1]);
   assert.ok(mounts.length > 5, "components are mounted into the page");
 
   for (const name of new Set(mounts)) {
-    const selector = bootstrap.match(
+    const selector = shell.match(
       new RegExp(`${name}: requiredElement<[^>]*>\\("#([\\w-]+)"\\)`),
     )?.[1];
     if (!selector) continue;

@@ -88,10 +88,9 @@ que normfix leyó, no contra lo que hay ahora en el editor.
 ## Privacidad y comportamiento de red
 
 El código y la identidad permanecen en la pestaña. No hay subida de código,
-cuenta, dependencia de analítica ni backend de formateo. La única petición
-externa es una consulta no autenticada y sin referrer del número público de
-estrellas del repositorio oficial en GitHub; cuando no está disponible, la
-interfaz muestra un valor incluido en el propio sitio.
+cuenta, dependencia de analítica ni backend de formateo. Abrir el playground no
+hace peticiones a terceros; GitHub y las herramientas oficiales son enlaces
+normales que solo se visitan cuando tú eliges.
 
 ## Uso sin conexión
 

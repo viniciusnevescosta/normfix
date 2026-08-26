@@ -6,7 +6,7 @@
 // ignored — never silently, and never by refusing the whole drop over one file
 // normfix does not format.
 
-import { MAX_FILES, sourcePathProblem } from "./files";
+import { MAX_FILES, MAX_UNSUPPORTED_FILES, sourcePathProblem } from "./files";
 
 /** One importable file and the project-relative path it will be stored under. */
 export interface DroppedFile {
@@ -23,6 +23,8 @@ export interface DropSelection {
    * a file that vanished on import is one the reader goes looking for.
    */
   unsupported: string[];
+  /** Entries rejected for an unsafe path, or beyond the bounded visible list. */
+  skipped: number;
 }
 
 /**
@@ -59,11 +61,6 @@ function normalizeDropPath(fullPath: string): string {
   return fullPath.replace(/^\/+/, "");
 }
 
-/** Whether a dropped path is something the playground can format. */
-function isImportablePath(path: string): boolean {
-  return sourcePathProblem(path) === null;
-}
-
 /** The subset of the entry API this module uses, so the walk can be reasoned about. */
 interface FileSystemEntryLike {
   name: string;
@@ -97,6 +94,7 @@ export async function collectDroppedFiles(
 ): Promise<DropSelection> {
   const files: DroppedFile[] = [];
   const unsupported: string[] = [];
+  let skipped = 0;
   let scanned = 0;
 
   const walk = async (entry: FileSystemEntryLike, depth: number): Promise<void> => {
@@ -106,21 +104,37 @@ export async function collectDroppedFiles(
 
     if (entry.isFile) {
       const path = normalizeDropPath(entry.fullPath);
-      if (!isImportablePath(path)) {
-        unsupported.push(path);
+      const problem = sourcePathProblem(path);
+      if (problem !== null) {
+        if (problem.code === "only_supported" && unsupported.length < MAX_UNSUPPORTED_FILES) {
+          unsupported.push(path);
+        } else {
+          skipped += 1;
+        }
         return;
       }
       files.push({ path, file: await readFile(entry as FileEntryLike) });
       return;
     }
     if (!entry.isDirectory || depth >= MAX_DEPTH) return;
-    for (const child of await readDirectory(entry as DirectoryEntryLike)) {
+    const directory = await readDirectory(
+      entry as DirectoryEntryLike,
+      MAX_ENTRIES_SCANNED - scanned,
+    );
+    if (directory.truncated) skipped += 1;
+    for (const child of directory.entries) {
       await walk(child, depth + 1);
     }
   };
 
-  for (const entry of entries) await walk(entry, 0);
-  return { files, unsupported };
+  for (const entry of entries) {
+    if (scanned >= MAX_ENTRIES_SCANNED || files.length >= MAX_FILES) {
+      skipped += 1;
+      break;
+    }
+    await walk(entry, 0);
+  }
+  return { files, unsupported, skipped };
 }
 
 function readFile(entry: FileEntryLike): Promise<File> {
@@ -134,14 +148,27 @@ function readFile(entry: FileEntryLike): Promise<File> {
  * signals the end with an empty result, so a directory has to be drained
  * rather than read once.
  */
-async function readDirectory(entry: DirectoryEntryLike): Promise<FileSystemEntryLike[]> {
+async function readDirectory(
+  entry: DirectoryEntryLike,
+  limit: number,
+): Promise<{ entries: FileSystemEntryLike[]; truncated: boolean }> {
   const reader = entry.createReader();
   const all: FileSystemEntryLike[] = [];
   for (;;) {
     const batch = await new Promise<FileSystemEntryLike[]>((resolve, reject) => {
       reader.readEntries(resolve, reject);
     });
-    if (batch.length === 0) return all;
-    all.push(...batch);
+    if (batch.length === 0) return { entries: all, truncated: false };
+    const available = Math.max(0, limit - all.length);
+    all.push(...batch.slice(0, available));
+    if (batch.length > available) {
+      return { entries: all, truncated: true };
+    }
+    if (all.length >= limit) {
+      const overflow = await new Promise<FileSystemEntryLike[]>((resolve, reject) => {
+        reader.readEntries(resolve, reject);
+      });
+      return { entries: all, truncated: overflow.length > 0 };
+    }
   }
 }

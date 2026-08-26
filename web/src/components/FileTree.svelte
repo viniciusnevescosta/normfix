@@ -10,6 +10,7 @@
 // The panel owns no project state. It is handed what to draw and hands back
 // what the reader did, which keeps the rules about what a path may be where
 // they are already proven.
+import { tick } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
 import { t as translate } from "../i18n-state.svelte";
 import { buildTree, type TreeNode } from "../project/tree";
@@ -42,6 +43,8 @@ const tree = $derived(buildTree(files));
 let collapsed = $state(new SvelteSet<string>());
 let menu = $state<{ path: string; isFolder: boolean; x: number; y: number } | null>(null);
 let dropInto = $state<string | null>(null);
+let menuElement = $state<HTMLElement | null>(null);
+let menuTrigger: HTMLElement | null = null;
 
 /** Flattens the tree to the rows that are actually visible. */
 function rows(nodes: TreeNode[], depth = 0): Array<{ node: TreeNode; depth: number }> {
@@ -83,6 +86,50 @@ function drop(event: DragEvent, folder: string): void {
   event.preventDefault();
   const separator = payload.indexOf(":");
   onMove(payload.slice(separator + 1), payload.slice(0, separator) === "folder", folder);
+}
+
+/** Opens the entry menu inside the visible viewport and moves focus into it. */
+function openMenu(
+  path: string,
+  isFolder: boolean,
+  x: number,
+  y: number,
+  trigger: HTMLElement,
+): void {
+  const menuWidth = 152;
+  const menuHeight = 88;
+  menuTrigger = trigger;
+  menu = {
+    path,
+    isFolder,
+    x: Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8)),
+    y: Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8)),
+  };
+  void tick().then(() => menuElement?.querySelector<HTMLButtonElement>("button")?.focus());
+}
+
+function moveTreeFocus(event: KeyboardEvent, offset: number): void {
+  const items = [...document.querySelectorAll<HTMLElement>('[role="treeitem"]')].filter(
+    (item) => item.offsetParent !== null,
+  );
+  const current = items.indexOf(event.currentTarget as HTMLElement);
+  const next = items[Math.max(0, Math.min(items.length - 1, current + offset))];
+  if (next && next !== event.currentTarget) next.focus();
+}
+
+function menuKeys(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    menu = null;
+    menuTrigger?.focus();
+    return;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  event.preventDefault();
+  const items = [...(menuElement?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
+  const current = items.indexOf(document.activeElement as HTMLButtonElement);
+  const direction = event.key === "ArrowDown" ? 1 : -1;
+  items[(current + direction + items.length) % items.length]?.focus();
 }
 </script>
 
@@ -138,10 +185,26 @@ function drop(event: DragEvent, folder: string): void {
       }}
       oncontextmenu={(event) => {
         event.preventDefault();
-        menu = { path: node.path, isFolder, x: event.clientX, y: event.clientY };
+        openMenu(node.path, isFolder, event.clientX, event.clientY, event.currentTarget);
       }}
       onclick={() => (isFolder ? toggle(node.path) : onSelect(node.path))}
       onkeydown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          moveTreeFocus(event, event.key === "ArrowDown" ? 1 : -1);
+          return;
+        }
+        if (isFolder && event.key === "ArrowRight") {
+          event.preventDefault();
+          collapsed.delete(node.path);
+          return;
+        }
+        if (isFolder && event.key === "ArrowLeft") {
+          event.preventDefault();
+          collapsed.add(node.path);
+          return;
+        }
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
         if (isFolder) toggle(node.path);
@@ -166,6 +229,20 @@ function drop(event: DragEvent, folder: string): void {
           {notFormattable ? translate("unsupportedKind") : kindOf(node.path)}
         </span>
       {/if}
+      <button
+        class="border-border text-muted hover:border-accent hover:text-accent ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center border text-base leading-none"
+        type="button"
+        aria-haspopup="menu"
+        aria-label={`${translate("renameEntry")} / ${translate("deleteEntry")}: ${node.path}`}
+        title={`${translate("renameEntry")} / ${translate("deleteEntry")}`}
+        onclick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const box = event.currentTarget.getBoundingClientRect();
+          openMenu(node.path, isFolder, box.right - 144, box.bottom + 4, event.currentTarget);
+        }}
+        onkeydown={(event) => event.stopPropagation()}
+      ><span aria-hidden="true">&#8943;</span></button>
     </div>
   {/each}
 </div>
@@ -173,9 +250,11 @@ function drop(event: DragEvent, folder: string): void {
 {#if menu}
   <div
     class="border-border bg-panel-alt fixed z-50 flex min-w-32 flex-col rounded border p-1 shadow-lg"
+    bind:this={menuElement}
     role="menu"
     tabindex="-1"
     style="left: {menu.x}px; top: {menu.y}px"
+    onkeydown={menuKeys}
   >
     <button
       class="hover:bg-surface-selected px-2 py-1 text-left text-sm"

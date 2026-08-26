@@ -92,10 +92,9 @@ dans l’éditeur.
 ## Confidentialité et comportement réseau
 
 Le code et l’identité restent dans l’onglet. Il n’y a ni envoi de code, ni
-compte, ni dépendance analytique, ni backend de formatage. La seule requête
-externe est une consultation non authentifiée et sans referrer du nombre public
-d’étoiles du dépôt officiel sur GitHub ; lorsqu’elle échoue, l’interface affiche
-une valeur intégrée au site.
+compte, ni dépendance analytique, ni backend de formatage. L’ouverture du
+playground n’effectue aucune requête vers un tiers ; GitHub et les outils
+officiels sont de simples liens, suivis uniquement lorsque vous le choisissez.
 
 ## Utilisation hors ligne
 

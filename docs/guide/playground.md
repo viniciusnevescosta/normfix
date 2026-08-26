@@ -81,9 +81,9 @@ is in the buffer now.
 ## Privacy and network behavior
 
 Source and identity stay in the tab. There is no source upload, account,
-analytics dependency, or formatting backend. The only external request is an
-unauthenticated, no-referrer fetch of the official repository's public GitHub
-star count; the UI uses a bundled fallback when that request is unavailable.
+analytics dependency, or formatting backend. Opening the playground makes no
+third-party request; GitHub and the official tools are plain links followed
+only when you choose.
 
 ## Working offline
 
