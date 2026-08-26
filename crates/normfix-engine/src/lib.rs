@@ -12,6 +12,7 @@ pub use pipeline::{BackupPolicy, FixOptions, FixRunError, WriteApproval, run_fix
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{fs::File, io::Read as _};
 
 use camino::Utf8PathBuf;
 use normfix_c_syntax::{CParser, ParseFailure, SyntaxIssueKind};
@@ -21,6 +22,8 @@ use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+const MAX_INSPECTED_FILE_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Implemented native-engine migration milestones.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -253,12 +256,8 @@ fn inspect_file(
     cwd: &Path,
     parser: &mut Result<CParser, ParseFailure>,
 ) -> Result<FileInspection, InspectionFailure> {
-    let bytes = std::fs::read(path).map_err(|error| InspectionFailure {
-        path: display_path(path, cwd),
-        code: "read_error".to_owned(),
-        message: format!("Could not read the file: {error}"),
-    })?;
     let report_path = display_path(path, cwd);
+    let bytes = read_inspection_file(path, &report_path)?;
     if matches!(kind, ProjectFileKind::Makefile | ProjectFileKind::Markdown) {
         return Ok(FileInspection {
             path: report_path,
@@ -342,6 +341,58 @@ fn inspect_file(
         syntax_issues,
         automatic_edits_permitted: lossless && parsed.permits_automatic_edits(),
     })
+}
+
+fn read_inspection_file(path: &Path, report_path: &str) -> Result<Vec<u8>, InspectionFailure> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| InspectionFailure {
+        path: report_path.to_owned(),
+        code: "read_error".to_owned(),
+        message: format!("Could not inspect the file before reading it: {error}"),
+    })?;
+    if !metadata.file_type().is_file() {
+        return Err(InspectionFailure {
+            path: report_path.to_owned(),
+            code: "read_error".to_owned(),
+            message: "Refused to read a non-regular file.".to_owned(),
+        });
+    }
+    if metadata.len() > MAX_INSPECTED_FILE_BYTES {
+        return Err(oversized_inspection_failure(report_path));
+    }
+    let input = File::open(path).map_err(|error| InspectionFailure {
+        path: report_path.to_owned(),
+        code: "read_error".to_owned(),
+        message: format!("Could not open the file: {error}"),
+    })?;
+    let capacity = usize::try_from(metadata.len()).map_err(|error| InspectionFailure {
+        path: report_path.to_owned(),
+        code: "read_error".to_owned(),
+        message: format!("The file length cannot fit in memory on this platform: {error}"),
+    })?;
+    let mut bytes = Vec::with_capacity(capacity);
+    input
+        .take(MAX_INSPECTED_FILE_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|error| InspectionFailure {
+            path: report_path.to_owned(),
+            code: "read_error".to_owned(),
+            message: format!("Could not read the file: {error}"),
+        })?;
+    if u64::try_from(bytes.len()).map_or(true, |length| length > MAX_INSPECTED_FILE_BYTES) {
+        return Err(oversized_inspection_failure(report_path));
+    }
+    Ok(bytes)
+}
+
+fn oversized_inspection_failure(report_path: &str) -> InspectionFailure {
+    InspectionFailure {
+        path: report_path.to_owned(),
+        code: "file_too_large".to_owned(),
+        message: format!(
+            "Refused to inspect a file larger than {} MiB.",
+            MAX_INSPECTED_FILE_BYTES / (1024 * 1024)
+        ),
+    }
 }
 
 fn snapshot_relative_path(path: &Path, cwd: &Path, index: usize) -> Option<Utf8PathBuf> {
@@ -466,6 +517,24 @@ mod tests {
         assert_eq!(report.failures.len(), 1);
         assert_eq!(report.failures[0].code, "invalid_utf8");
         assert_eq!(report.failures[0].path, "invalid.c");
+    }
+
+    #[test]
+    fn oversized_input_is_refused_before_allocating_its_contents() {
+        let temporary = TempDir::new().expect("temporary directory");
+        let source = temporary.path().join("oversized.c");
+        fs::File::create(&source)
+            .expect("sparse fixture")
+            .set_len(super::MAX_INSPECTED_FILE_BYTES + 1)
+            .expect("oversized sparse fixture");
+
+        let report = inspect(&[], &InspectOptions::new(temporary.path())).expect("inspection");
+
+        assert_eq!(report.exit_code(), 2);
+        assert!(report.files.is_empty());
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].code, "file_too_large");
+        assert_eq!(report.failures[0].path, "oversized.c");
     }
 
     #[test]
