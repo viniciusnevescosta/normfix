@@ -877,7 +877,6 @@ dependencies = [
  "nix",
  "normfix-c-syntax",
  "serde",
- "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "win32job",
@@ -898,14 +897,12 @@ name = "normfix-report"
 version = "1.9.0"
 dependencies = [
  "annotate-snippets",
- "anstyle",
  "camino",
  "normfix-core",
  "normfix-i18n",
  "serde",
  "serde_json",
  "similar",
- "tempfile",
 ]
 
 [[package]]
