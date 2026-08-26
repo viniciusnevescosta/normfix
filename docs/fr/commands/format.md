@@ -59,8 +59,8 @@ déclarations et les `return` entre parenthèses.
  }
 ```
 
-Les tabulations sont rendues par `\t` pour que les changements d'indentation
-restent visibles dans un terminal.
+Le diff contient les octets de tabulation réels, exactement comme le code
+proposé.
 
 ## Approuver fichier par fichier
 

@@ -83,8 +83,8 @@ normfix --diff
 normfix --diff src/parser.c
 ```
 
-Tabs render as `\t` so indentation changes stay visible. Mutually exclusive
-with `--check`.
+The unified diff preserves literal tab bytes, so copying or applying it keeps
+the exact proposed source. Mutually exclusive with `--check`.
 
 ### `--interactive`
 

@@ -59,8 +59,8 @@ separación de declaraciones y los `return` entre paréntesis.
  }
 ```
 
-Las tabulaciones se muestran como `\t` para que los cambios de indentación sigan
-siendo visibles en un terminal.
+El diff contiene bytes de tabulación literales, exactamente como el código
+propuesto.
 
 ## Aprobar archivo por archivo
 

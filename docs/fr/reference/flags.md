@@ -87,8 +87,9 @@ normfix --diff
 normfix --diff src/parser.c
 ```
 
-Les tabulations sont rendues par `\t` pour que les changements d'indentation
-restent visibles. S'exclut mutuellement avec `--check`.
+Le diff unifié conserve les octets de tabulation réels : le copier ou
+l'appliquer garde donc exactement le code proposé. S'exclut mutuellement avec
+`--check`.
 
 ### `--interactive`
 

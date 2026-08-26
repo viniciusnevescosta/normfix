@@ -59,8 +59,7 @@ layout das chaves, a indentação com tabulações, a separação das declaraç�
  }
 ```
 
-As tabulações são exibidas como `\t` para que mudanças de indentação continuem
-visíveis em um terminal.
+O diff contém bytes reais de tabulação, exatamente como o código proposto.
 
 ## Aprovar arquivo por arquivo
 

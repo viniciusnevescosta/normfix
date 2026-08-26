@@ -59,7 +59,7 @@ returns.
  }
 ```
 
-Tabs are rendered as `\t` so indentation changes stay visible in a terminal.
+The diff contains literal tab bytes, exactly as the proposed source does.
 
 ## Approve file by file
 
