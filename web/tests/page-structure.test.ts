@@ -39,7 +39,12 @@ test("the static shell has balanced element nesting", () => {
     "wbr",
   ]);
   const stack: string[] = [];
-  const markup = page.replaceAll(/<!--[\s\S]*?-->/g, "");
+  let markup = page;
+  let previous: string;
+  do {
+    previous = markup;
+    markup = markup.replace(/<!--[\s\S]*?-->/g, "");
+  } while (markup !== previous);
   for (const match of markup.matchAll(/<(\/)?([a-z][\w-]*)(?:\s[^<>]*?)?>/gi)) {
     const closing = match[1] === "/";
     const name = match[2]?.toLowerCase();
