@@ -68,6 +68,27 @@ importante que o tempo, todos os limites do resultado foram preservados:
   exatamente os dez arquivos gravados enquanto a nota inesperada continuou
   recuperável na quarentena.
 
+### Projetos históricos, bagunçados de propósito
+
+A regressão final da 1.9.1 não usou as pontas já limpas dos repositórios de
+exemplo. Ela verificou commits antigos e naturalmente fora da Norma, mais uma
+cópia atual do `ft_printf` danificada de forma determinística, sempre por um
+caminho absoluto a partir de outro diretório:
+
+| Corpus | Antes | Resultado somente leitura | Segunda passagem |
+|---|---:|---|---|
+| [Libft `e19a16b`](https://github.com/viniciusnevescosta/Libft/commit/e19a16bcf52e9d364e1887c701248a86526184b0) | 240 achados oficiais | 224 correções seguras; restam 5 achados estruturais, semânticos ou do compilador | 0 mudanças |
+| [Piscine `ca9502f`](https://github.com/viniciusnevescosta/Piscine/commit/ca9502ff2eae293e9aa46884ca40b263ac042022) | 581 achados oficiais | 346 correções seguras; restam 24 achados manuais ou de nome inválido | 0 mudanças |
+| [GNL `47cd2c3`](https://github.com/viniciusnevescosta/Get-Next-Line/commit/47cd2c37e6b1a0306b4d12dcb830accc173a9e27) | protótipo de header malformado | nenhuma edição inventada; o ponto e vírgula ausente continua visível ao parser e ao compilador | 0 mudanças |
+| [`ft_printf` `ddd0020`](https://github.com/viniciusnevescosta/ft_printf/commit/ddd00207f42a0436f98ab4f8f38b6fdab7d81353), três arquivos bagunçados | 37 achados oficiais | 35 correções seguras em 3 arquivos; `make` passa antes e depois | 0 mudanças e 0 pendências |
+
+A mutação do `ft_printf` removeu dois cabeçalhos oficiais e introduziu
+instruções compactadas, espaços no lugar de tabs e erros de layout de chaves,
+operadores, preprocessor e `return`, sem mudar o programa. Toda execução usou a
+Norminette 3.3.59 com cache desativado. Esse corpus expôs a regressão da raiz de
+projeto externa; compilador, política, Makefile e transação agora seguem o
+caminho explícito do projeto, não o diretório de onde o normfix foi chamado.
+
 Medido em 2026-08-26 em um MacBook Pro Apple M1 com 8 núcleos e 8 GB de RAM,
 macOS 26.5.2, Norminette 3.3.59 e o MSRV Rust 1.85. Tempos de relógio variam com
 armazenamento, início do Python, carga da CPU e formato do projeto; as checagens

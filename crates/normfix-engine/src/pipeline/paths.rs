@@ -56,6 +56,47 @@ pub(super) fn transaction_root<'a>(
     common
 }
 
+/// Selects the effective project root without widening the ordinary cwd scope.
+///
+/// The command may be invoked from an unrelated directory with one explicit
+/// project path. Discovery already resolves that path correctly, but every
+/// project-wide proof must use the same root: compiler containment, include
+/// discovery, policy loading, Makefile references, cache identity and guarded
+/// writes must not silently fall back to the caller's directory.
+pub(super) fn project_root_for_scope(inputs: &[PathBuf], cwd: &Path) -> PathBuf {
+    let cwd = absolute_lexical(cwd);
+    if inputs.is_empty() {
+        return cwd;
+    }
+    let resolved = inputs
+        .iter()
+        .map(|input| {
+            let absolute = if input.is_absolute() {
+                absolute_lexical(input)
+            } else {
+                absolute_lexical(&cwd.join(input))
+            };
+            let is_directory =
+                std::fs::symlink_metadata(&absolute).is_ok_and(|metadata| metadata.is_dir());
+            (absolute, is_directory)
+        })
+        .collect::<Vec<_>>();
+    if resolved.iter().all(|(path, _)| path.starts_with(&cwd)) {
+        return cwd;
+    }
+    let anchors = resolved
+        .iter()
+        .map(|(path, is_directory)| {
+            if *is_directory {
+                path.join(".normfix-scope-anchor")
+            } else {
+                path.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    transaction_root(anchors.iter().map(PathBuf::as_path), &cwd)
+}
+
 pub(super) fn absolute_lexical(path: &Path) -> PathBuf {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
@@ -117,9 +158,12 @@ pub(super) fn run_id() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::fs;
+    use std::path::{Path, PathBuf};
 
-    use super::transaction_root;
+    use tempfile::TempDir;
+
+    use super::{project_root_for_scope, transaction_root};
 
     /// Absolute paths as each platform writes them.
     ///
@@ -159,6 +203,35 @@ mod tests {
         assert_eq!(
             transaction_root(disjoint.iter().copied(), cwd),
             Path::new(&path("/")),
+        );
+    }
+
+    #[test]
+    fn project_root_keeps_the_cwd_for_scopes_inside_it() {
+        let project = TempDir::new().expect("project");
+        let source = project.path().join("src/main.c");
+        fs::create_dir_all(source.parent().expect("source parent")).expect("source directory");
+        fs::write(&source, "int main(void) { return (0); }\n").expect("source");
+
+        assert_eq!(
+            project_root_for_scope(&[PathBuf::from("src/main.c")], project.path()),
+            project.path(),
+        );
+    }
+
+    #[test]
+    fn project_root_follows_one_explicit_external_directory() {
+        let invocation = TempDir::new().expect("invocation directory");
+        let project = TempDir::new().expect("external project");
+        fs::write(
+            project.path().join("main.c"),
+            "int main(void) { return (0); }\n",
+        )
+        .expect("source");
+
+        assert_eq!(
+            project_root_for_scope(&[project.path().to_path_buf()], invocation.path()),
+            project.path(),
         );
     }
 }

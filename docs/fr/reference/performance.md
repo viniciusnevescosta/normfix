@@ -71,6 +71,28 @@ important que le temps, toutes les limites du résultat ont tenu :
   exactement les dix fichiers écrits tandis que la note inattendue restait
   récupérable dans la quarantaine.
 
+### Projets historiques, volontairement désordonnés
+
+La régression finale de la 1.9.1 n’a pas utilisé les pointes déjà propres des
+dépôts d’exemple. Elle a vérifié d’anciens commits naturellement hors Norme,
+ainsi qu’une copie actuelle de `ft_printf` endommagée de façon déterministe,
+toujours par un chemin absolu depuis un autre répertoire :
+
+| Corpus | Avant | Résultat en lecture seule | Seconde passe |
+|---|---:|---|---|
+| [Libft `e19a16b`](https://github.com/viniciusnevescosta/Libft/commit/e19a16bcf52e9d364e1887c701248a86526184b0) | 240 constats officiels | 224 corrections sûres ; 5 constats structurels, sémantiques ou du compilateur restent | 0 changement |
+| [Piscine `ca9502f`](https://github.com/viniciusnevescosta/Piscine/commit/ca9502ff2eae293e9aa46884ca40b263ac042022) | 581 constats officiels | 346 corrections sûres ; 24 constats manuels ou de nom invalide restent | 0 changement |
+| [GNL `47cd2c3`](https://github.com/viniciusnevescosta/Get-Next-Line/commit/47cd2c37e6b1a0306b4d12dcb830accc173a9e27) | prototype d’en-tête mal formé | aucune modification inventée ; le point-virgule absent reste visible à l’analyseur et au compilateur | 0 changement |
+| [`ft_printf` `ddd0020`](https://github.com/viniciusnevescosta/ft_printf/commit/ddd00207f42a0436f98ab4f8f38b6fdab7d81353), trois fichiers endommagés | 37 constats officiels | 35 corrections sûres dans 3 fichiers ; `make` réussit avant et après | 0 changement, 0 restant |
+
+La mutation de `ft_printf` a retiré deux en-têtes officiels et introduit des
+instructions tassées, des espaces à la place des tabulations et des erreurs de
+mise en page des accolades, opérateurs, préprocesseur et `return`, sans modifier
+le programme. Chaque exécution utilisait Norminette 3.3.59 sans cache. Ce corpus
+a exposé la régression de racine externe ; compilateur, politique, Makefile et
+transaction suivent désormais le chemin explicite du projet plutôt que le
+répertoire d’invocation.
+
 Mesuré le 2026-08-26 sur un MacBook Pro Apple M1 à 8 cœurs et 8 Go de RAM,
 macOS 26.5.2, Norminette 3.3.59 et le MSRV Rust 1.85. Les temps muraux varient
 selon le stockage, le démarrage de Python, la charge CPU et la forme du projet ;

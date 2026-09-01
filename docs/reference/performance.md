@@ -68,6 +68,27 @@ than the timing, every result boundary held:
   written files exactly while the unexpected note remained recoverable in
   quarantine.
 
+### Historical projects, made messy on purpose
+
+The final 1.9.1 regression pass did not use the clean tips of the example
+repositories. It checked old, naturally non-conforming commits plus a
+deterministically damaged copy of the current `ft_printf`, always from an
+unrelated working directory through an absolute project path:
+
+| Corpus | Before | Read-only result | Second pass |
+|---|---:|---|---|
+| [Libft `e19a16b`](https://github.com/viniciusnevescosta/Libft/commit/e19a16bcf52e9d364e1887c701248a86526184b0) | 240 official findings | 224 safe fixes; 5 structural/semantic or compiler findings remain | 0 changes |
+| [Piscine `ca9502f`](https://github.com/viniciusnevescosta/Piscine/commit/ca9502ff2eae293e9aa46884ca40b263ac042022) | 581 official findings | 346 safe fixes; 24 manual or invalid-name findings remain | 0 changes |
+| [GNL `47cd2c3`](https://github.com/viniciusnevescosta/Get-Next-Line/commit/47cd2c37e6b1a0306b4d12dcb830accc173a9e27) | malformed header prototype | no invented edit; the missing semicolon remains visible to the parser and compiler | 0 changes |
+| [`ft_printf` `ddd0020`](https://github.com/viniciusnevescosta/ft_printf/commit/ddd00207f42a0436f98ab4f8f38b6fdab7d81353), three files damaged | 37 official findings | 35 safe fixes in 3 files; `make` passes before and after | 0 changes, 0 remaining |
+
+The `ft_printf` mutation removed two official headers and introduced packed
+instructions, spaces in place of tabs, brace, operator, preprocessor and return
+layout errors without changing the program. Every run used Norminette 3.3.59
+with cache disabled. This corpus exposed the external-project-root regression;
+the compiler, policy, Makefile and transaction context now follow the explicit
+project path instead of the directory from which normfix was invoked.
+
 Measured on 2026-08-26 on an Apple M1 MacBook Pro with 8 cores and 8 GB RAM,
 macOS 26.5.2, Norminette 3.3.59, and the Rust 1.85 MSRV. Wall-clock times vary
 with storage, Python startup, CPU load, and project shape; the correctness

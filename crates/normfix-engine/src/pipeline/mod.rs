@@ -28,7 +28,7 @@ use preflight::append_preflight_diagnostics;
 use quarantine::quarantine_unexpected_files;
 use source_io::project_file_matches;
 
-use paths::{absolute_lexical, report_identity, report_path};
+use paths::{absolute_lexical, project_root_for_scope, report_identity, report_path};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -438,6 +438,18 @@ pub fn run_fixes(inputs: &[PathBuf], options: &FixOptions) -> Result<RunReport, 
     let discovery_options =
         DiscoveryOptions::new(&options.cwd).with_respect_gitignore(options.respect_gitignore);
     let discovery = discover(inputs, &discovery_options);
+    let effective_root = project_root_for_scope(inputs, &options.cwd);
+    let scoped_options;
+    let options = if effective_root == absolute_lexical(&options.cwd) {
+        options
+    } else {
+        scoped_options = {
+            let mut scoped = options.clone();
+            scoped.cwd = effective_root;
+            scoped
+        };
+        &scoped_options
+    };
     let mut discovered_unexpected = discovery.unexpected_files.clone();
     discovered_unexpected.extend(options.additional_unexpected_files.iter().cloned());
     discovered_unexpected.sort();

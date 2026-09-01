@@ -69,6 +69,27 @@ importante que el tiempo, se mantuvieron todos los límites del resultado:
   los diez archivos escritos, mientras la nota inesperada siguió recuperable en
   cuarentena.
 
+### Proyectos históricos, desordenados a propósito
+
+La regresión final de 1.9.1 no usó las puntas ya limpias de los repositorios de
+ejemplo. Comprobó commits antiguos que incumplían la Norma de forma natural y
+una copia actual de `ft_printf` dañada de manera determinista, siempre mediante
+una ruta absoluta desde otro directorio:
+
+| Corpus | Antes | Resultado de solo lectura | Segunda pasada |
+|---|---:|---|---|
+| [Libft `e19a16b`](https://github.com/viniciusnevescosta/Libft/commit/e19a16bcf52e9d364e1887c701248a86526184b0) | 240 hallazgos oficiales | 224 correcciones seguras; quedan 5 hallazgos estructurales, semánticos o del compilador | 0 cambios |
+| [Piscine `ca9502f`](https://github.com/viniciusnevescosta/Piscine/commit/ca9502ff2eae293e9aa46884ca40b263ac042022) | 581 hallazgos oficiales | 346 correcciones seguras; quedan 24 hallazgos manuales o de nombre inválido | 0 cambios |
+| [GNL `47cd2c3`](https://github.com/viniciusnevescosta/Get-Next-Line/commit/47cd2c37e6b1a0306b4d12dcb830accc173a9e27) | prototipo de cabecera malformado | no se inventa ninguna edición; el punto y coma ausente sigue visible al analizador y al compilador | 0 cambios |
+| [`ft_printf` `ddd0020`](https://github.com/viniciusnevescosta/ft_printf/commit/ddd00207f42a0436f98ab4f8f38b6fdab7d81353), tres archivos dañados | 37 hallazgos oficiales | 35 correcciones seguras en 3 archivos; `make` pasa antes y después | 0 cambios y 0 pendientes |
+
+La mutación de `ft_printf` quitó dos cabeceras oficiales e introdujo
+instrucciones compactadas, espacios en lugar de tabulaciones y errores de
+llaves, operadores, preprocesador y `return`, sin cambiar el programa. Todas
+las ejecuciones usaron Norminette 3.3.59 sin caché. Este corpus expuso la
+regresión de la raíz externa; compilador, política, Makefile y transacción ahora
+siguen la ruta explícita del proyecto y no el directorio de invocación.
+
 Medido el 2026-08-26 en un MacBook Pro Apple M1 con 8 núcleos y 8 GB de RAM,
 macOS 26.5.2, Norminette 3.3.59 y el MSRV Rust 1.85. Los tiempos de reloj varían
 con el almacenamiento, el arranque de Python, la carga de CPU y la forma del

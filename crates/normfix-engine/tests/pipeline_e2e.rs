@@ -696,6 +696,50 @@ exit 1
 }
 
 #[test]
+fn explicit_external_project_uses_its_own_compiler_root() {
+    let fixture = Fixture::clean_oracle();
+    let invocation = TempDir::new().expect("unrelated invocation directory");
+    let tools = TempDir::new().expect("compiler tools");
+    let compiler = executable_script(
+        &tools,
+        "cc",
+        r#"
+if [ "$1" = "--version" ]; then
+    echo "cc (fixture) 1.0"
+    exit 0
+fi
+last=""
+for argument in "$@"; do
+    last="$argument"
+done
+if [ "$last" = "source.c" ]; then
+    exit 0
+fi
+echo "$last:1:1: error: source was not relative to the explicit project root" >&2
+exit 1
+"#,
+    );
+    fs::write(fixture.project.path().join("source.c"), CLEAN_SOURCE).expect("source");
+    let mut options = fixture.options(ReportMode::Check);
+    options.cwd = invocation.path().to_path_buf();
+    options.compiler_preflight = true;
+    options.compiler_executable = Some(compiler);
+
+    let report = run_ready(&[fixture.project.path().to_path_buf()], &options)
+        .expect("external project pipeline");
+    let source = report
+        .files
+        .iter()
+        .find(|file| file.path.as_str() == "source.c")
+        .expect("project-relative source report");
+
+    assert!(source.after.iter().all(|diagnostic| {
+        diagnostic.rule_id != "CC_PREFLIGHT_FAILED"
+            && diagnostic.source != DiagnosticSource::Compiler
+    }));
+}
+
+#[test]
 fn incomplete_compiler_context_is_a_clear_fail_open_advisory() {
     let fixture = Fixture::clean_oracle();
     let tools = TempDir::new().expect("compiler tools");
