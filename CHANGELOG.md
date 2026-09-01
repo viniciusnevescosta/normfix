@@ -10,6 +10,87 @@ Published archives, checksums, and build provenance live on the
 [releases page](https://github.com/viniciusnevescosta/normfix/releases).
 `docs/RELEASING.md` describes how a release is produced.
 
+## [1.9.1] / 2026-09-01
+
+This patch release closes the unfinished real-project and playground work,
+then hardens every external-tool and transaction boundary found while auditing
+the commits made after 1.9.0.
+
+### Added
+
+- **Real, deliberately non-conforming 42 project acceptance**
+  ([95537cf](https://github.com/viniciusnevescosta/normfix/commit/95537cfc050c03c34a50164e539c7f192e6aa4d8),
+  [c38b5a1](https://github.com/viniciusnevescosta/normfix/commit/c38b5a1)).
+  Historical Libft, Piscine, and GNL commits now sit beside a deterministic
+  37-finding `ft_printf` mutation. The record includes exact source commits,
+  fixes, remaining manual findings, idempotence, and build results instead of
+  testing only repository tips that already pass Norminette.
+
+- **Pre-defense leak-checker guidance without implicit execution**
+  ([0ae7907](https://github.com/viniciusnevescosta/normfix/commit/0ae79072452c1bade885e3984e29df72598764cc),
+  [29882b3](https://github.com/viniciusnevescosta/normfix/commit/29882b393fbdb1cc7d945f9e0713c97095347afe)).
+  Preflight detects the available checker and explains the manual runtime step;
+  it never runs an unknown project binary by itself.
+
+- **Explicit C before/after documentation**
+  ([94aa1f5](https://github.com/viniciusnevescosta/normfix/commit/94aa1f5bea55bef26770a7fc5a04d13655d573f0),
+  [5c1e0e8](https://github.com/viniciusnevescosta/normfix/commit/5c1e0e8)).
+  The format command now shows ordinary packed C, the complete normalized
+  result, and the literal-tab behavior in every published language.
+
+### Fixed
+
+- **An explicit project outside the current directory now uses its own root**
+  ([c38b5a1](https://github.com/viniciusnevescosta/normfix/commit/c38b5a1)).
+  Compiler containment, header discovery, `normfix.toml`, Makefile references,
+  cache identity, destructive proofs, report paths, and transactions no longer
+  fall back to the unrelated directory from which normfix was invoked. This is
+  locked by an end-to-end regression and by the historical project corpus.
+
+- **The playground finishes the 1.9.1 mobile and project-tree backlog**
+  ([589f153](https://github.com/viniciusnevescosta/normfix/commit/589f15351b97110bbfaaa1733083bca01267f1ba),
+  [15395bc](https://github.com/viniciusnevescosta/normfix/commit/15395bc)).
+  Documentation and GitHub links stay compact on phones; entry menus sit on
+  the left; the Scope/Browser preview block has a stable responsive layout;
+  creating a folder no longer forces a file; and empty folders are named in a
+  persistent warning, survive reloads and moves, and remain directories in the
+  downloaded ZIP.
+
+- **Native edits and commits fail closed on the cases found by adversarial C**
+  ([bb7be6d](https://github.com/viniciusnevescosta/normfix/commit/bb7be6d632a3e2608f07b40c59cccd264a86ba08),
+  [6a58c99](https://github.com/viniciusnevescosta/normfix/commit/6a58c990783221bf02198de4cb56c3d859f3a000)).
+  Obvious safe repairs gained coverage while legacy inspection and guarded
+  transactions received bounded, snapshot-aware validation.
+
+- **External commands, upgrades, undo, installers, and Windows discovery are
+  hardened**
+  ([1a02f37](https://github.com/viniciusnevescosta/normfix/commit/1a02f37d3e7d4d031e2dcd70177232140449f878),
+  [eef68f1](https://github.com/viniciusnevescosta/normfix/commit/eef68f160be1d4114104dcea987defa47d336abc),
+  [106e476](https://github.com/viniciusnevescosta/normfix/commit/106e476a10a8dcc3153a3c63d489f454933e9339),
+  [733ece9](https://github.com/viniciusnevescosta/normfix/commit/733ece9f2198524917115ad850c13907c03c4567),
+  [eb7ccdd](https://github.com/viniciusnevescosta/normfix/commit/eb7ccdd8027ed70d6d3d695cbf9e605c86266813),
+  [90976d2](https://github.com/viniciusnevescosta/normfix/commit/90976d2e59be45aa2a24bc1dd5419b6ec9758ddf),
+  [96a6abc](https://github.com/viniciusnevescosta/normfix/commit/96a6abcfb0a5fbb200f3f0d940d7b51950ddb146),
+  [fa4db7b](https://github.com/viniciusnevescosta/normfix/commit/fa4db7bbc59d2368533378e1fc93a38bf0c61980),
+  [6cafc9b](https://github.com/viniciusnevescosta/normfix/commit/6cafc9b046847010b75a385f67bfa481b474b270)).
+  Inputs and outputs are bounded, trusted executables stay pinned across
+  privileged boundaries, ineffective option combinations are rejected, and
+  multi-character sanitization no longer leaves a CodeQL gap.
+
+### Changed
+
+- **Large internal modules are split by proof responsibility**: C transforms
+  ([b6e73be](https://github.com/viniciusnevescosta/normfix/commit/b6e73bec72df31577dd11a09c89edc5ce9af9f3a)),
+  syntax facts ([42d633c](https://github.com/viniciusnevescosta/normfix/commit/42d633c8dae76c256c11e3a0df18364fa286ac4e)),
+  report rendering/evaluation ([0941d59](https://github.com/viniciusnevescosta/normfix/commit/0941d596bad836fd787c1ef9cb940d4f0e970765)),
+  cache storage ([5858c82](https://github.com/viniciusnevescosta/normfix/commit/5858c8246b7047acf92454b7307a1aa82cad5880)),
+  identity discovery ([1119da6](https://github.com/viniciusnevescosta/normfix/commit/1119da6c445c5d643de1285cfdb59f46c4025dd8)), and playground controllers
+  ([cd09eb6](https://github.com/viniciusnevescosta/normfix/commit/cd09eb68c3a127a93fc6414692a293bc0f42902f),
+  [87245fc](https://github.com/viniciusnevescosta/normfix/commit/87245fc5ab9448a662955e4f685b866a199bf374)).
+  The boundaries are smaller and auditable without changing the public JSON
+  schema or safe-edit contract. Unused Rust dependencies were removed in
+  [5dbd99e](https://github.com/viniciusnevescosta/normfix/commit/5dbd99e68717089d8718407497323c80a3a9aa67).
+
 ## [1.9.0] / 2026-08-15
 
 The playground stops being a page the code edits by hand.
@@ -1598,6 +1679,7 @@ published as GitHub releases, and the implementation was removed in
 `0.4.0-beta.1`.
 
 [1.1.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.1.1
+[1.9.1]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.9.1
 [1.9.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.9.0
 [1.8.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.8.0
 [1.7.0]: https://github.com/viniciusnevescosta/normfix/releases/tag/v1.7.0

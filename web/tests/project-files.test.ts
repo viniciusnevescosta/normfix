@@ -5,8 +5,8 @@ import {
   canonicalIdentityEmail,
   ImportBatchError,
   MAX_FILE_BYTES,
-  portablePathProblem,
   portablePathKey,
+  portablePathProblem,
   readImportBatch,
   sourcePathProblem,
 } from "../src/project/files";
