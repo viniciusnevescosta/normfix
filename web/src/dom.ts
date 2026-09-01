@@ -22,6 +22,7 @@ export function loadElements() {
     topBar: requiredElement<HTMLElement>("#top-bar"),
     confirmDelete: requiredElement<HTMLElement>("#confirm-delete"),
     restoreNotice: requiredElement<HTMLElement>("#restore-notice"),
+    emptyFolderNotice: requiredElement<HTMLElement>("#empty-folder-notice"),
     discardRestore: requiredElement<HTMLButtonElement>("#discard-restore"),
     run: requiredElement<HTMLButtonElement>("#run"),
     results: requiredElement<HTMLElement>("#results"),

@@ -31,6 +31,12 @@ en lugar de escribir la extensión y descubrir después que no era una de las
 cuatro. Una ruta como `src/utils.c` crea la carpeta con él, y las carpetas se
 anidan cuanto necesites. **Descargar todo (.zip)** mantiene esa estructura.
 
+El botón de carpeta crea un directorio por sí solo; no te obliga a crear un
+archivo a continuación. Las carpetas vacías siguen visibles, sobreviven a una
+recarga y se conservan en el ZIP. Mientras haya alguna carpeta vacía, el panel
+del proyecto muestra su nombre explícitamente para que no confundas una carpeta
+de ejercicio vacía con un árbol de código importado.
+
 **Elegir archivos** hace lo mismo con
 un selector.
 
@@ -142,8 +148,8 @@ preparación de la defensa.
 
 ## Límites y portabilidad
 
-El playground acepta como máximo 128 archivos, 1 MiB por archivo y 4 MiB en
-total. Las rutas deben ser relativas, portables y normalizadas en NFC, con un
+El playground acepta como máximo 128 archivos, 256 carpetas explícitas, 1 MiB
+por archivo y 4 MiB en total. Las rutas deben ser relativas, portables y normalizadas en NFC, con un
 máximo de 240 bytes UTF-8. Rechaza duplicados que colisionan en sistemas que no
 distinguen mayúsculas, nombres reservados de plataforma, UTF-8 inválido y rutas
 inseguras para un archivo comprimido antes siquiera de ejecutar el formateador.

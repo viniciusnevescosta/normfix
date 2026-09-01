@@ -4,6 +4,8 @@ export const MAX_FILES = 128;
 const MAX_PATH_BYTES = 240;
 export const MAX_FILE_BYTES = 1024 * 1024;
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
+/** Explicit directories kept by the browser project, including empty ones. */
+export const MAX_FOLDERS = 256;
 /** Non-source paths shown as warnings, bounded so a build tree cannot freeze the UI. */
 export const MAX_UNSUPPORTED_FILES = 384;
 
@@ -20,7 +22,10 @@ export type SourcePathProblem =
   | { code: "portable_path" }
   | { code: "path_bytes"; count: number };
 
-export function sourcePathProblem(path: string): SourcePathProblem | null {
+export type PortablePathProblem = Exclude<SourcePathProblem, { code: "only_supported" }>;
+
+/** Validates the filesystem-safe part shared by file and directory paths. */
+export function portablePathProblem(path: string): PortablePathProblem | null {
   if (
     path.length === 0 ||
     path.startsWith("/") ||
@@ -36,6 +41,12 @@ export function sourcePathProblem(path: string): SourcePathProblem | null {
   if (UTF8_ENCODER.encode(path).length > MAX_PATH_BYTES) {
     return { code: "path_bytes", count: MAX_PATH_BYTES };
   }
+  return null;
+}
+
+export function sourcePathProblem(path: string): SourcePathProblem | null {
+  const portableProblem = portablePathProblem(path);
+  if (portableProblem) return portableProblem;
   const filename = path.split("/").at(-1)?.toLowerCase() ?? "";
   if (filename !== "makefile" && !/\.(c|h|md)$/.test(filename)) {
     return { code: "only_supported" };

@@ -71,6 +71,7 @@ export const resultState = $state({
 
 export const treeState = $state({
   files: [] as string[],
+  folders: new Set<string>(),
   unsupported: new Set<string>(),
   changed: new Set<string>(),
   selected: null as string | null,

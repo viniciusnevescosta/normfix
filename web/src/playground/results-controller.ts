@@ -379,7 +379,10 @@ export function createResultsController(options: ResultsControllerOptions): Resu
       .map((file) => ({ path: file.path, source: file.formatted }));
     if (files.length === 0) return;
     try {
-      downloadProject(files);
+      const folders = [...state.folders]
+        .sort((left, right) => left.localeCompare(right, "en"))
+        .map((path) => ({ path, directory: true }));
+      downloadProject([...folders, ...files]);
     } catch (error) {
       if (error instanceof ZipArchiveError) {
         setRuntime("error", t("archivePath", { path: error.path }));

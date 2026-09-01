@@ -3,6 +3,7 @@ import {
   MAX_FILES,
   MAX_PROJECT_BYTES,
   portablePathKey,
+  portablePathProblem,
   sourcePathProblem,
 } from "../project/files";
 import type { Translator } from "./model";
@@ -21,6 +22,15 @@ export function normalizeSourcePath(path: string, t: Translator): string {
   const problem = sourcePathProblem(path);
   if (!problem) return path;
   if (problem.code === "only_supported") throw new Error(t("onlySupported"));
+  if (problem.code === "path_bytes") {
+    throw new Error(t("pathBytes", { count: problem.count }));
+  }
+  throw new Error(t("portablePath"));
+}
+
+export function normalizeFolderPath(path: string, t: Translator): string {
+  const problem = portablePathProblem(path);
+  if (!problem) return path;
   if (problem.code === "path_bytes") {
     throw new Error(t("pathBytes", { count: problem.count }));
   }
@@ -81,4 +91,23 @@ export function countFolderEntries(
     if (path.startsWith(prefix)) count += 1;
   }
   return count;
+}
+
+/** Explicit leaf directories that contain neither a file nor another folder. */
+export function emptyFolderPaths(
+  folders: Iterable<string>,
+  supported: Iterable<string>,
+  unsupported: Iterable<string>,
+): string[] {
+  const folderPaths = [...folders];
+  const entries = [...supported, ...unsupported];
+  return folderPaths
+    .filter((folder) => {
+      const prefix = `${folder}/`;
+      return (
+        !entries.some((path) => path.startsWith(prefix)) &&
+        !folderPaths.some((path) => path !== folder && path.startsWith(prefix))
+      );
+    })
+    .sort((left, right) => left.localeCompare(right, "en"));
 }

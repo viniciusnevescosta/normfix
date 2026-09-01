@@ -32,6 +32,11 @@ one of the four. A path such as `src/utils.c` creates the folder with it, and
 folders nest as deeply as you need. **Download all (.zip)** keeps that
 structure.
 
+The folder button creates a directory on its own; it does not make you create a
+file next. Empty directories stay visible, survive a reload, and are preserved
+in the ZIP. While any directory is empty, the project panel names it explicitly
+so you do not mistake an empty exercise folder for an imported source tree.
+
 ## Findings, underlined where they are
 
 Errors and warnings are underlined in the editor the way your own editor
@@ -130,7 +135,8 @@ and the complete pre-defense workflow.
 
 ## Limits and portability
 
-The playground accepts at most 128 files, 1 MiB per file, and 4 MiB total.
+The playground accepts at most 128 files, 256 explicit folders, 1 MiB per file,
+and 4 MiB total.
 Paths must be NFC-normalized portable relative paths of at most 240 UTF-8
 bytes. It rejects case-insensitive duplicates,
 reserved platform names, invalid UTF-8, and archive-unsafe paths before running

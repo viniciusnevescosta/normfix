@@ -34,6 +34,8 @@ export interface WasmModule {
 
 export interface AppState {
   files: Map<string, string>;
+  /** Explicit project directories, including directories with no files. */
+  folders: Set<string>;
   selected: string | null;
   results: Map<string, ResultRecord>;
   selectedResult: string | null;
@@ -55,6 +57,7 @@ export interface AppState {
 export function createAppState(locale: Locale, theme: ThemePreference): AppState {
   return {
     files: new Map<string, string>([["main.c", SAMPLE]]),
+    folders: new Set<string>(),
     selected: "main.c",
     results: new Map<string, ResultRecord>(),
     selectedResult: null,

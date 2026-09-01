@@ -17,6 +17,7 @@ import { buildTree, type TreeNode } from "../project/tree";
 
 interface Props {
   files: readonly string[];
+  folders: ReadonlySet<string>;
   unsupported: ReadonlySet<string>;
   changed: ReadonlySet<string>;
   selected: string | null;
@@ -29,6 +30,7 @@ interface Props {
 
 const {
   files,
+  folders,
   unsupported,
   changed,
   selected,
@@ -39,7 +41,7 @@ const {
   onDelete,
 }: Props = $props();
 
-const tree = $derived(buildTree(files));
+const tree = $derived(buildTree(files, folders));
 let collapsed = $state(new SvelteSet<string>());
 let menu = $state<{ path: string; isFolder: boolean; x: number; y: number } | null>(null);
 let dropInto = $state<string | null>(null);
@@ -211,6 +213,20 @@ function menuKeys(event: KeyboardEvent): void {
         else onSelect(node.path);
       }}
     >
+      <button
+        class="border-border text-muted hover:border-accent hover:text-accent inline-flex h-7 w-7 shrink-0 items-center justify-center border text-base leading-none"
+        type="button"
+        aria-haspopup="menu"
+        aria-label={`${translate("renameEntry")} / ${translate("deleteEntry")}: ${node.path}`}
+        title={`${translate("renameEntry")} / ${translate("deleteEntry")}`}
+        onclick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const box = event.currentTarget.getBoundingClientRect();
+          openMenu(node.path, isFolder, box.left, box.bottom + 4, event.currentTarget);
+        }}
+        onkeydown={(event) => event.stopPropagation()}
+      ><span aria-hidden="true">&#8943;</span></button>
       <!-- The icon is the state: an open folder is open, a closed one closed. -->
       <!-- Files carry a small block rather than a bullet: it marks a changed
            file without reading as a list marker in front of every name. -->
@@ -223,26 +239,12 @@ function menuKeys(event: KeyboardEvent): void {
           aria-hidden="true"
         ></span>
       {/if}
-      <span class="min-w-0 flex-1 truncate">{node.name}</span>
+      <span class="min-w-0 flex-1 truncate" data-entry-name>{node.name}</span>
       {#if !isFolder}
         <span class="text-faint text-xs" class:italic={notFormattable}>
           {notFormattable ? translate("unsupportedKind") : kindOf(node.path)}
         </span>
       {/if}
-      <button
-        class="border-border text-muted hover:border-accent hover:text-accent ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center border text-base leading-none"
-        type="button"
-        aria-haspopup="menu"
-        aria-label={`${translate("renameEntry")} / ${translate("deleteEntry")}: ${node.path}`}
-        title={`${translate("renameEntry")} / ${translate("deleteEntry")}`}
-        onclick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const box = event.currentTarget.getBoundingClientRect();
-          openMenu(node.path, isFolder, box.right - 144, box.bottom + 4, event.currentTarget);
-        }}
-        onkeydown={(event) => event.stopPropagation()}
-      ><span aria-hidden="true">&#8943;</span></button>
     </div>
   {/each}
 </div>

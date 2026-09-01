@@ -114,6 +114,7 @@
             <span data-i18n="workRestored">Your last project was restored from this browser.</span>
             <button class="text-button" id="discard-restore" type="button" data-i18n="discardRestored">Discard it</button>
           </div>
+          <div class="project-notice" id="empty-folder-notice" hidden role="status"></div>
           <div class="file-list" id="file-list"></div>
 
           <div id="identity-panel"></div>
@@ -179,14 +180,14 @@
           <span class="section-label" data-i18n="scope">Scope</span>
           <h2 id="scope-title" data-i18n="browserPreview">Browser preview</h2>
         </div>
-        <div>
+        <div class="scope-note-copy">
           <p data-i18n="scopeText">
             The playground runs native safe C/header, Makefile, and Markdown formatting. Native diagnostics remain in English. The CLI adds the official checker, compiler, Git scopes, transactions, backups, and undo.
           </p>
           <p data-i18n="offlineInstallable">
             Once this page has loaded, it keeps working without a network, and your browser can install it as an app.
           </p>
-          <p>
+          <p class="scope-download">
             <a
               class="release-link"
               id="release-link"

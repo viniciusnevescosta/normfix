@@ -14,7 +14,9 @@ test("an import plan is atomic and keeps only portable warning paths", () => {
       { path: "../outside.o", file: file() },
     ],
     ["notes.txt", "/absolute.bin"],
+    ["src", "empty"],
     ["open.c"],
+    [],
     [],
   );
 
@@ -23,13 +25,14 @@ test("an import plan is atomic and keeps only portable warning paths", () => {
     ["src/main.c"],
   );
   assert.deepEqual([...plan.unsupported], ["notes.txt", "build/app.o"]);
+  assert.deepEqual([...plan.folders], ["src", "empty"]);
   assert.equal(plan.ignored, 4);
   assert.equal(plan.firstRejected, "/absolute.bin");
 });
 
 test("the visible warning list is bounded independently from the dropped tree", () => {
   const paths = Array.from({ length: MAX_UNSUPPORTED_FILES + 50 }, (_, index) => `obj/${index}.o`);
-  const plan = planImport([], paths, [], []);
+  const plan = planImport([], paths, [], [], [], []);
 
   assert.equal(plan.unsupported.size, MAX_UNSUPPORTED_FILES);
   assert.equal(plan.ignored, paths.length);
@@ -46,12 +49,24 @@ test("portable duplicate and loaded paths fail before any file is read", () => {
         [],
         [],
         [],
+        [],
+        [],
       ),
     (error: unknown) => error instanceof ImportPlanError && error.code === "duplicate",
   );
 
   assert.throws(
-    () => planImport([{ path: "MAIN.c", file: file() }], [], ["main.c"], []),
+    () => planImport([{ path: "MAIN.c", file: file() }], [], [], ["main.c"], [], []),
+    (error: unknown) => error instanceof ImportPlanError && error.code === "conflict",
+  );
+});
+
+test("empty directories are preserved and cannot shadow a loaded file", () => {
+  const plan = planImport([], [], ["src", "src/empty"], ["main.c"], [], []);
+  assert.deepEqual([...plan.folders], ["src", "src/empty"]);
+
+  assert.throws(
+    () => planImport([], [], ["MAIN.c"], ["main.c"], [], []),
     (error: unknown) => error instanceof ImportPlanError && error.code === "conflict",
   );
 });

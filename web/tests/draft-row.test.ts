@@ -39,7 +39,7 @@ test("a typed name commits on Enter and the row goes away", () => {
   assert.equal(container.querySelector(".file-draft"), null);
 });
 
-test("naming a folder opens a file row inside it rather than creating anything", () => {
+test("naming a folder creates it without forcing a file", () => {
   const container = list();
   const created: string[] = [];
   openDraftRow({
@@ -53,14 +53,8 @@ test("naming a folder opens a file row inside it rather than creating anything",
   folder.value = "src";
   press(folder, "Enter");
 
-  // Nothing exists yet: a folder holding nothing has nothing to store.
-  assert.deepEqual(created, []);
-
-  const file = draft(container);
-  file.value = "deep.c";
-  press(file, "Enter");
-
-  assert.deepEqual(created, ["src/deep.c"]);
+  assert.deepEqual(created, ["src"]);
+  assert.equal(container.querySelector(".file-draft"), null);
 });
 
 test("a refused name keeps the row open with what was typed", () => {

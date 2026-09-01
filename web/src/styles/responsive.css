@@ -54,11 +54,17 @@
     gap: 7px;
   }
 
+  .scope-note > div:first-child {
+    padding-right: 0;
+    padding-bottom: 7px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
   .button,
   .icon-button,
   .text-button,
   #top-bar select,
-  #top-bar a,
   #identity-panel input[type="email"],
   #identity-panel button,
   #status-badges button,
@@ -144,7 +150,6 @@
   .icon-button,
   .text-button,
   #top-bar select,
-  #top-bar a,
   #identity-panel input[type="email"],
   #identity-panel button,
   #status-badges button,
@@ -160,6 +165,11 @@
   .icon-button,
   [aria-haspopup="menu"] {
     width: 44px;
+  }
+
+  #top-bar .topbar-link {
+    min-height: 30px;
+    padding-block: 2px;
   }
 }
 
@@ -231,7 +241,6 @@
   .brand,
   .release-link,
   .skip-link,
-  #top-bar a,
   #top-bar select,
   #result-summary [role="tab"],
   #status-badges button,

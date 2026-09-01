@@ -18,8 +18,9 @@ export type TreeNode =
  * the way a file browser shows it rather than the way a map happened to store
  * it.
  */
-export function buildTree(paths: Iterable<string>): TreeNode[] {
+export function buildTree(paths: Iterable<string>, folders: Iterable<string> = []): TreeNode[] {
   const root: TreeNode[] = [];
+  for (const folder of [...folders].sort()) ensureFolder(root, folder);
   for (const path of [...paths].sort()) {
     const segments = path.split("/");
     let level = root;
@@ -44,6 +45,26 @@ export function buildTree(paths: Iterable<string>): TreeNode[] {
     }
   }
   return sortLevel(root);
+}
+
+/** Adds one explicit folder and all of the parents its path implies. */
+function ensureFolder(root: TreeNode[], path: string): void {
+  let level = root;
+  let prefix = "";
+  for (const segment of path.split("/")) {
+    prefix = prefix === "" ? segment : `${prefix}/${segment}`;
+    const existing = level.find(
+      (node): node is Extract<TreeNode, { kind: "folder" }> =>
+        node.kind === "folder" && node.name === segment,
+    );
+    if (existing) {
+      level = existing.children;
+      continue;
+    }
+    const folder = { kind: "folder" as const, name: segment, path: prefix, children: [] };
+    level.push(folder);
+    level = folder.children;
+  }
 }
 
 function sortLevel(level: TreeNode[]): TreeNode[] {

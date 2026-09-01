@@ -52,12 +52,12 @@ const themes = ["system", "light", "dark"] as const;
 </label>
 
 <a
-  class="border-border-strong hover:border-accent hover:text-accent border px-2.5 py-0.5 text-xs no-underline"
+  class="topbar-link border-border-strong hover:border-accent hover:text-accent border px-2.5 py-0.5 text-xs no-underline"
   href={docsHref}
 >{translate("docs")}</a>
 
 <a
-  class="border-border-strong hover:border-accent hover:text-accent flex items-center gap-1 border px-2.5 py-0.5 text-xs no-underline"
+  class="topbar-link border-border-strong hover:border-accent hover:text-accent flex items-center gap-1 border px-2.5 py-0.5 text-xs no-underline"
   href="https://github.com/viniciusnevescosta/normfix"
   target="_blank"
   rel="noopener noreferrer"

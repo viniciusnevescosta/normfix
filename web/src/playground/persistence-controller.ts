@@ -40,6 +40,7 @@ export function createPersistenceController(
     }
     const payload = serializeProject({
       files: Object.fromEntries(state.files),
+      folders: [...state.folders],
       selected: state.selected,
       unsupported: [...state.unsupported],
       savedAt: Date.now(),
@@ -73,8 +74,9 @@ export function createPersistenceController(
 
   function restoreProject(): void {
     const stored = deserializeProject(readStoredProject());
-    if (!stored || isSameProject(stored, state.files)) return;
+    if (!stored || isSameProject(stored, state.files, state.folders, state.unsupported)) return;
     state.files = new Map(Object.entries(stored.files));
+    state.folders = new Set(stored.folders);
     state.unsupported = new Set(stored.unsupported);
     state.revision += 1;
     const selected =
@@ -95,6 +97,7 @@ export function createPersistenceController(
 
   function discardStoredProject(): void {
     state.files = new Map([["main.c", SAMPLE]]);
+    state.folders = new Set();
     state.unsupported = new Set();
     state.revision += 1;
     invalidateResults();

@@ -10,6 +10,7 @@ function open(files: string[], overrides: Record<string, unknown> = {}) {
   const result = render(FileTree, {
     props: {
       files,
+      folders: new Set<string>(),
       unsupported: new Set<string>(),
       changed: new Set<string>(),
       selected: null,
@@ -45,6 +46,15 @@ test("the panel shows the folders the paths imply, folders first", () => {
     "main.c",
     "Makefile",
   ]);
+});
+
+test("an explicit empty folder is visible and its action menu is on the left", () => {
+  const tree = open(["main.c"], { folders: new Set(["src/empty"]) });
+
+  assert.ok(tree.rows().includes("src/empty"));
+  const row = tree.row("src/empty");
+  assert.equal(row.firstElementChild?.tagName, "BUTTON");
+  assert.equal(row.querySelector("[data-entry-name]")?.textContent, "empty");
 });
 
 test("clicking a folder closes it, and its contents leave with it", async () => {

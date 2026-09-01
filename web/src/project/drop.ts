@@ -6,7 +6,13 @@
 // ignored — never silently, and never by refusing the whole drop over one file
 // normfix does not format.
 
-import { MAX_FILES, MAX_UNSUPPORTED_FILES, sourcePathProblem } from "./files";
+import {
+  MAX_FILES,
+  MAX_FOLDERS,
+  MAX_UNSUPPORTED_FILES,
+  portablePathProblem,
+  sourcePathProblem,
+} from "./files";
 
 /** One importable file and the project-relative path it will be stored under. */
 export interface DroppedFile {
@@ -16,6 +22,8 @@ export interface DroppedFile {
 
 export interface DropSelection {
   files: DroppedFile[];
+  /** Explicit directories, including directories with no child entries. */
+  folders: string[];
   /**
    * Entries normfix does not format, by path.
    *
@@ -117,6 +125,7 @@ export async function collectDroppedFiles(
   entries: readonly FileSystemEntryLike[],
 ): Promise<DropSelection> {
   const files: DroppedFile[] = [];
+  const folders: string[] = [];
   const unsupported: string[] = [];
   let skipped = 0;
   let scanned = 0;
@@ -140,7 +149,14 @@ export async function collectDroppedFiles(
       files.push({ path, file: await readFile(entry as FileEntryLike) });
       return;
     }
-    if (!entry.isDirectory || depth >= MAX_DEPTH) return;
+    if (!entry.isDirectory) return;
+    const folderPath = normalizeDropPath(entry.fullPath);
+    if (portablePathProblem(folderPath) !== null || folders.length >= MAX_FOLDERS) {
+      skipped += 1;
+    } else {
+      folders.push(folderPath);
+    }
+    if (depth >= MAX_DEPTH) return;
     const directory = await readDirectory(
       entry as DirectoryEntryLike,
       MAX_ENTRIES_SCANNED - scanned,
@@ -158,7 +174,7 @@ export async function collectDroppedFiles(
     }
     await walk(entry, 0);
   }
-  return { files, unsupported, skipped };
+  return { files, folders, unsupported, skipped };
 }
 
 function readFile(entry: FileEntryLike): Promise<File> {

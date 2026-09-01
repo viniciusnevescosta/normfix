@@ -5,6 +5,7 @@ import {
   canonicalIdentityEmail,
   ImportBatchError,
   MAX_FILE_BYTES,
+  portablePathProblem,
   portablePathKey,
   readImportBatch,
   sourcePathProblem,
@@ -18,6 +19,11 @@ test("portable paths are accepted byte-for-byte without silent normalization", (
   for (const path of ["./main.c", "src\\main.c", "src//main.c", "src/../main.c"]) {
     assert.equal(sourcePathProblem(path)?.code, "portable_path", path);
   }
+});
+
+test("folder paths share portable validation without requiring a source extension", () => {
+  assert.equal(portablePathProblem("src/empty"), null);
+  assert.equal(portablePathProblem("src/../empty")?.code, "portable_path");
 });
 
 test("portable path keys detect collisions without changing the displayed path", () => {

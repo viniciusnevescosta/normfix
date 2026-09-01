@@ -26,7 +26,6 @@ test("coarse pointers keep primary controls at a comfortable touch size", () => 
     ".text-button",
     ".brand",
     ".release-link",
-    "#top-bar a",
     "#top-bar select",
     '#result-summary [role="tab"]',
     "#status-badges button",
@@ -37,7 +36,13 @@ test("coarse pointers keep primary controls at a comfortable touch size", () => 
     assert.ok(coarse.includes(selector), `${selector} participates in coarse-pointer sizing`);
   }
   assert.match(coarse, /min-height:\s*44px/);
+  assert.doesNotMatch(coarse, /#top-bar a/);
   assert.match(coarse, /\.icon-button,[\s\S]*?\[aria-haspopup="menu"\][\s\S]*?width:\s*44px/);
+});
+
+test("documentation and GitHub stay compact on phones", () => {
+  const phone = section("@media (max-width: 560px)", "/* Phones in landscape");
+  assert.match(phone, /#top-bar \.topbar-link\s*\{[\s\S]*?min-height:\s*30px/);
 });
 
 test("narrow landscape preserves a two-pane working layout", () => {

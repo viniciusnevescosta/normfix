@@ -5,6 +5,7 @@ import type { MessageKey } from "../src/i18n";
 import {
   countFolderEntries,
   editorMeasurements,
+  emptyFolderPaths,
   hasPortablePath,
   validateProjectSources,
 } from "../src/playground/project-model";
@@ -42,5 +43,16 @@ test("a folder deletion count includes files normfix only warns about", () => {
   assert.equal(
     countFolderEntries(["src/main.c", "include/lib.h"], ["src/main.o", "notes.txt"], "src"),
     2,
+  );
+});
+
+test("only explicit leaf folders without entries are reported as empty", () => {
+  assert.deepEqual(
+    emptyFolderPaths(
+      ["src", "src/empty", "include", "assets"],
+      ["src/main.c", "include/lib.h"],
+      ["assets/logo.png"],
+    ),
+    ["src/empty"],
   );
 });

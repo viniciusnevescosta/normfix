@@ -32,6 +32,12 @@ em vez de digitar a extensão e descobrir depois que não era uma das quatro. Um
 caminho como `src/utils.c` cria a pasta junto, e as pastas aninham quanto você
 precisar. O **Baixar tudo (.zip)** mantém essa estrutura.
 
+O botão de pasta cria um diretório sozinho; ele não obriga você a criar um
+arquivo em seguida. Pastas vazias continuam visíveis, sobrevivem ao
+recarregamento e são preservadas no ZIP. Enquanto alguma pasta estiver vazia,
+o painel do projeto mostra seu nome explicitamente para que uma pasta de
+exercício vazia não pareça uma árvore de código importada.
+
 ## Achados sublinhados onde eles estão
 
 Erros e avisos aparecem sublinhados no editor do mesmo jeito que o seu editor
@@ -138,7 +144,8 @@ para a defesa.
 
 ## Limites e portabilidade
 
-O playground aceita no máximo 128 arquivos, 1 MiB por arquivo e 4 MiB no total.
+O playground aceita no máximo 128 arquivos, 256 pastas explícitas, 1 MiB por
+arquivo e 4 MiB no total.
 Os caminhos precisam ser relativos, portáteis e normalizados em NFC, com no
 máximo 240 bytes UTF-8. Ele rejeita duplicatas que colidem em sistemas
 insensíveis a maiúsculas, nomes reservados de plataforma, UTF-8 inválido e

@@ -38,6 +38,10 @@ const english = {
   discardRestored: "Discard it",
   noFilesTitle: "This project has no files.",
   emptyProjectHint: "Create one with the buttons above, or drop a folder in.",
+  emptyFolderWarningOne:
+    "Empty folder: {paths}. It is kept in the project but has no file to format.",
+  emptyFolderWarningOther:
+    "{count} empty folders: {paths}. They are kept in the project but have no files to format.",
   unparsableFile:
     "This file could not be read as C, so nothing was formatted. The finding below is where the parser lost its way.",
   deleteFileText: "Delete {path}?",
@@ -120,6 +124,7 @@ const english = {
   pathBytes: "Paths must fit within {count} UTF-8 bytes.",
   emptyProject: "Select or add at least one supported project file.",
   maxFiles: "The playground accepts at most {count} files per run.",
+  maxFolders: "The playground keeps at most {count} explicit folders.",
   pathCollision: "{path} collides with another path on a case-insensitive platform.",
   fileTooLarge: "{path} exceeds the {count}-byte browser limit.",
   projectTooLarge: "The selected sources exceed the {count}-byte project limit.",
@@ -133,6 +138,8 @@ const english = {
   archivePath: "Path is too long for a zip archive: {path}.",
   importedOne: "Added 1 file.",
   importedOther: "Added {count} files.",
+  foldersImportedOne: "Added 1 folder.",
+  foldersImportedOther: "Added {count} folders.",
   skippedOne: "Skipped 1 file that normfix does not format.",
   skippedOther: "Skipped {count} files that normfix does not format.",
   dropHere: "Drop files or a project folder",
@@ -188,6 +195,10 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     discardRestored: "Descartar",
     noFilesTitle: "Este projeto não tem arquivos.",
     emptyProjectHint: "Crie um com os botões acima, ou solte uma pasta aqui.",
+    emptyFolderWarningOne:
+      "Pasta vazia: {paths}. Ela foi mantida no projeto, mas não tem arquivo para formatar.",
+    emptyFolderWarningOther:
+      "{count} pastas vazias: {paths}. Elas foram mantidas no projeto, mas não têm arquivos para formatar.",
     unparsableFile:
       "Este arquivo não pôde ser lido como C, então nada foi formatado. O achado abaixo é onde o parser se perdeu.",
     deleteFileText: "Excluir {path}?",
@@ -269,6 +280,7 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     pathBytes: "Os caminhos devem caber em {count} bytes UTF-8.",
     emptyProject: "Selecione ou adicione ao menos um arquivo de projeto aceito.",
     maxFiles: "O playground aceita no máximo {count} arquivos por execução.",
+    maxFolders: "O playground mantém no máximo {count} pastas explícitas.",
     pathCollision:
       "{path} colide com outro caminho em plataformas sem diferenciação de maiúsculas.",
     fileTooLarge: "{path} excede o limite de {count} bytes do navegador.",
@@ -284,6 +296,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     archivePath: "O caminho é longo demais para um arquivo zip: {path}.",
     importedOne: "1 arquivo adicionado.",
     importedOther: "{count} arquivos adicionados.",
+    foldersImportedOne: "1 pasta adicionada.",
+    foldersImportedOther: "{count} pastas adicionadas.",
     skippedOne: "1 arquivo ignorado porque o normfix não o formata.",
     skippedOther: "{count} arquivos ignorados porque o normfix não os formata.",
     dropHere: "Solte arquivos ou uma pasta de projeto",
@@ -334,6 +348,10 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     discardRestored: "Descartar",
     noFilesTitle: "Este proyecto no tiene archivos.",
     emptyProjectHint: "Crea uno con los botones de arriba, o suelta una carpeta aquí.",
+    emptyFolderWarningOne:
+      "Carpeta vacía: {paths}. Se conserva en el proyecto, pero no contiene archivos para formatear.",
+    emptyFolderWarningOther:
+      "{count} carpetas vacías: {paths}. Se conservan en el proyecto, pero no contienen archivos para formatear.",
     unparsableFile:
       "Este archivo no se pudo leer como C, así que no se formateó nada. El hallazgo de abajo es donde el analizador se perdió.",
     deleteFileText: "¿Eliminar {path}?",
@@ -414,6 +432,7 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     pathBytes: "Las rutas deben caber en {count} bytes UTF-8.",
     emptyProject: "Selecciona o añade al menos un archivo de proyecto compatible.",
     maxFiles: "El playground admite como máximo {count} archivos por ejecución.",
+    maxFolders: "El playground conserva como máximo {count} carpetas explícitas.",
     pathCollision:
       "{path} entra en conflicto con otra ruta en plataformas que no distinguen mayúsculas.",
     fileTooLarge: "{path} supera el límite del navegador de {count} bytes.",
@@ -429,6 +448,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     archivePath: "La ruta es demasiado larga para un archivo zip: {path}.",
     importedOne: "1 archivo añadido.",
     importedOther: "{count} archivos añadidos.",
+    foldersImportedOne: "1 carpeta añadida.",
+    foldersImportedOther: "{count} carpetas añadidas.",
     skippedOne: "1 archivo omitido porque normfix no lo formatea.",
     skippedOther: "{count} archivos omitidos porque normfix no los formatea.",
     dropHere: "Suelta archivos o una carpeta de proyecto",
@@ -480,6 +501,10 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     discardRestored: "Le supprimer",
     noFilesTitle: "Ce projet n’a aucun fichier.",
     emptyProjectHint: "Créez-en un avec les boutons ci-dessus, ou déposez un dossier ici.",
+    emptyFolderWarningOne:
+      "Dossier vide : {paths}. Il reste dans le projet, mais ne contient aucun fichier à formater.",
+    emptyFolderWarningOther:
+      "{count} dossiers vides : {paths}. Ils restent dans le projet, mais ne contiennent aucun fichier à formater.",
     unparsableFile:
       "Ce fichier n’a pas pu être lu comme du C, donc rien n’a été formaté. Le constat ci-dessous est l’endroit où l’analyseur s’est perdu.",
     deleteFileText: "Supprimer {path} ?",
@@ -561,6 +586,7 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     pathBytes: "Les chemins doivent tenir dans {count} octets UTF-8.",
     emptyProject: "Sélectionnez ou ajoutez au moins un fichier de projet pris en charge.",
     maxFiles: "Le playground accepte au plus {count} fichiers par exécution.",
+    maxFolders: "Le playground conserve au maximum {count} dossiers explicites.",
     pathCollision:
       "{path} entre en conflit avec un autre chemin sur une plateforme insensible à la casse.",
     fileTooLarge: "{path} dépasse la limite navigateur de {count} octets.",
@@ -576,6 +602,8 @@ const messages: Record<Locale, Record<MessageKey, string>> = {
     archivePath: "Le chemin est trop long pour une archive zip : {path}.",
     importedOne: "1 fichier ajouté.",
     importedOther: "{count} fichiers ajoutés.",
+    foldersImportedOne: "1 dossier ajouté.",
+    foldersImportedOther: "{count} dossiers ajoutés.",
     skippedOne: "1 fichier ignoré car normfix ne le formate pas.",
     skippedOther: "{count} fichiers ignorés car normfix ne les formate pas.",
     dropHere: "Déposez des fichiers ou un dossier de projet",

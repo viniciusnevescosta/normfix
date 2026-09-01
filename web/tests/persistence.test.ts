@@ -10,6 +10,7 @@ import {
 
 const project = {
   files: { "main.c": "int main(void)\n{\n\treturn (0);\n}\n" },
+  folders: ["src/empty"],
   selected: "main.c",
   unsupported: ["notes.py"],
   savedAt: 1_700_000_000_000,
@@ -24,7 +25,10 @@ test("a project survives the round trip exactly", () => {
 test("nothing worth restoring is not stored", () => {
   // Restoring nothing over nothing would only tell the reader their work came
   // back when it never went anywhere.
-  assert.equal(serializeProject({ files: {}, selected: null, unsupported: [], savedAt: 1 }), null);
+  assert.equal(
+    serializeProject({ files: {}, folders: [], selected: null, unsupported: [], savedAt: 1 }),
+    null,
+  );
 
   // A project past the ceiling was imported rather than typed here, and is
   // recoverable from where it came from.
@@ -81,14 +85,34 @@ test("a stale selected path is cleared rather than restored as an impossible sta
   assert.equal(restored?.selected, null);
 });
 
+test("a project made only of empty folders is still worth restoring", () => {
+  const payload = serializeProject({
+    files: {},
+    folders: ["src/empty"],
+    selected: null,
+    unsupported: [],
+    savedAt: 1,
+  });
+
+  assert.deepEqual(deserializeProject(payload), {
+    files: {},
+    folders: ["src/empty"],
+    selected: null,
+    unsupported: [],
+    savedAt: 1,
+  });
+});
+
 test("a restore that matches what is already open is not a restore", () => {
   const open = new Map(Object.entries(project.files));
-  assert.ok(isSameProject(project, open));
+  const folders = new Set(project.folders);
+  const unsupported = new Set(project.unsupported);
+  assert.ok(isSameProject(project, open, folders, unsupported));
 
   open.set("main.c", "different");
-  assert.ok(!isSameProject(project, open));
+  assert.ok(!isSameProject(project, open, folders, unsupported));
 
   open.set("main.c", project.files["main.c"] ?? "");
   open.set("extra.c", "");
-  assert.ok(!isSameProject(project, open));
+  assert.ok(!isSameProject(project, open, folders, unsupported));
 });

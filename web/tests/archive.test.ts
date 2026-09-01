@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "vitest";
@@ -78,6 +78,14 @@ test("an empty project still produces a readable archive", () => {
   assert.equal(u16(archive, 8), 0);
 });
 
+test("an empty folder is encoded as a directory entry", () => {
+  const archive = buildZip([{ path: "src/empty", directory: true }]);
+  const nameLength = u16(archive, 26);
+
+  assert.equal(decoder.decode(archive.slice(30, 30 + nameLength)), "src/empty/");
+  assert.equal(u32(archive, 18), 0);
+});
+
 test("a name too long for the zip name field is refused, not truncated", () => {
   const path = `${"a".repeat(70000)}.c`;
 
@@ -102,6 +110,7 @@ test("a real unzip implementation accepts the archive", (t) => {
       { path: "src/main.c", source: "int main(void)\n{\n\treturn (0);\n}\n" },
       { path: "Makefile", source: "NAME = app\n" },
       { path: "src/açaí.h", source: "#ifndef A\n#endif\n" },
+      { path: "src/empty", directory: true },
     ]);
     const zipPath = join(directory, "formatted.zip");
     writeFileSync(zipPath, archive);
@@ -122,6 +131,7 @@ test("a real unzip implementation accepts the archive", (t) => {
     );
     assert.equal(readFileSync(join(directory, "Makefile"), "utf8"), "NAME = app\n");
     assert.equal(readFileSync(join(directory, "src/açaí.h"), "utf8"), "#ifndef A\n#endif\n");
+    assert.ok(statSync(join(directory, "src/empty")).isDirectory());
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

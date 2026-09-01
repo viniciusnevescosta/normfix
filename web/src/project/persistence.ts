@@ -9,9 +9,11 @@
 import {
   MAX_FILE_BYTES,
   MAX_FILES,
+  MAX_FOLDERS,
   MAX_PROJECT_BYTES,
   MAX_UNSUPPORTED_FILES,
   portablePathKey,
+  portablePathProblem,
   sourcePathProblem,
 } from "./files";
 
@@ -19,6 +21,8 @@ import {
 export interface StoredProject {
   /** Path to source, exactly as the project held them. */
   files: Record<string, string>;
+  /** Explicit directories, including empty ones. */
+  folders: string[];
   /** Which file was open. */
   selected: string | null;
   /** Paths the project showed but could not format. */
@@ -45,7 +49,11 @@ const ENCODER = new TextEncoder();
  * telling the reader their work came back when it did not.
  */
 export function serializeProject(project: StoredProject): string | null {
-  if (Object.keys(project.files).length === 0 && project.unsupported.length === 0) {
+  if (
+    Object.keys(project.files).length === 0 &&
+    project.unsupported.length === 0 &&
+    project.folders.length === 0
+  ) {
     return null;
   }
   const payload = JSON.stringify(project);
@@ -99,13 +107,23 @@ export function deserializeProject(payload: string | null): StoredProject | null
     portable.add(key);
     unsupported.push(path);
   }
-  if (entries.length === 0 && unsupported.length === 0) return null;
+  if (record.folders !== undefined && !Array.isArray(record.folders)) return null;
+  const folders: string[] = [];
+  for (const path of record.folders ?? []) {
+    if (typeof path !== "string" || portablePathProblem(path) !== null) return null;
+    const key = portablePathKey(path);
+    if (portable.has(key) || folders.length >= MAX_FOLDERS) return null;
+    portable.add(key);
+    folders.push(path);
+  }
+  if (entries.length === 0 && unsupported.length === 0 && folders.length === 0) return null;
   const selected =
     typeof record.selected === "string" && entries.some(([path]) => path === record.selected)
       ? record.selected
       : null;
   return {
     files: Object.fromEntries(entries as [string, string][]),
+    folders,
     selected,
     unsupported,
     savedAt:
@@ -121,8 +139,19 @@ export function deserializeProject(payload: string | null): StoredProject | null
  * The page starts with one sample file. Announcing a restore that produced
  * exactly that would be announcing nothing.
  */
-export function isSameProject(stored: StoredProject, files: ReadonlyMap<string, string>): boolean {
+export function isSameProject(
+  stored: StoredProject,
+  files: ReadonlyMap<string, string>,
+  folders: ReadonlySet<string> = new Set(),
+  unsupported: ReadonlySet<string> = new Set(),
+): boolean {
   const entries = Object.entries(stored.files);
   if (entries.length !== files.size) return false;
-  return entries.every(([path, source]) => files.get(path) === source);
+  return (
+    entries.every(([path, source]) => files.get(path) === source) &&
+    stored.folders.length === folders.size &&
+    stored.folders.every((path) => folders.has(path)) &&
+    stored.unsupported.length === unsupported.size &&
+    stored.unsupported.every((path) => unsupported.has(path))
+  );
 }

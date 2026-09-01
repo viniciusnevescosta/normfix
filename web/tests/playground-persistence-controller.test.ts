@@ -20,6 +20,7 @@ test("discarding restored work does not schedule the sample back into storage", 
   const elements = { discardRestore, restoreNotice } as unknown as PlaygroundElements;
   const state = createAppState("en", "system");
   state.files = new Map([["secret.c", "int secret;\n"]]);
+  state.folders = new Set(["secret/empty"]);
   let scheduleSave = (): void => {};
   const persistence = createPersistenceController({
     state,
@@ -38,4 +39,5 @@ test("discarding restored work does not schedule the sample back into storage", 
 
   assert.equal(localStorage.getItem(PROJECT_STORAGE_KEY), null);
   assert.deepEqual([...state.files.keys()], ["main.c"]);
+  assert.deepEqual([...state.folders], []);
 });

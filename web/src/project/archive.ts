@@ -39,7 +39,9 @@ const MAX_NAME_BYTES = 0xffff;
 
 export interface ArchiveEntry {
   path: string;
-  source: string;
+  source?: string;
+  /** A directory entry, preserved even when it contains no files. */
+  directory?: boolean;
 }
 
 export class ZipArchiveError extends Error {
@@ -56,10 +58,11 @@ export class ZipArchiveError extends Error {
 
 export function buildZip(files: readonly ArchiveEntry[]): Uint8Array<ArrayBuffer> {
   const entries = files.map((file) => {
-    const name = UTF8_ENCODER.encode(file.path);
+    const archivePath = file.directory ? `${file.path.replace(/\/+$/, "")}/` : file.path;
+    const name = UTF8_ENCODER.encode(archivePath);
     if (name.length > MAX_NAME_BYTES) throw new ZipArchiveError("name_too_long", file.path);
-    const content = UTF8_ENCODER.encode(file.source);
-    return { name, content, crc: crc32(content), offset: 0 };
+    const content = UTF8_ENCODER.encode(file.directory ? "" : (file.source ?? ""));
+    return { name, content, crc: crc32(content), directory: file.directory === true, offset: 0 };
   });
 
   const localSize = entries.reduce((total, e) => total + 30 + e.name.length + e.content.length, 0);
@@ -105,10 +108,12 @@ export function buildZip(files: readonly ArchiveEntry[]): Uint8Array<ArrayBuffer
     view.setUint16(offset + 32, 0, true);
     view.setUint16(offset + 34, 0, true);
     view.setUint16(offset + 36, 0, true);
-    // External attributes. 0o100644 is a regular file readable by everyone and
-    // writable by its owner; it sits in the high half, which is where the Unix
-    // "version made by" above tells a reader to look.
-    view.setUint32(offset + 38, (0o100644 << 16) >>> 0, true);
+    // External attributes sit in the high half, which is where the Unix
+    // "version made by" above tells a reader to look. The DOS directory bit
+    // keeps directory entries recognizable to readers that ignore Unix mode.
+    const unixMode = entry.directory ? 0o40755 : 0o100644;
+    const dosAttributes = entry.directory ? 0x10 : 0;
+    view.setUint32(offset + 38, ((unixMode << 16) | dosAttributes) >>> 0, true);
     view.setUint32(offset + 42, entry.offset, true);
     archive.set(entry.name, offset + 46);
     offset += 46 + entry.name.length;

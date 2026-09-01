@@ -62,9 +62,17 @@ export function createImportController(options: ImportControllerOptions): Import
   async function loadFiles(
     incoming: readonly DroppedFile[],
     unsupported: readonly string[] = [],
+    folders: readonly string[] = [],
     alreadySkipped = 0,
   ): Promise<void> {
-    if (incoming.length === 0 && unsupported.length === 0 && alreadySkipped === 0) return;
+    if (
+      incoming.length === 0 &&
+      unsupported.length === 0 &&
+      folders.length === 0 &&
+      alreadySkipped === 0
+    ) {
+      return;
+    }
     if (state.importing) throw new Error(t("importRunning"));
     syncEditor();
     const startingRevision = state.revision;
@@ -76,8 +84,10 @@ export function createImportController(options: ImportControllerOptions): Import
         plan = planImport(
           incoming,
           unsupported,
+          folders,
           state.files.keys(),
           state.unsupported,
+          state.folders,
           alreadySkipped,
         );
       } catch (error) {
@@ -90,7 +100,8 @@ export function createImportController(options: ImportControllerOptions): Import
       const unsupportedChanged =
         plan.unsupported.size !== state.unsupported.size ||
         [...plan.unsupported].some((path) => !state.unsupported.has(path));
-      if (candidates.size === 0 && !unsupportedChanged) {
+      const newFolderCount = [...plan.folders].filter((path) => !state.folders.has(path)).length;
+      if (candidates.size === 0 && !unsupportedChanged && newFolderCount === 0) {
         if (plan.firstRejected !== null) normalizePath(plan.firstRejected);
         throw new Error(t("onlySupported"));
       }
@@ -133,12 +144,14 @@ export function createImportController(options: ImportControllerOptions): Import
       if (state.revision !== startingRevision) throw new Error(t("importChanged"));
       state.files = proposed;
       state.unsupported = plan.unsupported;
+      state.folders = plan.folders;
       state.revision += 1;
       invalidateResults();
       if (imported.selectedPath) selectFile(imported.selectedPath, false);
       renderFileList();
       const messages: string[] = [];
       if (candidates.size > 0) messages.push(tPlural("imported", candidates.size));
+      if (newFolderCount > 0) messages.push(tPlural("foldersImported", newFolderCount));
       if (plan.ignored > 0) messages.push(tPlural("skipped", plan.ignored));
       setRuntime("ready", messages.join(" "));
     } finally {
@@ -165,7 +178,7 @@ export function createImportController(options: ImportControllerOptions): Import
       return;
     }
     const selection = await collectDroppedFiles(entries);
-    await loadFiles(selection.files, selection.unsupported, selection.skipped);
+    await loadFiles(selection.files, selection.unsupported, selection.folders, selection.skipped);
   }
 
   function reportFailure(error: unknown): void {

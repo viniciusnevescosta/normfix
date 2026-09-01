@@ -10,7 +10,7 @@
 export interface DraftRowOptions {
   /** Where the row is appended. */
   container: Element;
-  /** `file` names an entry; `folder` names a prefix and then opens a file row. */
+  /** The kind of entry being named. */
   kind: "file" | "folder";
   /** Prefix already chosen, ending in `/` when present. */
   prefix?: string;
@@ -28,9 +28,9 @@ export interface DraftRowOptions {
 /**
  * Opens a row whose name is waiting to be typed.
  *
- * A folder is a prefix, because a path is what this project stores. Naming one
- * opens a file row inside it rather than creating anything, so a folder never
- * exists holding nothing — there would be nothing to store.
+ * Files and folders are both real project entries. In particular, committing
+ * a folder ends this interaction: creating a directory must not force the
+ * reader to invent a file before they can continue.
  */
 export function openDraftRow(options: DraftRowOptions): void {
   const { container, kind, prefix = "", label, create, onClose } = options;
@@ -72,17 +72,8 @@ export function openDraftRow(options: DraftRowOptions): void {
       close();
       return;
     }
-    if (kind === "folder") {
-      close();
-      openDraftRow({
-        ...options,
-        kind: "file",
-        prefix: `${prefix}${typed.replace(/\/+$/, "")}/`,
-      });
-      return;
-    }
     try {
-      create(`${prefix}${typed}`);
+      create(`${prefix}${kind === "folder" ? typed.replace(/\/+$/, "") : typed}`);
       close();
     } catch (failure) {
       error.textContent = failure instanceof Error ? failure.message : String(failure);

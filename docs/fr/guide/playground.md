@@ -35,6 +35,12 @@ pas l'une des quatre. Un chemin comme `src/utils.c` crée le dossier avec lui, e
 les dossiers s'imbriquent autant que nécessaire. **Tout télécharger (.zip)**
 conserve cette structure.
 
+Le bouton de dossier crée un répertoire à lui seul ; il ne vous oblige pas à
+créer ensuite un fichier. Les dossiers vides restent visibles, survivent à un
+rechargement et sont conservés dans le ZIP. Tant qu’un dossier est vide, le
+panneau du projet le nomme explicitement afin qu’un dossier d’exercice vide ne
+soit pas pris pour une arborescence de code importée.
+
 ## Les constats soulignés là où ils sont
 
 Les erreurs et les avertissements sont soulignés dans l'éditeur comme votre
@@ -148,8 +154,8 @@ soutenance.
 
 ## Limites et portabilité
 
-Le playground accepte au maximum 128 fichiers, 1 Mio par fichier et 4 Mio au
-total. Les chemins doivent être relatifs, portables et normalisés en NFC, avec
+Le playground accepte au maximum 128 fichiers, 256 dossiers explicites, 1 Mio
+par fichier et 4 Mio au total. Les chemins doivent être relatifs, portables et normalisés en NFC, avec
 au plus 240 octets UTF-8. Il rejette les doublons qui se confondent sur un
 système insensible à la casse, les noms réservés de plateforme, l’UTF-8 invalide
 et les chemins dangereux pour une archive, avant même de lancer le formateur. Un

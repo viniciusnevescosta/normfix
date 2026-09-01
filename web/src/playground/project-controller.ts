@@ -2,7 +2,7 @@ import { mount } from "svelte";
 import FileTree from "../components/FileTree.svelte";
 import type { PlaygroundElements } from "../dom";
 import { openDraftRow } from "../project/draft-row";
-import { portablePathKey, sourcePathProblem } from "../project/files";
+import { MAX_FOLDERS, portablePathKey, sourcePathProblem } from "../project/files";
 import { movedPath, renamedPath, rewritePrefix, wouldContainItself } from "../project/tree";
 import {
   confirmState,
@@ -15,8 +15,10 @@ import type { AppState, Translator } from "./model";
 import {
   countFolderEntries,
   editorMeasurements,
+  emptyFolderPaths,
   fileKind,
   hasPortablePath,
+  normalizeFolderPath,
   normalizeSourcePath,
   validateProjectSources,
 } from "./project-model";
@@ -77,7 +79,7 @@ export function createProjectController(options: ProjectControllerOptions): Proj
       container: elements.fileList,
       kind,
       label: t(kind === "file" ? "addFile" : "addFolder"),
-      create: (path) => addSource(path, ""),
+      create: (path) => (kind === "folder" ? addFolder(path) : addSource(path, "")),
       onClose: () => state.editor?.focus(),
     });
   }
@@ -87,30 +89,39 @@ export function createProjectController(options: ProjectControllerOptions): Proj
     syncEditor();
     const proposed = new Map(state.files);
     const proposedUnsupported = new Set(state.unsupported);
+    const proposedFolders = new Set(state.folders);
     for (const [from] of moves) {
       proposed.delete(from);
       proposedUnsupported.delete(from);
+      proposedFolders.delete(from);
     }
     const occupied = new Set(
-      [...proposed.keys(), ...proposedUnsupported].map((path) => portablePathKey(path)),
+      [...proposed.keys(), ...proposedUnsupported, ...proposedFolders].map((path) =>
+        portablePathKey(path),
+      ),
     );
     for (const [from, to] of moves) {
       const supported = state.files.has(from);
+      const folder = state.folders.has(from);
       const problem = sourcePathProblem(to);
-      const normalized = supported
-        ? normalizeSourcePath(to, t)
-        : problem?.code === "only_supported"
-          ? to
-          : (() => {
-              if (problem?.code === "path_bytes") {
-                throw new Error(t("pathBytes", { count: problem.count }));
-              }
-              throw new Error(t(problem === null ? "unsupportedFile" : "portablePath"));
-            })();
+      const normalized = folder
+        ? normalizeFolderPath(to, t)
+        : supported
+          ? normalizeSourcePath(to, t)
+          : problem?.code === "only_supported"
+            ? to
+            : (() => {
+                if (problem?.code === "path_bytes") {
+                  throw new Error(t("pathBytes", { count: problem.count }));
+                }
+                throw new Error(t(problem === null ? "unsupportedFile" : "portablePath"));
+              })();
       const key = portablePathKey(normalized);
       if (occupied.has(key)) throw new Error(t("importConflict", { path: normalized }));
       occupied.add(key);
-      if (supported) {
+      if (folder) {
+        proposedFolders.add(normalized);
+      } else if (supported) {
         const source = state.files.get(from);
         if (source === undefined) throw new Error(t("responsePath", { path: from }));
         proposed.set(normalized, source);
@@ -128,6 +139,7 @@ export function createProjectController(options: ProjectControllerOptions): Proj
     }
     state.files = proposed;
     state.unsupported = proposedUnsupported;
+    state.folders = proposedFolders;
     state.revision += 1;
     invalidateResults();
     const reselect = selected ? normalizeSourcePath(selected[1], t) : state.selected;
@@ -138,7 +150,7 @@ export function createProjectController(options: ProjectControllerOptions): Proj
 
   function moveEntry(path: string, isFolder: boolean, folder: string): void {
     if (isFolder && wouldContainItself(path, folder)) return;
-    const paths = [...state.files.keys(), ...state.unsupported];
+    const paths = [...state.files.keys(), ...state.unsupported, ...state.folders];
     const moves = isFolder
       ? rewritePrefix(paths, path, movedPath(path, folder))
       : [[path, movedPath(path, folder)] as const];
@@ -156,7 +168,11 @@ export function createProjectController(options: ProjectControllerOptions): Proj
     try {
       applyMoves(
         isFolder
-          ? rewritePrefix([...state.files.keys(), ...state.unsupported], path, target)
+          ? rewritePrefix(
+              [...state.files.keys(), ...state.unsupported, ...state.folders],
+              path,
+              target,
+            )
           : [[path, target]],
       );
     } catch (failure) {
@@ -171,7 +187,8 @@ export function createProjectController(options: ProjectControllerOptions): Proj
       loaded === path || (isFolder && loaded.startsWith(`${path}/`));
     const removed = [...state.files.keys()].filter(under);
     const dropped = [...state.unsupported].filter(under);
-    if (removed.length === 0 && dropped.length === 0) return;
+    const removedFolders = [...state.folders].filter(under);
+    if (removed.length === 0 && dropped.length === 0 && removedFolders.length === 0) return;
     const proposed = new Map(state.files);
     for (const loaded of removed) {
       proposed.delete(loaded);
@@ -179,6 +196,7 @@ export function createProjectController(options: ProjectControllerOptions): Proj
     }
     state.files = proposed;
     for (const loaded of dropped) state.unsupported.delete(loaded);
+    for (const folder of removedFolders) state.folders.delete(folder);
     state.revision += 1;
     invalidateResults();
     const showingRemoved =
@@ -210,11 +228,13 @@ export function createProjectController(options: ProjectControllerOptions): Proj
 
   function renderFileList(): void {
     treeState.files = [...state.files.keys(), ...state.unsupported];
+    treeState.folders = new Set(state.folders);
     treeState.unsupported = new Set(state.unsupported);
     treeState.changed = new Set(
       [...state.results.entries()].filter(([, result]) => result.changed).map(([path]) => path),
     );
     treeState.selected = state.selected;
+    renderEmptyFolderNotice();
     if (treeMounted) return;
     treeMounted = true;
     mount(FileTree, {
@@ -222,6 +242,9 @@ export function createProjectController(options: ProjectControllerOptions): Proj
       props: {
         get files() {
           return treeState.files;
+        },
+        get folders() {
+          return treeState.folders;
         },
         get unsupported() {
           return treeState.unsupported;
@@ -243,6 +266,18 @@ export function createProjectController(options: ProjectControllerOptions): Proj
         onDelete: confirmDelete,
       },
     });
+  }
+
+  function renderEmptyFolderNotice(): void {
+    const empty = emptyFolderPaths(state.folders, state.files.keys(), state.unsupported);
+    elements.emptyFolderNotice.hidden = empty.length === 0;
+    elements.emptyFolderNotice.textContent =
+      empty.length === 0
+        ? ""
+        : t(empty.length === 1 ? "emptyFolderWarningOne" : "emptyFolderWarningOther", {
+            count: empty.length,
+            paths: empty.slice(0, 3).join(", "),
+          });
   }
 
   function showUnsupported(path: string): void {
@@ -283,7 +318,9 @@ export function createProjectController(options: ProjectControllerOptions): Proj
     if (state.importing) throw new Error(t("waitForImport"));
     syncEditor();
     const normalized = normalizeSourcePath(path, t);
-    if (hasPortablePath(state.files.keys(), normalized)) {
+    if (
+      hasPortablePath([...state.files.keys(), ...state.unsupported, ...state.folders], normalized)
+    ) {
       throw new Error(t("importConflict", { path: normalized }));
     }
     const proposed = new Map(state.files);
@@ -295,6 +332,24 @@ export function createProjectController(options: ProjectControllerOptions): Proj
     selectFile(normalized, false);
   }
 
+  function addFolder(path: string): void {
+    if (state.importing) throw new Error(t("waitForImport"));
+    if (state.folders.size >= MAX_FOLDERS) {
+      throw new Error(t("maxFolders", { count: MAX_FOLDERS }));
+    }
+    syncEditor();
+    const normalized = normalizeFolderPath(path, t);
+    if (
+      hasPortablePath([...state.files.keys(), ...state.unsupported, ...state.folders], normalized)
+    ) {
+      throw new Error(t("importConflict", { path: normalized }));
+    }
+    state.folders = new Set(state.folders).add(normalized);
+    state.revision += 1;
+    invalidateResults();
+    renderFileList();
+  }
+
   function removeSelected(): void {
     if (state.importing || !state.selected) return;
     confirmDelete(state.selected, false);
@@ -302,7 +357,7 @@ export function createProjectController(options: ProjectControllerOptions): Proj
 
   function startRename(path: string, isFolder: boolean): void {
     const entry = elements.fileList.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`);
-    const label = entry?.querySelector<HTMLElement>("span:nth-child(2)");
+    const label = entry?.querySelector<HTMLElement>("[data-entry-name]");
     if (!label) return;
     const current = label.textContent ?? "";
     const input = document.createElement("input");

@@ -184,6 +184,17 @@ main {
   font-size: 10px;
 }
 
+.project-notice {
+  min-width: 0;
+  flex: none;
+  padding: 7px 9px;
+  color: var(--warning);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
 .editor-panel {
   display: flex;
   min-width: 0;
@@ -343,14 +354,33 @@ main {
   background: var(--panel);
 }
 
+.scope-note > div {
+  min-width: 0;
+}
+
+.scope-note > div:first-child {
+  padding-right: 18px;
+  border-right: 1px solid var(--border);
+}
+
+.scope-note-copy {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
 .scope-note p {
   margin: 0;
   color: var(--muted);
   font-size: 10px;
 }
 
-.scope-note p + p {
-  margin-top: 6px;
+.scope-download {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
 }
 
 .dependency-links {
@@ -371,7 +401,7 @@ main {
 }
 
 .release-link {
-  margin-right: 6px;
+  flex: none;
   font-weight: 600;
 }
 

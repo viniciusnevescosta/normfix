@@ -29,6 +29,17 @@ test("a flat set of paths becomes the folders it implies", () => {
   assert.equal(source.path, "src", "a folder carries the prefix it stands for");
 });
 
+test("explicit empty folders appear without inventing a file", () => {
+  const tree = buildTree(["main.c"], ["src/empty"]);
+  const source = tree.find((node) => node.path === "src");
+
+  assert.equal(source?.kind, "folder");
+  if (source?.kind !== "folder") return;
+  assert.deepEqual(source.children, [
+    { kind: "folder", name: "empty", path: "src/empty", children: [] },
+  ]);
+});
+
 test("a file dropped on a folder keeps its name and takes the folder's prefix", () => {
   assert.equal(movedPath("main.c", "src"), "src/main.c");
   assert.equal(movedPath("src/deep/inner.h", "src"), "src/inner.h");
