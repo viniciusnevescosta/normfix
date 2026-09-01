@@ -31,6 +31,32 @@ As dezessete correções incluem o cabeçalho oficial, a ordem dos includes, o
 layout das chaves, a indentação com tabulações, a separação das declarações e os
 `return` entre parênteses.
 
+## Antes e depois
+
+Dado um C comum com espaçamento comprimido e os includes começando pelo projeto:
+
+```c
+# include "libft.h"
+# include <stdlib.h>
+
+int add(int a,int b){return a+b;}
+```
+
+`normfix format math_utils.c` grava o resultado comprovado:
+
+```c
+#include <stdlib.h>
+#include "libft.h"
+
+int	add(int a, int b)
+{
+	return (a + b);
+}
+```
+
+Quando uma identidade 42 verificada está disponível, o cabeçalho oficial também
+é gravado acima deste trecho.
+
 ## Ver a mudança antes de aceitá-la
 
 `--diff` imprime um diff unificado e não grava nada:

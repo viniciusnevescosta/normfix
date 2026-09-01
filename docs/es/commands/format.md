@@ -31,6 +31,33 @@ Las diecisiete correcciones incluyen la cabecera oficial, el orden de los
 includes, la disposición de las llaves, la indentación con tabulaciones, la
 separación de declaraciones y los `return` entre paréntesis.
 
+## Antes y después
+
+Dado un C corriente con espacios comprimidos y los includes empezando por el
+proyecto:
+
+```c
+# include "libft.h"
+# include <stdlib.h>
+
+int add(int a,int b){return a+b;}
+```
+
+`normfix format math_utils.c` escribe el resultado demostrado:
+
+```c
+#include <stdlib.h>
+#include "libft.h"
+
+int	add(int a, int b)
+{
+	return (a + b);
+}
+```
+
+Cuando hay una identidad 42 verificada, la cabecera oficial también se escribe
+encima de este fragmento.
+
 ## Ver el cambio antes de aceptarlo
 
 `--diff` imprime un diff unificado y no escribe nada:

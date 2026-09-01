@@ -31,6 +31,33 @@ Les dix-sept corrections comprennent l'en-tête officiel, l'ordre des includes,
 la disposition des accolades, l'indentation par tabulations, la séparation des
 déclarations et les `return` entre parenthèses.
 
+## Avant et après
+
+À partir d’un C ordinaire aux espaces tassés et dont les includes commencent
+par le projet :
+
+```c
+# include "libft.h"
+# include <stdlib.h>
+
+int add(int a,int b){return a+b;}
+```
+
+`normfix format math_utils.c` écrit le résultat prouvé :
+
+```c
+#include <stdlib.h>
+#include "libft.h"
+
+int	add(int a, int b)
+{
+	return (a + b);
+}
+```
+
+Lorsqu’une identité 42 vérifiée est disponible, l’en-tête officiel est aussi
+écrit au-dessus de cet extrait.
+
 ## Voir le changement avant de l'accepter
 
 `--diff` affiche un diff unifié et n'écrit rien :

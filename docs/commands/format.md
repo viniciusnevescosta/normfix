@@ -31,6 +31,32 @@ The seventeen fixes include the official header, the include order, the brace
 layout, tab indentation, declaration separation, and the parenthesized
 returns.
 
+## Before and after
+
+Given ordinary C with packed spacing and the includes in project-first order:
+
+```c
+# include "libft.h"
+# include <stdlib.h>
+
+int add(int a,int b){return a+b;}
+```
+
+`normfix format math_utils.c` writes the proven result:
+
+```c
+#include <stdlib.h>
+#include "libft.h"
+
+int	add(int a, int b)
+{
+	return (a + b);
+}
+```
+
+When a verified 42 identity is available, the official header is also written
+above this excerpt.
+
 ## See the change before accepting it
 
 `--diff` prints a unified diff and writes nothing:
